@@ -8,7 +8,6 @@ import aiohttp
 
 from homeassistant.components.camera import Camera
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_API_KEY
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -26,14 +25,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up NASA APOD camera from a config entry."""
-    data = hass.data[DOMAIN][entry.entry_id]
-    session = data["session"]
-    api_key = data["api_key"]
-    update_interval = data["update_interval"]
-
-    coordinator = NasaDataCoordinator(hass, session, api_key, update_interval)
-    await coordinator.async_config_entry_first_refresh()
-
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     async_add_entities([NasaApodCamera(coordinator, entry)], True)
 
 
@@ -92,13 +84,14 @@ class NasaApodCamera(CoordinatorEntity[NasaDataCoordinator], Camera):
 
         try:
             session = async_get_clientsession(self.hass)
-            async with session.get(url, timeout=30) as resp:
+            timeout = aiohttp.ClientTimeout(total=30)
+            async with session.get(url, timeout=timeout) as resp:
                 if resp.status == 200:
                     self._cached_image = await resp.read()
                     self._image_url = url
                     return self._cached_image
         except (aiohttp.ClientError, TimeoutError):
-            _LOGGER.warning("Failed to fetch APOD image from %s", url)
+            pass
 
         return self._cached_image
 

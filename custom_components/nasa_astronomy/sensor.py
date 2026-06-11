@@ -1,7 +1,6 @@
 """Sensor platform for NASA Astronomy Suite."""
 from __future__ import annotations
 
-import logging
 from datetime import datetime
 from typing import Any
 
@@ -11,16 +10,12 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_API_KEY
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import DOMAIN, ATTR_NEO_LIST
 from .coordinator import NasaDataCoordinator
-
-_LOGGER = logging.getLogger(__name__)
 
 SENSOR_DESCRIPTIONS: list[SensorEntityDescription] = [
     SensorEntityDescription(
@@ -94,13 +89,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up NASA Astronomy sensors from a config entry."""
-    data = hass.data[DOMAIN][entry.entry_id]
-    session = data["session"]
-    api_key = data["api_key"]
-    update_interval = data["update_interval"]
-
-    coordinator = NasaDataCoordinator(hass, session, api_key, update_interval)
-    await coordinator.async_config_entry_first_refresh()
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
 
     entities = [
         NasaAstronomySensor(coordinator, description, entry)

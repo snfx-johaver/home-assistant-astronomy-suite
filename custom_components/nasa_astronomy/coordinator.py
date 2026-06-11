@@ -61,10 +61,9 @@ class NasaDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         data["techtransfer"] = await self._fetch_techtransfer()
 
         # Only raise UpdateFailed if ALL endpoints returned nothing
+        # This prevents setup from failing when NASA API is temporarily down
         if all(v is None for v in data.values()):
-            raise UpdateFailed(
-                "All NASA API endpoints unreachable — will retry next cycle"
-            )
+            _LOGGER.debug("All NASA API endpoints unreachable — will retry next cycle")
 
         return data
 

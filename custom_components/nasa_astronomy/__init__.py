@@ -1,7 +1,6 @@
 """NASA Astronomy Suite - Custom Integration for Home Assistant."""
 from __future__ import annotations
 
-import logging
 from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
@@ -10,8 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import DOMAIN, CONF_UPDATE_INTERVAL
-
-_LOGGER = logging.getLogger(__name__)
+from .coordinator import NasaDataCoordinator
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.CAMERA]
 
@@ -22,12 +20,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     session = async_get_clientsession(hass)
     api_key = entry.data[CONF_API_KEY]
-    update_interval = entry.options.get(CONF_UPDATE_INTERVAL, 3600)
+    update_interval = timedelta(
+        seconds=entry.options.get(CONF_UPDATE_INTERVAL, 600)
+    )
+
+    coordinator = NasaDataCoordinator(hass, session, api_key, update_interval)
+    await coordinator.async_config_entry_first_refresh()
 
     hass.data[DOMAIN][entry.entry_id] = {
-        "session": session,
-        "api_key": api_key,
-        "update_interval": timedelta(seconds=update_interval),
+        "coordinator": coordinator,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
