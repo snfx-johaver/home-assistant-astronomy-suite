@@ -3,6 +3,7 @@
 DOMAIN = "nasa_astronomy"
 
 CONF_UPDATE_INTERVAL = "update_interval"
+CONF_ROCKET_API_KEY = "rocket_api_key"
 
 BASE_URL = "https://api.nasa.gov"
 
@@ -14,6 +15,8 @@ DONKI_GST_URL = f"{BASE_URL}/DONKI/GST"
 EONET_URL = "https://eonet.gsfc.nasa.gov/api/v3/events"
 MARS_WEATHER_URL = f"{BASE_URL}/insight_weather/"
 TECHTRANSFER_URL = f"{BASE_URL}/techtransfer/patent/"
+
+ROCKET_LAUNCH_URL = "https://fdo.rocketlaunch.live/json/launches/next/5"
 
 SENSOR_TYPES = {
     "apod": "Astronomy Picture of the Day",

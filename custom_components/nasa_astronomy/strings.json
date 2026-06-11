@@ -3,15 +3,19 @@
     "step": {
       "user": {
         "title": "NASA Astronomy Suite",
-        "description": "Enter your NASA API key. Get one free at https://api.nasa.gov/",
+        "description": "Enter your API keys to set up the integration.\n\n**NASA API Key** (required): Get yours free at [api.nasa.gov]({nasa_url})\n\n**Rocket Launch Live API Key** (optional): Get yours at [rocketlaunch.live]({rocket_url}) — leave blank for free tier (no media links)",
         "data": {
-          "api_key": "NASA API Key"
+          "api_key": "NASA API Key",
+          "rocket_api_key": "Rocket Launch Live API Key (optional)"
         }
       }
     },
     "error": {
-      "cannot_connect": "Unable to connect to NASA API",
-      "invalid_auth": "Invalid API key"
+      "cannot_connect": "Cannot connect to NASA API — check your network",
+      "invalid_auth": "Invalid NASA API key — verify at api.nasa.gov"
+    },
+    "abort": {
+      "already_configured": "This API key is already configured"
     }
   }
 }

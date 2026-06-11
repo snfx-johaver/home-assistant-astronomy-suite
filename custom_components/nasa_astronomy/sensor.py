@@ -95,6 +95,11 @@ async def async_setup_entry(
         NasaAstronomySensor(coordinator, description, entry)
         for description in SENSOR_DESCRIPTIONS
     ]
+
+    # Add 5 rocket launch sensors
+    for i in range(5):
+        entities.append(RocketLaunchSensor(coordinator, i, entry))
+
     async_add_entities(entities, True)
 
 
@@ -345,3 +350,94 @@ class NasaAstronomySensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
             .get("meters", {})
             .get("estimated_diameter_max", 0),
         )
+
+
+class RocketLaunchSensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
+    """Sensor for an upcoming rocket launch."""
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:rocket-launch"
+
+    def __init__(
+        self,
+        coordinator: NasaDataCoordinator,
+        launch_index: int,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize the rocket launch sensor."""
+        super().__init__(coordinator)
+        self._index = launch_index
+        self._attr_unique_id = f"{entry.entry_id}_rocket_launch_{launch_index + 1}"
+        self._attr_name = f"Rocket Launch {launch_index + 1}"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, entry.entry_id)},
+            "name": "NASA Astronomy Suite",
+            "manufacturer": "NASA",
+            "model": "Open APIs",
+            "sw_version": "1.5.0",
+        }
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the launch name."""
+        launch = self._get_launch()
+        if not launch:
+            return None
+        provider = launch.get("provider", {}).get("name", "")
+        return f"{launch.get('name', 'Unknown')} ({provider})"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return launch details."""
+        launch = self._get_launch()
+        if not launch:
+            return {}
+
+        attrs: dict[str, Any] = {
+            "name": launch.get("name"),
+            "provider": launch.get("provider", {}).get("name"),
+            "vehicle": launch.get("vehicle", {}).get("name"),
+            "launch_description": launch.get("launch_description", ""),
+            "date_str": launch.get("date_str", ""),
+        }
+
+        # Pad info
+        pad = launch.get("pad", {})
+        location = pad.get("location", {})
+        attrs["launch_pad"] = f"{location.get('name', '')} ({pad.get('name', '')})"
+        attrs["launch_location"] = location.get("country", "")
+
+        # Target time
+        t0 = launch.get("t0") or launch.get("win_open")
+        attrs["launch_target"] = t0 or "TBD"
+
+        # Tags
+        tags = launch.get("tags", [])
+        attrs["tags"] = " | ".join(t.get("text", "") for t in tags)[:255]
+
+        # Media
+        attrs["media_link"] = ""
+        for media in launch.get("media", []):
+            if media.get("ldfeatured") and media.get("youtube_vidid"):
+                attrs["media_link"] = f"https://www.youtube.com/watch?v={media['youtube_vidid']}"
+                break
+
+        # Weather
+        attrs["weather_summary"] = (launch.get("weather_summary") or "TBD").replace("\n", ", ")
+
+        # Missions
+        missions = launch.get("missions", [])
+        attrs["missions"] = " | ".join(m.get("name", "") for m in missions)
+
+        return attrs
+
+    def _get_launch(self) -> dict | None:
+        """Get the launch at this index."""
+        if not self.coordinator.data:
+            return None
+        launches = self.coordinator.data.get("rocket_launches")
+        if not launches or not isinstance(launches, list):
+            return None
+        if self._index < len(launches):
+            return launches[self._index]
+        return None

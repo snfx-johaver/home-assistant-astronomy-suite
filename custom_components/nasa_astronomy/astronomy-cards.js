@@ -1,20 +1,18 @@
 /**
- * NASA Astronomy Cards v1.2.8
- * Pre-built bundle - place in /config/www/community/astronomy-cards/
+ * NASA Astronomy Cards v1.5.0
+ * Pre-built bundle for Home Assistant Lovelace.
  *
- * Cards: <apod-card>, <neo-threat-card>, <solar-activity-card>,
- *        <astro-horizon-card>, <astro-lunar-card>
- * All cards feature:
- *  - Visual UI config editor (no YAML needed)
- *  - Full light/dark mode support via HA CSS variables
- *  - Mushroom-aligned design language
+ * Cards:
+ *  - <apod-card>
+ *  - <neo-threat-card>
+ *  - <solar-activity-card>
+ *  - <astro-horizon-card>
+ *  - <astro-lunar-card>
+ *  - <solar-system-card>
+ *  - <rocket-launch-card>
  */
 
-// ============================================================
-// SHARED THEME - Uses HA CSS custom properties for light/dark
-// ============================================================
 const ASTRO = {
-  // All colors reference HA theme variables so they auto-adapt
   radius: "var(--ha-card-border-radius, 12px)",
   shadow: "var(--ha-card-box-shadow, none)",
   surface: "var(--ha-card-background, var(--card-background-color, white))",
@@ -22,24 +20,19 @@ const ASTRO = {
   text2: "var(--secondary-text-color)",
   bg2: "var(--card-background-color, var(--secondary-background-color))",
   divider: "var(--divider-color)",
-  // Mushroom-style chip/badge background
   chipBg: "rgba(var(--rgb-primary-text-color, 0,0,0), 0.05)",
-  // Status colors from HA theme
   success: "var(--success-color, #4caf50)",
   warning: "var(--warning-color, #ff9800)",
   error: "var(--error-color, #f44336)",
   info: "var(--info-color, #42a5f5)",
-  // Accent from HA theme
   accent: "var(--accent-color, #7c4dff)",
   stateIcon: "var(--state-icon-color, #7c4dff)",
-  // Category colors (work well in both modes)
   cme: "#ff6b35",
   flare: "#ffc107",
   storm: "#ab47bc",
   neo: "var(--info-color, #42a5f5)",
 };
 
-// Shared base styles - Mushroom-inspired, HA theme adaptive
 const BASE_STYLES = `
   :host {
     display: block;
@@ -123,239 +116,689 @@ const BASE_STYLES = `
   }
 `;
 
-// Shared config editor styles
 const EDITOR_STYLES = `
   :host { display: block; }
-  .editor { padding: 16px; }
+  .editor {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .editor-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .editor-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--secondary-text-color);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
   .editor ha-entity-picker,
   .editor ha-textfield,
-  .editor ha-switch,
-  .editor ha-formfield { display: block; margin-bottom: 12px; }
-  .editor label { display:flex; align-items:center; gap:8px; margin-bottom:12px; font-size:0.9rem; color:var(--primary-text-color); }
+  .editor .native-select {
+    display: block;
+    width: 100%;
+  }
+  .editor label.switch-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
+    color: var(--primary-text-color);
+    font-size: 0.9rem;
+  }
+  .editor-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+  .native-select {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid var(--divider-color);
+    background: var(--card-background-color, var(--secondary-background-color));
+    color: var(--primary-text-color);
+    font: inherit;
+    outline: none;
+  }
 `;
 
-// Helper: escape HTML
-function esc(str) { const d = document.createElement("div"); d.textContent = str || ""; return d.innerHTML; }
+const DOCS_URL = "https://github.com/snfx-johaver/home-assistant-astronomy-suite";
+const VERSION = "1.5.0";
+const DAY_MS = 86400000;
+const J2000 = 2451545.0;
 
-// ============================================================
-// APOD CARD CONFIG EDITOR
-// ============================================================
-class ApodCardEditor extends HTMLElement {
+const MOON_PHASE_ORDER = [
+  "new_moon",
+  "waxing_crescent",
+  "first_quarter",
+  "waxing_gibbous",
+  "full_moon",
+  "waning_gibbous",
+  "last_quarter",
+  "waning_crescent",
+];
+
+const MOON_ICONS = {
+  new_moon: "🌑",
+  waxing_crescent: "🌒",
+  first_quarter: "🌓",
+  waxing_gibbous: "🌔",
+  full_moon: "🌕",
+  waning_gibbous: "🌖",
+  last_quarter: "🌗",
+  waning_crescent: "🌘",
+};
+
+const PLANET_ELEMENTS = {
+  Mercury: { a: 0.387, e: 0.2056, L: 252.25, wBar: 77.46, daily: 4.0923, color: "#ff80ab" },
+  Venus: { a: 0.723, e: 0.0068, L: 181.98, wBar: 131.53, daily: 1.6021, color: "#ba68c8" },
+  Earth: { a: 1.0, e: 0.0167, L: 100.47, wBar: 102.94, daily: 0.9856, color: "#4dd0e1" },
+  Mars: { a: 1.524, e: 0.0934, L: 355.45, wBar: 336.04, daily: 0.524, color: "#ef5350" },
+  Jupiter: { a: 5.203, e: 0.0484, L: 34.4, wBar: 14.33, daily: 0.0831, color: "#ffb74d" },
+  Saturn: { a: 9.537, e: 0.0542, L: 49.94, wBar: 92.43, daily: 0.0335, color: "#ffe082" },
+};
+
+function esc(str) {
+  const d = document.createElement("div");
+  d.textContent = str == null ? "" : String(str);
+  return d.innerHTML;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function toNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function parseDate(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatDate(dateLike) {
+  const date = parseDate(dateLike);
+  if (!date) return "Unknown";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function formatTime(dateLike) {
+  const date = parseDate(dateLike);
+  if (!date) return "--:--";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatDateTime(dateLike) {
+  const date = parseDate(dateLike);
+  if (!date) return "Unknown";
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatDistanceKm(km) {
+  const value = toNumber(km, NaN);
+  if (!Number.isFinite(value) || value <= 0) return "—";
+  if (value >= 1000000) return `${(value / 1000000).toFixed(2)}M km`;
+  if (value >= 1000) return `${(value / 1000).toFixed(0)}K km`;
+  return `${value.toFixed(0)} km`;
+}
+
+function formatSpeedKmh(kmh) {
+  const value = toNumber(kmh, NaN);
+  if (!Number.isFinite(value) || value <= 0) return "—";
+  if (value >= 1000000) return `${(value / 1000000).toFixed(2)}M km/h`;
+  return `${(value / 1000).toFixed(0)}K km/h`;
+}
+
+function formatMeters(value) {
+  const number = toNumber(value, NaN);
+  if (!Number.isFinite(number) || number <= 0) return "—";
+  if (number >= 1000) return `${(number / 1000).toFixed(2)} km`;
+  return `${number.toFixed(0)} m`;
+}
+
+function formatCountdown(targetDate) {
+  const date = parseDate(targetDate);
+  if (!date) return "";
+  const diff = date.getTime() - Date.now();
+  if (diff <= -30 * 60 * 1000) return "Launched";
+  if (diff <= 0) return "Live now";
+  const totalMinutes = Math.floor(diff / 60000);
+  const days = Math.floor(totalMinutes / (60 * 24));
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) return `T-${days}d ${hours}h`;
+  if (hours > 0) return `T-${hours}h ${minutes}m`;
+  return `T-${minutes}m`;
+}
+
+function isWithinHours(targetDate, hours) {
+  const date = parseDate(targetDate);
+  if (!date) return false;
+  const diff = date.getTime() - Date.now();
+  return diff >= 0 && diff <= hours * 60 * 60 * 1000;
+}
+
+function getState(hass, entityId) {
+  return hass && entityId ? hass.states[entityId] : undefined;
+}
+
+function renderErrorCard(message, icon = "mdi:alert-circle-outline") {
+  return `
+    <style>
+      ${BASE_STYLES}
+      .astro-error { padding: 20px 16px 16px; color: ${ASTRO.text2}; text-align: center; }
+      .astro-error ha-icon { color: ${ASTRO.warning}; --mdc-icon-size: 28px; margin-bottom: 8px; }
+      .astro-error div:last-child { font-size: 0.85rem; line-height: 1.4; }
+    </style>
+    <ha-card class="astro-card">
+      <div class="astro-error">
+        <ha-icon icon="${icon}"></ha-icon>
+        <div>${esc(message)}</div>
+      </div>
+    </ha-card>
+  `;
+}
+
+function dispatchConfigChanged(editor) {
+  editor.dispatchEvent(new CustomEvent("config-changed", {
+    detail: { config: { ...editor._config } },
+    bubbles: true,
+    composed: true,
+  }));
+}
+
+function setPickerValue(root, id, hass, value) {
+  const picker = root.getElementById(id);
+  if (!picker) return;
+  picker.hass = hass;
+  picker.value = value || "";
+}
+
+function setTextValue(root, id, value) {
+  const field = root.getElementById(id);
+  if (field) field.value = value == null ? "" : String(value);
+}
+
+function setSwitchValue(root, id, checked) {
+  const sw = root.getElementById(id);
+  if (sw) sw.checked = Boolean(checked);
+}
+
+function setSelectValue(root, id, value) {
+  const select = root.getElementById(id);
+  if (select) select.value = String(value);
+}
+
+function normalizePhase(phase) {
+  return String(phase || "unknown").toLowerCase().replace(/\s+/g, "_");
+}
+
+function getMoonPhaseData(phase) {
+  const normalized = normalizePhase(phase);
+  return {
+    new_moon: { name: "New moon", illumination: 0, fraction: 0, waxing: true },
+    waxing_crescent: { name: "Waxing crescent", illumination: 25, fraction: 0.25, waxing: true },
+    first_quarter: { name: "First quarter", illumination: 50, fraction: 0.5, waxing: true },
+    waxing_gibbous: { name: "Waxing gibbous", illumination: 75, fraction: 0.75, waxing: true },
+    full_moon: { name: "Full moon", illumination: 100, fraction: 1, waxing: false },
+    waning_gibbous: { name: "Waning gibbous", illumination: 75, fraction: 0.75, waxing: false },
+    last_quarter: { name: "Last quarter", illumination: 50, fraction: 0.5, waxing: false },
+    waning_crescent: { name: "Waning crescent", illumination: 25, fraction: 0.25, waxing: false },
+  }[normalized] || { name: "Unknown", illumination: 0, fraction: 0, waxing: true };
+}
+
+function renderMoonSvg(fraction, waxing, size) {
+  const r = size / 2 - 5;
+  const cx = size / 2;
+  const cy = size / 2;
+  let shadowPath = "";
+
+  if (fraction <= 0.01) {
+    shadowPath = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(10,10,20,0.94)" />`;
+  } else if (fraction < 0.99) {
+    const sweep = Math.max(r * 0.08, Math.abs((fraction < 0.5 ? 1 - 2 * fraction : 2 * fraction - 1) * r));
+    const largeArc = fraction >= 0.5 ? 1 : 0;
+    if (waxing) {
+      shadowPath = `<path d="M ${cx} ${cy - r} A ${r} ${r} 0 0 0 ${cx} ${cy + r} A ${sweep} ${r} 0 0 ${largeArc} ${cx} ${cy - r} Z" fill="rgba(10,10,20,0.92)" />`;
+    } else {
+      shadowPath = `<path d="M ${cx} ${cy - r} A ${r} ${r} 0 0 1 ${cx} ${cy + r} A ${sweep} ${r} 0 0 ${largeArc ? 0 : 1} ${cx} ${cy - r} Z" fill="rgba(10,10,20,0.92)" />`;
+    }
+  }
+
+  return `
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">
+      <defs>
+        <radialGradient id="moon-surface" cx="38%" cy="38%">
+          <stop offset="0%" stop-color="#f6f3e8"></stop>
+          <stop offset="55%" stop-color="#d6d0c0"></stop>
+          <stop offset="100%" stop-color="#a39a86"></stop>
+        </radialGradient>
+      </defs>
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#moon-surface)"></circle>
+      <circle cx="${cx - r * 0.2}" cy="${cy - r * 0.1}" r="${r * 0.12}" fill="rgba(130,120,100,0.26)"></circle>
+      <circle cx="${cx + r * 0.24}" cy="${cy + r * 0.28}" r="${r * 0.09}" fill="rgba(130,120,100,0.22)"></circle>
+      <circle cx="${cx - r * 0.08}" cy="${cy + r * 0.34}" r="${r * 0.15}" fill="rgba(120,110,90,0.18)"></circle>
+      <circle cx="${cx + r * 0.34}" cy="${cy - r * 0.26}" r="${r * 0.06}" fill="rgba(120,110,90,0.18)"></circle>
+      ${shadowPath}
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(70,60,50,0.28)" stroke-width="2"></circle>
+    </svg>
+  `;
+}
+
+function degToRad(deg) {
+  return (deg * Math.PI) / 180;
+}
+
+function normalizeAngleDeg(deg) {
+  return ((deg % 360) + 360) % 360;
+}
+
+function toJulianDay(date) {
+  return date.getTime() / DAY_MS + 2440587.5;
+}
+
+function solveKepler(meanAnomalyRad, eccentricity) {
+  let E = meanAnomalyRad;
+  for (let i = 0; i < 8; i += 1) {
+    E -= (E - eccentricity * Math.sin(E) - meanAnomalyRad) / (1 - eccentricity * Math.cos(E));
+  }
+  return E;
+}
+
+function calculatePlanetPosition(name, date = new Date()) {
+  const planet = PLANET_ELEMENTS[name];
+  const days = toJulianDay(date) - J2000;
+  const Mdeg = normalizeAngleDeg(planet.L + planet.daily * days - planet.wBar);
+  const M = degToRad(Mdeg);
+  const E = solveKepler(M, planet.e);
+  const trueAnomaly = 2 * Math.atan2(
+    Math.sqrt(1 + planet.e) * Math.sin(E / 2),
+    Math.sqrt(1 - planet.e) * Math.cos(E / 2),
+  );
+  const longitude = trueAnomaly + degToRad(planet.wBar);
+  const r = planet.a * (1 - planet.e * Math.cos(E));
+  return {
+    name,
+    color: planet.color,
+    r,
+    x: r * Math.cos(longitude),
+    y: r * Math.sin(longitude),
+  };
+}
+
+function buildOrbitPath(name, scale, center, samples = 180) {
+  const planet = PLANET_ELEMENTS[name];
+  const wBar = degToRad(planet.wBar);
+  const points = [];
+  for (let i = 0; i <= samples; i += 1) {
+    const trueAnomaly = (Math.PI * 2 * i) / samples;
+    const radius = (planet.a * (1 - planet.e * planet.e)) / (1 + planet.e * Math.cos(trueAnomaly));
+    const angle = trueAnomaly + wBar;
+    const x = center + radius * Math.cos(angle) * scale;
+    const y = center + radius * Math.sin(angle) * scale;
+    points.push(`${i === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`);
+  }
+  return `${points.join(" ")} Z`;
+}
+
+function buildStarFieldSvg(width, height, count, seed = 42) {
+  let state = seed;
+  const stars = [];
+  for (let i = 0; i < count; i += 1) {
+    state = (1664525 * state + 1013904223) % 4294967296;
+    const x = ((state / 4294967296) * width).toFixed(2);
+    state = (1664525 * state + 1013904223) % 4294967296;
+    const y = ((state / 4294967296) * height).toFixed(2);
+    state = (1664525 * state + 1013904223) % 4294967296;
+    const r = (0.4 + (state / 4294967296) * 1.6).toFixed(2);
+    const opacity = (0.2 + (state / 4294967296) * 0.7).toFixed(2);
+    stars.push(`<circle cx="${x}" cy="${y}" r="${r}" fill="rgba(255,255,255,${opacity})"></circle>`);
+  }
+  return stars.join("");
+}
+
+class AstroEditorBase extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
     this._config = {};
+    this._hass = null;
+    this._rendered = false;
   }
 
-  setConfig(config) { this._config = { ...config }; this._render(); }
+  setConfig(config) {
+    this._config = { ...config };
+    if (this._rendered) this._updateValues();
+    else this._render();
+  }
 
-  set hass(hass) { this._hass = hass; this._render(); }
+  set hass(hass) {
+    this._hass = hass;
+    if (this._rendered) this._updateValues();
+    else this._render();
+  }
 
   _render() {
-    if (!this._hass) return;
     this.shadowRoot.innerHTML = `
       <style>${EDITOR_STYLES}</style>
-      <div class="editor">
-        <ha-entity-picker
-          .hass=${null}
-          label="APOD Entity"
-          value="${this._config.entity || ""}"
-          id="entity"
-        ></ha-entity-picker>
-        <label>
-          <ha-switch id="show_explanation" ${this._config.show_explanation !== false ? "checked" : ""}></ha-switch>
-          Show Explanation
-        </label>
-        <label>
-          <ha-switch id="show_copyright" ${this._config.show_copyright !== false ? "checked" : ""}></ha-switch>
-          Show Copyright
-        </label>
-        <label>
-          <ha-switch id="show_hd_link" ${this._config.show_hd_link ? "checked" : ""}></ha-switch>
-          Show HD Link
-        </label>
-      </div>
+      <div class="editor">${this._editorTemplate()}</div>
     `;
+    this._rendered = true;
+    this._setupListeners();
+    this._updateValues();
+  }
 
-    // Wire up entity picker
-    const picker = this.shadowRoot.getElementById("entity");
-    picker.hass = this._hass;
-    picker.addEventListener("value-changed", (e) => {
-      this._config = { ...this._config, entity: e.detail.value };
-      this._dispatch();
+  _updateValues() {
+    this.shadowRoot.querySelectorAll("ha-entity-picker").forEach((picker) => {
+      picker.hass = this._hass;
     });
+    this._syncValues();
+  }
 
-    // Wire up switches
-    ["show_explanation", "show_copyright", "show_hd_link"].forEach(key => {
-      const sw = this.shadowRoot.getElementById(key);
-      sw.addEventListener("change", (e) => {
-        this._config = { ...this._config, [key]: e.target.checked };
-        this._dispatch();
-      });
+  _setValue(key, value) {
+    this._config = { ...this._config, [key]: value };
+    dispatchConfigChanged(this);
+  }
+
+  _bindPicker(id, key) {
+    const field = this.shadowRoot.getElementById(id);
+    if (!field) return;
+    field.addEventListener("value-changed", (event) => {
+      this._setValue(key, event.detail.value);
     });
   }
 
-  _dispatch() {
-    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config } }));
+  _bindText(id, key, transform = (value) => value) {
+    const field = this.shadowRoot.getElementById(id);
+    if (!field) return;
+    field.addEventListener("change", (event) => {
+      this._setValue(key, transform(event.target.value));
+    });
+  }
+
+  _bindSwitch(id, key) {
+    const field = this.shadowRoot.getElementById(id);
+    if (!field) return;
+    field.addEventListener("change", (event) => {
+      this._setValue(key, event.target.checked);
+    });
+  }
+
+  _bindSelect(id, key, transform = (value) => value) {
+    const field = this.shadowRoot.getElementById(id);
+    if (!field) return;
+    field.addEventListener("change", (event) => {
+      this._setValue(key, transform(event.target.value));
+    });
+  }
+
+  _editorTemplate() { return ""; }
+  _setupListeners() {}
+  _syncValues() {}
+}
+
+class ApodCardEditor extends AstroEditorBase {
+  setConfig(config) {
+    super.setConfig({
+      entity: "sensor.nasa_astronomy_suite_apod",
+      show_explanation: true,
+      show_copyright: true,
+      show_hd_link: false,
+      show_date: true,
+      title: "",
+      image_height: 400,
+      ...config,
+    });
+  }
+
+  _editorTemplate() {
+    return `
+      <ha-entity-picker id="entity" label="APOD entity"></ha-entity-picker>
+      <ha-textfield id="title" label="Card title (optional)"></ha-textfield>
+      <ha-textfield id="image_height" label="Image height" type="number"></ha-textfield>
+      <label class="switch-row"><span>Show explanation</span><ha-switch id="show_explanation"></ha-switch></label>
+      <label class="switch-row"><span>Show copyright</span><ha-switch id="show_copyright"></ha-switch></label>
+      <label class="switch-row"><span>Show HD link</span><ha-switch id="show_hd_link"></ha-switch></label>
+      <label class="switch-row"><span>Show date</span><ha-switch id="show_date"></ha-switch></label>
+    `;
+  }
+
+  _setupListeners() {
+    this._bindPicker("entity", "entity");
+    this._bindText("title", "title", (value) => value.trim());
+    this._bindText("image_height", "image_height", (value) => clamp(parseInt(value, 10) || 400, 160, 1200));
+    ["show_explanation", "show_copyright", "show_hd_link", "show_date"].forEach((key) => this._bindSwitch(key, key));
+  }
+
+  _syncValues() {
+    setPickerValue(this.shadowRoot, "entity", this._hass, this._config.entity);
+    setTextValue(this.shadowRoot, "title", this._config.title || "");
+    setTextValue(this.shadowRoot, "image_height", this._config.image_height || 400);
+    setSwitchValue(this.shadowRoot, "show_explanation", this._config.show_explanation !== false);
+    setSwitchValue(this.shadowRoot, "show_copyright", this._config.show_copyright !== false);
+    setSwitchValue(this.shadowRoot, "show_hd_link", this._config.show_hd_link === true);
+    setSwitchValue(this.shadowRoot, "show_date", this._config.show_date !== false);
   }
 }
-customElements.define("apod-card-editor", ApodCardEditor);
 
-// ============================================================
-// APOD CARD
-// ============================================================
 class ApodCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
     this._config = {};
+    this._hass = null;
   }
 
   static getConfigElement() { return document.createElement("apod-card-editor"); }
-
   static getStubConfig() {
-    return { entity: "sensor.nasa_astronomy_suite_apod", show_explanation: true, show_copyright: true, show_hd_link: false };
+    return {
+      entity: "sensor.nasa_astronomy_suite_apod",
+      show_explanation: true,
+      show_copyright: true,
+      show_hd_link: false,
+      show_date: true,
+      title: "",
+      image_height: 400,
+    };
   }
 
   setConfig(config) {
     if (!config.entity) throw new Error("You must define an entity");
-    this._config = { show_explanation: true, show_copyright: true, show_hd_link: false, ...config };
+    this._config = { ...ApodCard.getStubConfig(), ...config };
   }
 
-  set hass(hass) { this._hass = hass; this._render(); }
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
 
   _render() {
-    if (!this._hass || !this._config.entity) return;
-    const stateObj = this._hass.states[this._config.entity];
+    if (!this._hass) return;
+    const stateObj = getState(this._hass, this._config.entity);
     if (!stateObj) {
-      this.shadowRoot.innerHTML = `<ha-card><div style="padding:24px;text-align:center;color:${ASTRO.text2}">Entity not found: ${esc(this._config.entity)}</div></ha-card>`;
+      this.shadowRoot.innerHTML = renderErrorCard(`Entity not found: ${this._config.entity}`);
       return;
     }
 
-    const a = stateObj.attributes;
-    const title = a.title || stateObj.state || "";
-    const explanation = a.explanation || "";
-    const url = a.url || "";
-    const hdurl = a.hdurl || "";
-    const date = a.date || "";
-    const mediaType = a.media_type || "image";
-    const copyright = a.copyright || "";
+    const attrs = stateObj.attributes || {};
+    const cardTitle = this._config.title || "Astronomy Picture of the Day";
+    const mediaTitle = attrs.title || stateObj.state || "APOD";
+    const explanation = attrs.explanation || "";
+    const url = attrs.url || "";
+    const hdurl = attrs.hdurl || "";
+    const date = attrs.date || "";
+    const mediaType = attrs.media_type || "image";
+    const copyright = attrs.copyright || "";
+    const imageHeight = clamp(parseInt(this._config.image_height, 10) || 400, 160, 1200);
 
-    const mediaHtml = mediaType === "image"
-      ? `<div class="apod-media">
-           <img src="${esc(url)}" alt="${esc(title)}" loading="lazy" />
-           <div class="apod-badge-wrap"><span class="astro-badge">NASA APOD</span></div>
-           <div class="apod-overlay">
-             <p class="apod-title">${esc(title)}</p>
-             <span class="apod-date">${esc(date)}</span>
-           </div>
-         </div>`
-      : `<div class="apod-video"><iframe src="${esc(url)}" allowfullscreen></iframe></div>
-         <div class="apod-text-header">
-           <span class="astro-badge">NASA APOD</span>
-           <p class="apod-title-text">${esc(title)}</p>
-           <span class="apod-date-text">${esc(date)}</span>
-         </div>`;
-
-    const explanationHtml = this._config.show_explanation && explanation
-      ? `<div class="apod-explanation">${esc(explanation)}</div>` : "";
-    const copyrightHtml = this._config.show_copyright && copyright
-      ? `<div class="apod-footer">© ${esc(copyright)}</div>` : "";
-    const hdHtml = this._config.show_hd_link && hdurl
-      ? `<div class="apod-hd"><a href="${esc(hdurl)}" target="_blank" rel="noopener">View HD Image ↗</a></div>` : "";
+    const mediaHtml = mediaType === "video"
+      ? `
+        <div class="apod-video" style="height:${imageHeight}px;">
+          <iframe src="${esc(url)}" title="${esc(mediaTitle)}" loading="lazy" allowfullscreen></iframe>
+        </div>
+      `
+      : `
+        <div class="apod-media" style="height:${imageHeight}px;">
+          <img src="${esc(url)}" alt="${esc(mediaTitle)}" loading="lazy" />
+          <div class="apod-overlay">
+            <div class="apod-media-title">${esc(mediaTitle)}</div>
+            ${this._config.show_date !== false && date ? `<div class="apod-media-date">${esc(date)}</div>` : ""}
+          </div>
+        </div>
+      `;
 
     this.shadowRoot.innerHTML = `
       <style>
         ${BASE_STYLES}
-        .apod-media { position:relative; width:100%; min-height:200px; overflow:hidden; }
-        .apod-media img { width:100%; height:auto; display:block; object-fit:cover; max-height:420px; }
-        .apod-badge-wrap { position:absolute; top:12px; left:12px; }
-        .apod-badge-wrap .astro-badge { background: rgba(0,0,0,0.5); color: white; backdrop-filter: blur(4px); }
-        .apod-overlay { position:absolute; bottom:0; left:0; right:0; background:linear-gradient(transparent, rgba(0,0,0,0.85)); padding:48px 16px 16px; color:white; }
-        .apod-title { font-size:1.05rem; font-weight:500; margin:0 0 4px; text-shadow:0 1px 2px rgba(0,0,0,0.4); }
-        .apod-date { font-size:0.78rem; opacity:0.75; }
-        .apod-video { position:relative; width:100%; padding-bottom:56.25%; }
-        .apod-video iframe { position:absolute; top:0; left:0; width:100%; height:100%; border:none; border-radius:${ASTRO.radius} ${ASTRO.radius} 0 0; }
-        .apod-text-header { padding:12px; }
-        .apod-title-text { font-size:1rem; font-weight:500; color:${ASTRO.text1}; margin:8px 0 4px; }
-        .apod-date-text { font-size:0.78rem; color:${ASTRO.text2}; }
-        .apod-explanation { padding:12px; font-size:0.84rem; line-height:1.5; color:${ASTRO.text2}; max-height:120px; overflow-y:auto; }
-        .apod-footer { padding:8px 12px 12px; font-size:0.72rem; color:${ASTRO.text2}; opacity:0.7; }
-        .apod-hd { padding:4px 12px 14px; }
-        .apod-hd a { font-size:0.78rem; color:${ASTRO.accent}; text-decoration:none; font-weight:500; }
-        .apod-hd a:hover { text-decoration:underline; }
+        .apod-scene { position: relative; }
+        .apod-media,
+        .apod-video {
+          position: relative;
+          width: 100%;
+          overflow: hidden;
+          background: #000;
+        }
+        .apod-media img,
+        .apod-video iframe {
+          width: 100%;
+          height: 100%;
+          display: block;
+          border: 0;
+          object-fit: cover;
+        }
+        .apod-overlay {
+          position: absolute;
+          inset: auto 0 0 0;
+          padding: 56px 16px 16px;
+          background: linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.85) 100%);
+          color: white;
+        }
+        .apod-media-title { font-size: 1rem; font-weight: 600; line-height: 1.35; }
+        .apod-media-date { margin-top: 4px; font-size: 0.78rem; opacity: 0.82; }
+        .apod-content { padding: 0 12px 14px; display: flex; flex-direction: column; gap: 12px; }
+        .apod-explanation {
+          font-size: 0.84rem;
+          line-height: 1.55;
+          color: ${ASTRO.text2};
+          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
+          border-radius: 12px;
+          padding: 12px;
+        }
+        .apod-meta,
+        .apod-links {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .apod-pill {
+          padding: 6px 10px;
+          border-radius: 999px;
+          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.05);
+          color: ${ASTRO.text2};
+          font-size: 0.75rem;
+        }
+        .apod-button {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          text-decoration: none;
+          color: ${ASTRO.accent};
+          background: rgba(var(--rgb-accent-color, 124,77,255), 0.1);
+          padding: 8px 12px;
+          border-radius: 999px;
+          font-size: 0.8rem;
+          font-weight: 600;
+        }
       </style>
-      <div class="astro-card">${mediaHtml}${explanationHtml}${hdHtml}${copyrightHtml}</div>
+      <ha-card class="astro-card">
+        <div class="astro-header">
+          <ha-icon icon="mdi:image-outline"></ha-icon>
+          <span class="astro-title">${esc(cardTitle)}</span>
+          <span class="astro-badge">NASA APOD</span>
+        </div>
+        <div class="apod-scene">${mediaHtml}</div>
+        <div class="apod-content">
+          ${this._config.show_explanation !== false && explanation ? `<div class="apod-explanation">${esc(explanation)}</div>` : ""}
+          <div class="apod-meta">
+            ${this._config.show_date !== false && date ? `<span class="apod-pill">${esc(date)}</span>` : ""}
+            ${this._config.show_copyright !== false && copyright ? `<span class="apod-pill">© ${esc(copyright)}</span>` : ""}
+            <span class="apod-pill">${esc(mediaType)}</span>
+          </div>
+          ${this._config.show_hd_link && hdurl ? `<div class="apod-links"><a class="apod-button" href="${esc(hdurl)}" target="_blank" rel="noopener">View HD image ↗</a></div>` : ""}
+        </div>
+      </ha-card>
     `;
   }
 
   getCardSize() { return 6; }
 }
 
-// ============================================================
-// NEO THREAT CARD CONFIG EDITOR
-// ============================================================
-class NeoThreatCardEditor extends HTMLElement {
-  constructor() {
-    super();
-    this.attachShadow({ mode: "open" });
-    this._config = {};
+class NeoThreatCardEditor extends AstroEditorBase {
+  setConfig(config) {
+    super.setConfig({
+      entity: "sensor.nasa_astronomy_suite_neo_count_today",
+      max_items: 5,
+      show_hazardous_only: false,
+      show_stats: true,
+      title: "",
+      show_velocity: true,
+      show_diameter: true,
+      ...config,
+    });
   }
 
-  setConfig(config) { this._config = { ...config }; this._render(); }
-  set hass(hass) { this._hass = hass; this._render(); }
-
-  _render() {
-    if (!this._hass) return;
-    this.shadowRoot.innerHTML = `
-      <style>${EDITOR_STYLES}</style>
-      <div class="editor">
-        <ha-entity-picker
-          label="NEO Count Entity"
-          value="${this._config.entity || ""}"
-          id="entity"
-        ></ha-entity-picker>
-        <ha-textfield
-          label="Max Items to Display"
-          type="number"
-          value="${this._config.max_items || 8}"
-          id="max_items"
-        ></ha-textfield>
-        <label>
-          <ha-switch id="show_hazardous_only" ${this._config.show_hazardous_only ? "checked" : ""}></ha-switch>
-          Show Hazardous Only
-        </label>
-        <label>
-          <ha-switch id="show_stats" ${this._config.show_stats !== false ? "checked" : ""}></ha-switch>
-          Show Statistics Row
-        </label>
-      </div>
+  _editorTemplate() {
+    return `
+      <ha-entity-picker id="entity" label="NEO count entity"></ha-entity-picker>
+      <ha-textfield id="title" label="Card title (optional)"></ha-textfield>
+      <ha-textfield id="max_items" label="Max items" type="number"></ha-textfield>
+      <label class="switch-row"><span>Show hazardous only</span><ha-switch id="show_hazardous_only"></ha-switch></label>
+      <label class="switch-row"><span>Show statistics</span><ha-switch id="show_stats"></ha-switch></label>
+      <label class="switch-row"><span>Show velocity</span><ha-switch id="show_velocity"></ha-switch></label>
+      <label class="switch-row"><span>Show diameter</span><ha-switch id="show_diameter"></ha-switch></label>
     `;
-
-    const picker = this.shadowRoot.getElementById("entity");
-    picker.hass = this._hass;
-    picker.addEventListener("value-changed", (e) => {
-      this._config = { ...this._config, entity: e.detail.value }; this._dispatch();
-    });
-    this.shadowRoot.getElementById("max_items").addEventListener("change", (e) => {
-      this._config = { ...this._config, max_items: parseInt(e.target.value) || 8 }; this._dispatch();
-    });
-    ["show_hazardous_only", "show_stats"].forEach(key => {
-      this.shadowRoot.getElementById(key).addEventListener("change", (e) => {
-        this._config = { ...this._config, [key]: e.target.checked }; this._dispatch();
-      });
-    });
   }
 
-  _dispatch() {
-    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config } }));
+  _setupListeners() {
+    this._bindPicker("entity", "entity");
+    this._bindText("title", "title", (value) => value.trim());
+    this._bindText("max_items", "max_items", (value) => clamp(parseInt(value, 10) || 5, 1, 20));
+    ["show_hazardous_only", "show_stats", "show_velocity", "show_diameter"].forEach((key) => this._bindSwitch(key, key));
+  }
+
+  _syncValues() {
+    setPickerValue(this.shadowRoot, "entity", this._hass, this._config.entity);
+    setTextValue(this.shadowRoot, "title", this._config.title || "");
+    setTextValue(this.shadowRoot, "max_items", this._config.max_items || 5);
+    setSwitchValue(this.shadowRoot, "show_hazardous_only", this._config.show_hazardous_only === true);
+    setSwitchValue(this.shadowRoot, "show_stats", this._config.show_stats !== false);
+    setSwitchValue(this.shadowRoot, "show_velocity", this._config.show_velocity !== false);
+    setSwitchValue(this.shadowRoot, "show_diameter", this._config.show_diameter !== false);
   }
 }
-customElements.define("neo-threat-card-editor", NeoThreatCardEditor);
 
-// ============================================================
-// NEO THREAT CARD
-// ============================================================
 class NeoThreatCard extends HTMLElement {
   constructor() {
     super();
@@ -364,200 +807,180 @@ class NeoThreatCard extends HTMLElement {
   }
 
   static getConfigElement() { return document.createElement("neo-threat-card-editor"); }
-
   static getStubConfig() {
-    return { entity: "sensor.nasa_astronomy_suite_neo_count_today", max_items: 8, show_hazardous_only: false, show_stats: true };
+    return {
+      entity: "sensor.nasa_astronomy_suite_neo_count_today",
+      max_items: 5,
+      show_hazardous_only: false,
+      show_stats: true,
+      title: "",
+      show_velocity: true,
+      show_diameter: true,
+    };
   }
 
   setConfig(config) {
     if (!config.entity) throw new Error("You must define an entity");
-    this._config = { max_items: 8, show_hazardous_only: false, show_stats: true, ...config };
+    this._config = { ...NeoThreatCard.getStubConfig(), ...config };
   }
 
-  set hass(hass) { this._hass = hass; this._render(); }
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
 
   _render() {
-    if (!this._hass || !this._config.entity) return;
-    const stateObj = this._hass.states[this._config.entity];
+    if (!this._hass) return;
+    const stateObj = getState(this._hass, this._config.entity);
     if (!stateObj) {
-      this.shadowRoot.innerHTML = `<div class="astro-card" style="padding:24px;text-align:center;color:${ASTRO.text2}">Entity not found</div>`;
+      this.shadowRoot.innerHTML = renderErrorCard(`Entity not found: ${this._config.entity}`);
       return;
     }
 
-    const attrs = stateObj.attributes;
-    let neoList = attrs.neo_list || [];
-    const hazardousCount = attrs.hazardous_count || 0;
-    const totalCount = attrs.total_count || parseInt(stateObj.state) || 0;
+    const attrs = stateObj.attributes || {};
+    let neoList = safeArray(attrs.neo_list).map((item) => ({ ...item }));
+    if (this._config.show_hazardous_only) neoList = neoList.filter((item) => item.hazardous);
 
-    if (this._config.show_hazardous_only) {
-      neoList = neoList.filter(n => n.hazardous);
-    }
-
-    const sorted = [...neoList].sort((a, b) => (a.miss_distance_km || Infinity) - (b.miss_distance_km || Infinity));
-    const displayed = sorted.slice(0, this._config.max_items);
+    const sorted = [...neoList].sort((a, b) => toNumber(a.miss_distance_km, Infinity) - toNumber(b.miss_distance_km, Infinity));
+    const displayed = sorted.slice(0, clamp(parseInt(this._config.max_items, 10) || 5, 1, 20));
+    const hazardousCount = sorted.filter((item) => item.hazardous).length || toNumber(attrs.hazardous_count, 0);
+    const totalCount = sorted.length || toNumber(attrs.total_count, 0);
     const closest = sorted[0];
-    const fastest = [...neoList].sort((a, b) => (b.velocity_kmh || 0) - (a.velocity_kmh || 0))[0];
+    const fastest = [...sorted].sort((a, b) => toNumber(b.velocity_kmh, 0) - toNumber(a.velocity_kmh, 0))[0];
+    const title = this._config.title || "Near-Earth Objects";
 
-    const badgeClass = hazardousCount > 0 ? "danger" : "";
-    const badgeText = hazardousCount > 0 ? `⚠ ${hazardousCount} hazardous` : `${totalCount} tracked`;
-
-    const statsHtml = this._config.show_stats ? `
-      <div class="astro-stat-grid cols-3">
-        <div class="astro-stat"><div class="astro-stat-value">${totalCount}</div><div class="astro-stat-label">Total</div></div>
-        <div class="astro-stat"><div class="astro-stat-value">${closest ? this._fmtDist(closest.miss_distance_km) : '—'}</div><div class="astro-stat-label">Closest</div></div>
-        <div class="astro-stat"><div class="astro-stat-value">${fastest ? this._fmtSpeed(fastest.velocity_kmh) : '—'}</div><div class="astro-stat-label">Fastest</div></div>
-      </div>
-    ` : "";
-
-    const listHtml = displayed.map(neo => `
-      <div class="neo-item">
-        <div class="neo-dot ${neo.hazardous ? 'danger' : ''}"></div>
-        <div class="neo-info">
-          <div class="neo-name">${esc(neo.name || '')}</div>
-          <div class="neo-detail">⌀ ${neo.diameter_max_m ? neo.diameter_max_m.toFixed(0) : '?'}m · ${this._fmtSpeed(neo.velocity_kmh)}</div>
-        </div>
-        <div class="neo-dist">${this._fmtDist(neo.miss_distance_km)}</div>
-      </div>
-    `).join("");
+    const listHtml = displayed.length
+      ? displayed.map((neo) => {
+          const detail = [];
+          if (this._config.show_diameter !== false) detail.push(`⌀ ${formatMeters(neo.diameter_max_m || neo.diameter_min_m)}`);
+          if (this._config.show_velocity !== false) detail.push(formatSpeedKmh(neo.velocity_kmh));
+          if (neo.close_approach_date) detail.push(formatDateTime(neo.close_approach_date));
+          return `
+            <div class="neo-item ${neo.hazardous ? "danger" : ""}">
+              <div class="neo-dot ${neo.hazardous ? "danger" : "safe"}"></div>
+              <div class="neo-copy">
+                <div class="neo-name">${esc(neo.name || "Unnamed object")}</div>
+                <div class="neo-detail">${esc(detail.join(" · "))}</div>
+              </div>
+              <div class="neo-distance">${formatDistanceKm(neo.miss_distance_km)}</div>
+            </div>
+          `;
+        }).join("")
+      : `<div class="neo-empty">No NEO objects available for the current filter.</div>`;
 
     this.shadowRoot.innerHTML = `
       <style>
         ${BASE_STYLES}
-        .neo-body { padding: 0 12px 12px; }
+        .neo-list { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 14px; }
         .neo-item {
-          display: grid; grid-template-columns: auto 1fr auto;
-          align-items: center; gap: 10px; padding: 10px 12px;
-          border-radius: var(--ha-card-border-radius, 12px);
+          display: grid;
+          grid-template-columns: auto 1fr auto;
+          gap: 10px;
+          align-items: center;
+          padding: 12px;
+          border-radius: 14px;
           background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
-          margin-bottom: 6px; transition: background 0.15s;
         }
-        .neo-item:hover { background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.08); }
+        .neo-item.danger { box-shadow: inset 0 0 0 1px rgba(var(--rgb-error-color, 244,67,54), 0.18); }
         .neo-dot {
-          width: 8px; height: 8px; border-radius: 50%;
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
           background: ${ASTRO.success};
-          flex-shrink: 0;
         }
         .neo-dot.danger {
           background: ${ASTRO.error};
-          animation: neo-pulse 2s infinite;
+          box-shadow: 0 0 0 6px rgba(var(--rgb-error-color, 244,67,54), 0.12);
         }
-        @keyframes neo-pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
-        .neo-info { min-width: 0; }
+        .neo-copy { min-width: 0; }
         .neo-name {
-          font-size: 0.84rem; font-weight: 500; color: ${ASTRO.text1};
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          font-size: 0.84rem;
+          font-weight: 600;
+          color: ${ASTRO.text1};
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
-        .neo-detail { font-size: 0.72rem; color: ${ASTRO.text2}; margin-top: 2px; }
-        .neo-dist {
-          font-size: 0.8rem; font-weight: 500; color: ${ASTRO.text1};
-          text-align: right; white-space: nowrap;
+        .neo-detail { font-size: 0.73rem; color: ${ASTRO.text2}; margin-top: 3px; }
+        .neo-distance { font-size: 0.8rem; font-weight: 600; color: ${ASTRO.text1}; text-align: right; }
+        .neo-empty {
+          padding: 0 12px 16px;
+          color: ${ASTRO.text2};
+          font-size: 0.84rem;
         }
       </style>
-      <div class="astro-card">
+      <ha-card class="astro-card">
         <div class="astro-header">
           <ha-icon icon="mdi:meteor"></ha-icon>
-          <span class="astro-title">Near Earth Objects</span>
-          <span class="astro-badge ${badgeClass}">${badgeText}</span>
+          <span class="astro-title">${esc(title)}</span>
+          <span class="astro-badge ${hazardousCount > 0 ? "danger" : ""}">${hazardousCount > 0 ? `${hazardousCount} hazardous` : `${totalCount} tracked`}</span>
         </div>
-        ${statsHtml}
-        <div class="neo-body">${listHtml}</div>
-      </div>
+        ${this._config.show_stats !== false ? `
+          <div class="astro-stat-grid cols-3">
+            <div class="astro-stat"><div class="astro-stat-value">${totalCount}</div><div class="astro-stat-label">Objects</div></div>
+            <div class="astro-stat"><div class="astro-stat-value">${closest ? formatDistanceKm(closest.miss_distance_km) : "—"}</div><div class="astro-stat-label">Closest</div></div>
+            <div class="astro-stat"><div class="astro-stat-value">${fastest ? formatSpeedKmh(fastest.velocity_kmh) : "—"}</div><div class="astro-stat-label">Fastest</div></div>
+          </div>
+        ` : ""}
+        <div class="neo-list">${listHtml}</div>
+      </ha-card>
     `;
-  }
-
-  _fmtDist(km) {
-    if (!km) return "—";
-    if (km > 1000000) return `${(km/1000000).toFixed(1)}M km`;
-    if (km > 1000) return `${(km/1000).toFixed(0)}K km`;
-    return `${km.toFixed(0)} km`;
-  }
-
-  _fmtSpeed(kmh) {
-    if (!kmh) return "—";
-    return `${(kmh/1000).toFixed(0)}K km/h`;
   }
 
   getCardSize() { return 5; }
 }
 
-// ============================================================
-// SOLAR ACTIVITY CARD CONFIG EDITOR
-// ============================================================
-class SolarActivityCardEditor extends HTMLElement {
-  constructor() {
-    super();
-    this.attachShadow({ mode: "open" });
-    this._config = {};
+class SolarActivityCardEditor extends AstroEditorBase {
+  setConfig(config) {
+    super.setConfig({
+      cme_entity: "sensor.nasa_astronomy_suite_coronal_mass_ejections",
+      flare_entity: "sensor.nasa_astronomy_suite_solar_flares",
+      storm_entity: "sensor.nasa_astronomy_suite_geomagnetic_storms",
+      title: "",
+      show_cme: true,
+      show_flares: true,
+      show_storms: true,
+      time_range: 7,
+      ...config,
+    });
   }
 
-  setConfig(config) { this._config = { ...config }; this._render(); }
-  set hass(hass) { this._hass = hass; this._render(); }
-
-  _render() {
-    if (!this._hass) return;
-    this.shadowRoot.innerHTML = `
-      <style>${EDITOR_STYLES}</style>
-      <div class="editor">
-        <ha-entity-picker
-          label="CME Entity"
-          value="${this._config.cme_entity || ""}"
-          id="cme_entity"
-        ></ha-entity-picker>
-        <ha-entity-picker
-          label="Solar Flare Entity"
-          value="${this._config.flare_entity || ""}"
-          id="flare_entity"
-        ></ha-entity-picker>
-        <ha-entity-picker
-          label="Geomagnetic Storm Entity"
-          value="${this._config.storm_entity || ""}"
-          id="storm_entity"
-        ></ha-entity-picker>
-        <label>
-          <ha-switch id="show_timeline" ${this._config.show_timeline !== false ? "checked" : ""}></ha-switch>
-          Show Event Timeline
-        </label>
-        <label>
-          <ha-switch id="show_status_bar" ${this._config.show_status_bar !== false ? "checked" : ""}></ha-switch>
-          Show Status Indicator
-        </label>
-        <ha-textfield
-          label="Max Timeline Events"
-          type="number"
-          value="${this._config.max_events || 6}"
-          id="max_events"
-        ></ha-textfield>
+  _editorTemplate() {
+    return `
+      <ha-entity-picker id="cme_entity" label="CME entity"></ha-entity-picker>
+      <ha-entity-picker id="flare_entity" label="Solar flare entity"></ha-entity-picker>
+      <ha-entity-picker id="storm_entity" label="Geomagnetic storm entity"></ha-entity-picker>
+      <ha-textfield id="title" label="Card title (optional)"></ha-textfield>
+      <label class="switch-row"><span>Show CMEs</span><ha-switch id="show_cme"></ha-switch></label>
+      <label class="switch-row"><span>Show flares</span><ha-switch id="show_flares"></ha-switch></label>
+      <label class="switch-row"><span>Show storms</span><ha-switch id="show_storms"></ha-switch></label>
+      <div class="editor-section">
+        <div class="editor-title">Time range</div>
+        <select id="time_range" class="native-select">
+          <option value="7">Last 7 days</option>
+          <option value="30">Last 30 days</option>
+        </select>
       </div>
     `;
-
-    ["cme_entity", "flare_entity", "storm_entity"].forEach(key => {
-      const picker = this.shadowRoot.getElementById(key);
-      picker.hass = this._hass;
-      picker.addEventListener("value-changed", (e) => {
-        this._config = { ...this._config, [key]: e.detail.value }; this._dispatch();
-      });
-    });
-
-    ["show_timeline", "show_status_bar"].forEach(key => {
-      this.shadowRoot.getElementById(key).addEventListener("change", (e) => {
-        this._config = { ...this._config, [key]: e.target.checked }; this._dispatch();
-      });
-    });
-
-    this.shadowRoot.getElementById("max_events").addEventListener("change", (e) => {
-      this._config = { ...this._config, max_events: parseInt(e.target.value) || 6 }; this._dispatch();
-    });
   }
 
-  _dispatch() {
-    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config } }));
+  _setupListeners() {
+    ["cme_entity", "flare_entity", "storm_entity"].forEach((key) => this._bindPicker(key, key));
+    this._bindText("title", "title", (value) => value.trim());
+    ["show_cme", "show_flares", "show_storms"].forEach((key) => this._bindSwitch(key, key));
+    this._bindSelect("time_range", "time_range", (value) => (String(value) === "30" ? 30 : 7));
+  }
+
+  _syncValues() {
+    ["cme_entity", "flare_entity", "storm_entity"].forEach((key) => setPickerValue(this.shadowRoot, key, this._hass, this._config[key]));
+    setTextValue(this.shadowRoot, "title", this._config.title || "");
+    setSwitchValue(this.shadowRoot, "show_cme", this._config.show_cme !== false);
+    setSwitchValue(this.shadowRoot, "show_flares", this._config.show_flares !== false);
+    setSwitchValue(this.shadowRoot, "show_storms", this._config.show_storms !== false);
+    setSelectValue(this.shadowRoot, "time_range", this._config.time_range || 7);
   }
 }
-customElements.define("solar-activity-card-editor", SolarActivityCardEditor);
 
-// ============================================================
-// SOLAR ACTIVITY CARD
-// ============================================================
 class SolarActivityCard extends HTMLElement {
   constructor() {
     super();
@@ -566,15 +989,16 @@ class SolarActivityCard extends HTMLElement {
   }
 
   static getConfigElement() { return document.createElement("solar-activity-card-editor"); }
-
   static getStubConfig() {
     return {
       cme_entity: "sensor.nasa_astronomy_suite_coronal_mass_ejections",
       flare_entity: "sensor.nasa_astronomy_suite_solar_flares",
       storm_entity: "sensor.nasa_astronomy_suite_geomagnetic_storms",
-      show_timeline: true,
-      show_status_bar: true,
-      max_events: 6,
+      title: "",
+      show_cme: true,
+      show_flares: true,
+      show_storms: true,
+      time_range: 7,
     };
   }
 
@@ -582,231 +1006,170 @@ class SolarActivityCard extends HTMLElement {
     if (!config.cme_entity || !config.flare_entity || !config.storm_entity) {
       throw new Error("You must define cme_entity, flare_entity, and storm_entity");
     }
-    this._config = { show_timeline: true, show_status_bar: true, max_events: 6, ...config };
+    this._config = { ...SolarActivityCard.getStubConfig(), ...config };
   }
 
-  set hass(hass) { this._hass = hass; this._render(); }
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  _collectEvents(stateObj, kind, timeRange) {
+    const now = Date.now();
+    return safeArray(stateObj?.attributes?.events)
+      .map((event) => {
+        const stamp = event.start_time || event.begin_time || event.peak_time || event.end_time;
+        const date = parseDate(stamp);
+        const ageDays = date ? (now - date.getTime()) / DAY_MS : Infinity;
+        const label = kind === "cme"
+          ? "Coronal mass ejection"
+          : kind === "flare"
+            ? `Solar flare${event.class_type ? ` (${event.class_type})` : ""}`
+            : `Geomagnetic storm${event.kp_index != null ? ` (Kp ${event.kp_index})` : ""}`;
+        return {
+          kind,
+          label,
+          stamp,
+          date,
+          ageDays,
+          meta: kind === "flare"
+            ? event.class_type || ""
+            : kind === "storm"
+              ? event.kp_index != null ? `Kp ${event.kp_index}` : ""
+              : event.note || "",
+        };
+      })
+      .filter((event) => event.date && event.ageDays <= timeRange)
+      .sort((a, b) => b.date - a.date);
+  }
 
   _render() {
     if (!this._hass) return;
-    const cmeState = this._hass.states[this._config.cme_entity];
-    const flareState = this._hass.states[this._config.flare_entity];
-    const stormState = this._hass.states[this._config.storm_entity];
+    const cmeState = getState(this._hass, this._config.cme_entity);
+    const flareState = getState(this._hass, this._config.flare_entity);
+    const stormState = getState(this._hass, this._config.storm_entity);
+    const timeRange = this._config.time_range === 30 ? 30 : 7;
 
-    const cmeCount = cmeState ? parseInt(cmeState.state) || 0 : 0;
-    const flareCount = flareState ? parseInt(flareState.state) || 0 : 0;
-    const stormCount = stormState ? parseInt(stormState.state) || 0 : 0;
-    const total = cmeCount + flareCount + stormCount;
+    const sections = [
+      { enabled: this._config.show_cme !== false, kind: "cme", title: "CMEs", icon: "💥", color: ASTRO.cme, state: cmeState, events: this._collectEvents(cmeState, "cme", timeRange), count: toNumber(cmeState?.state, 0) },
+      { enabled: this._config.show_flares !== false, kind: "flare", title: "Flares", icon: "☀️", color: ASTRO.flare, state: flareState, events: this._collectEvents(flareState, "flare", timeRange), count: toNumber(flareState?.state, 0) },
+      { enabled: this._config.show_storms !== false, kind: "storm", title: "Storms", icon: "🌊", color: ASTRO.storm, state: stormState, events: this._collectEvents(stormState, "storm", timeRange), count: toNumber(stormState?.state, 0) },
+    ].filter((section) => section.enabled);
 
-    const statusClass = total > 10 ? "intense" : total > 3 ? "active" : "calm";
-    const statusText = total > 10 ? "⚠ Intense Solar Activity" : total > 3 ? "☀ Elevated Activity" : "✓ Solar Conditions Calm";
+    if (!sections.length) {
+      this.shadowRoot.innerHTML = renderErrorCard("Enable at least one solar activity feed in the card editor.", "mdi:white-balance-sunny");
+      return;
+    }
 
-    const statusHtml = this._config.show_status_bar ? `
-      <div class="solar-status ${statusClass}">${statusText}</div>
-    ` : "";
-
-    const timelineEvents = this._buildTimeline(cmeState, flareState, stormState);
-    const maxEvt = this._config.max_events || 6;
-    const timelineHtml = this._config.show_timeline && timelineEvents.length > 0 ? `
-      <div class="solar-timeline">
-        <div class="solar-tl-title">Recent Events</div>
-        <div class="solar-tl-list">
-          ${timelineEvents.slice(0, maxEvt).map(e => `
-            <div class="solar-evt">
-              <div class="solar-evt-dot ${e.category}"></div>
-              <div class="solar-evt-info">
-                <div class="solar-evt-type">${esc(e.label)}</div>
-                <div class="solar-evt-time">${esc(e.time)}</div>
-              </div>
-              ${e.classType ? `<span class="solar-evt-class">${esc(e.classType)}</span>` : ""}
-            </div>
-          `).join("")}
-        </div>
-      </div>
-    ` : "";
+    const total = sections.reduce((sum, section) => sum + section.count, 0);
+    const status = total >= 10 ? { label: "Intense activity", className: "danger" } : total >= 3 ? { label: "Elevated activity", className: "warn" } : { label: "Calm conditions", className: "" };
+    const timeline = sections.flatMap((section) => section.events.map((event) => ({ ...event, color: section.color }))).sort((a, b) => b.date - a.date).slice(0, 6);
 
     this.shadowRoot.innerHTML = `
       <style>
         ${BASE_STYLES}
-        .solar-body { padding: 0 12px 12px; }
-        .solar-status {
-          display: flex; align-items: center; gap: 6px;
-          padding: 8px 12px; border-radius: var(--ha-card-border-radius, 12px);
-          margin: 0 12px 12px; font-size: 0.8rem; font-weight: 500;
-        }
-        .solar-status.calm { background: rgba(var(--rgb-success-color, 76,175,80), 0.1); color: ${ASTRO.success}; }
-        .solar-status.active { background: rgba(var(--rgb-warning-color, 255,152,0), 0.1); color: ${ASTRO.warning}; }
-        .solar-status.intense { background: rgba(var(--rgb-error-color, 244,67,54), 0.1); color: ${ASTRO.error}; }
+        .solar-grid { display: grid; grid-template-columns: repeat(${Math.min(sections.length, 3)}, 1fr); gap: 8px; padding: 0 12px; margin-bottom: 12px; }
         .solar-metric {
+          position: relative;
+          border-radius: 14px;
           background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
-          border-radius: var(--ha-card-border-radius, 12px);
-          padding: 14px 10px; text-align: center;
-          position: relative; overflow: hidden;
+          padding: 14px 10px;
+          text-align: center;
+          overflow: hidden;
         }
-        .solar-metric::before {
-          content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
-        }
-        .solar-metric.cme::before { background: ${ASTRO.cme}; }
-        .solar-metric.flare::before { background: ${ASTRO.flare}; }
-        .solar-metric.storm::before { background: ${ASTRO.storm}; }
-        .solar-metric-icon { font-size: 1.3rem; margin-bottom: 4px; }
-        .solar-metric-value { font-size: 1.5rem; font-weight: 600; color: ${ASTRO.text1}; }
-        .solar-metric-label { font-size: 0.68rem; color: ${ASTRO.text2}; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.3px; font-weight: 500; }
-        .solar-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; padding: 0 12px; margin-bottom: 14px; }
-        .solar-timeline { border-top: 1px solid ${ASTRO.divider}; margin: 0 12px; padding-top: 12px; padding-bottom: 4px; }
-        .solar-tl-title { font-size: 0.72rem; font-weight: 500; color: ${ASTRO.text2}; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
-        .solar-tl-list { display: flex; flex-direction: column; gap: 6px; }
-        .solar-evt {
-          display: flex; align-items: center; gap: 10px;
-          padding: 9px 12px; border-radius: var(--ha-card-border-radius, 12px);
+        .solar-metric::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--metric-color); }
+        .solar-icon { font-size: 1.25rem; margin-bottom: 4px; }
+        .solar-value { font-size: 1.45rem; font-weight: 700; color: ${ASTRO.text1}; }
+        .solar-label { font-size: 0.7rem; color: ${ASTRO.text2}; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.05em; }
+        .solar-list { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 14px; }
+        .solar-item {
+          display: grid;
+          grid-template-columns: auto 1fr auto;
+          gap: 10px;
+          align-items: center;
+          border-radius: 14px;
           background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
+          padding: 10px 12px;
         }
-        .solar-evt-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-        .solar-evt-dot.cme { background: ${ASTRO.cme}; }
-        .solar-evt-dot.flare { background: ${ASTRO.flare}; }
-        .solar-evt-dot.storm { background: ${ASTRO.storm}; }
-        .solar-evt-info { flex: 1; min-width: 0; }
-        .solar-evt-type { font-size: 0.78rem; font-weight: 500; color: ${ASTRO.text1}; }
-        .solar-evt-time { font-size: 0.7rem; color: ${ASTRO.text2}; }
-        .solar-evt-class {
-          font-size: 0.72rem; font-weight: 500; padding: 3px 8px;
-          border-radius: 8px;
-          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.06);
-          color: ${ASTRO.text1};
-        }
+        .solar-dot { width: 10px; height: 10px; border-radius: 50%; }
+        .solar-copy { min-width: 0; }
+        .solar-item-title { font-size: 0.8rem; font-weight: 600; color: ${ASTRO.text1}; }
+        .solar-item-meta { font-size: 0.72rem; color: ${ASTRO.text2}; margin-top: 3px; }
+        .solar-item-time { font-size: 0.74rem; color: ${ASTRO.text2}; text-align: right; }
       </style>
-      <div class="astro-card">
+      <ha-card class="astro-card">
         <div class="astro-header">
           <ha-icon icon="mdi:white-balance-sunny"></ha-icon>
-          <span class="astro-title">Solar Activity Monitor</span>
+          <span class="astro-title">${esc(this._config.title || "Solar Activity Monitor")}</span>
+          <span class="astro-badge ${status.className}">${esc(status.label)}</span>
         </div>
-        ${statusHtml}
         <div class="solar-grid">
-          <div class="solar-metric cme">
-            <div class="solar-metric-icon">💥</div>
-            <div class="solar-metric-value">${cmeCount}</div>
-            <div class="solar-metric-label">CMEs (7d)</div>
-          </div>
-          <div class="solar-metric flare">
-            <div class="solar-metric-icon">☀️</div>
-            <div class="solar-metric-value">${flareCount}</div>
-            <div class="solar-metric-label">Flares (7d)</div>
-          </div>
-          <div class="solar-metric storm">
-            <div class="solar-metric-icon">🌊</div>
-            <div class="solar-metric-value">${stormCount}</div>
-            <div class="solar-metric-label">Storms (30d)</div>
-          </div>
+          ${sections.map((section) => `
+            <div class="solar-metric" style="--metric-color:${section.color}">
+              <div class="solar-icon">${section.icon}</div>
+              <div class="solar-value">${section.count}</div>
+              <div class="solar-label">${esc(section.title)} · ${timeRange}d</div>
+            </div>
+          `).join("")}
         </div>
-        ${timelineHtml}
-      </div>
+        <div class="solar-list">
+          ${timeline.length
+            ? timeline.map((event) => `
+              <div class="solar-item">
+                <div class="solar-dot" style="background:${event.color}"></div>
+                <div class="solar-copy">
+                  <div class="solar-item-title">${esc(event.label)}</div>
+                  <div class="solar-item-meta">${esc(event.meta || `${timeRange}-day window`)}</div>
+                </div>
+                <div class="solar-item-time">${esc(formatDateTime(event.stamp))}</div>
+              </div>
+            `).join("")
+            : `<div class="solar-item"><div class="solar-dot" style="background:${ASTRO.info}"></div><div class="solar-copy"><div class="solar-item-title">No recent events</div><div class="solar-item-meta">No solar events recorded in the selected time range.</div></div><div class="solar-item-time">${timeRange}d</div></div>`}
+        </div>
+      </ha-card>
     `;
-  }
-
-  _buildTimeline(cmeState, flareState, stormState) {
-    const events = [];
-    if (cmeState?.attributes?.events) {
-      for (const e of cmeState.attributes.events) {
-        events.push({ category: "cme", label: "Coronal Mass Ejection", time: this._fmtTime(e.start_time), sortTime: e.start_time || "" });
-      }
-    }
-    if (flareState?.attributes?.events) {
-      for (const e of flareState.attributes.events) {
-        events.push({ category: "flare", label: "Solar Flare", time: this._fmtTime(e.begin_time), classType: e.class_type, sortTime: e.begin_time || "" });
-      }
-    }
-    if (stormState?.attributes?.events) {
-      for (const e of stormState.attributes.events) {
-        events.push({ category: "storm", label: `Geomagnetic Storm${e.kp_index ? ' (Kp' + e.kp_index + ')' : ''}`, time: this._fmtTime(e.start_time), sortTime: e.start_time || "" });
-      }
-    }
-    events.sort((a, b) => b.sortTime > a.sortTime ? 1 : -1);
-    return events;
-  }
-
-  _fmtTime(t) {
-    if (!t) return "Unknown";
-    try { const d = new Date(t); return d.toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
-    catch { return t; }
   }
 
   getCardSize() { return 5; }
 }
 
-// ============================================================
-// ASTRO HORIZON CARD CONFIG EDITOR
-// ============================================================
-class AstroHorizonCardEditor extends HTMLElement {
-  constructor() {
-    super();
-    this.attachShadow({ mode: "open" });
-    this._config = {};
+class AstroHorizonCardEditor extends AstroEditorBase {
+  setConfig(config) {
+    super.setConfig({
+      sun_entity: "sun.sun",
+      title: "",
+      show_elevation: true,
+      show_azimuth: true,
+      show_times: true,
+      ...config,
+    });
   }
 
-  setConfig(config) { this._config = { ...config }; this._render(); }
-  set hass(hass) { this._hass = hass; this._render(); }
-
-  _render() {
-    if (!this._hass) return;
-    this.shadowRoot.innerHTML = `
-      <style>${EDITOR_STYLES}</style>
-      <div class="editor">
-        <ha-entity-picker
-          label="Sun Entity"
-          value="${this._config.sun_entity || "sun.sun"}"
-          id="sun_entity"
-        ></ha-entity-picker>
-        <ha-entity-picker
-          label="Moon Entity (optional)"
-          value="${this._config.moon_entity || ""}"
-          id="moon_entity"
-        ></ha-entity-picker>
-        <label>
-          <ha-switch id="show_moon" ${this._config.show_moon !== false ? "checked" : ""}></ha-switch>
-          Show Moon
-        </label>
-        <label>
-          <ha-switch id="show_azimuth" ${this._config.show_azimuth !== false ? "checked" : ""}></ha-switch>
-          Show Azimuth
-        </label>
-        <label>
-          <ha-switch id="show_elevation" ${this._config.show_elevation !== false ? "checked" : ""}></ha-switch>
-          Show Elevation
-        </label>
-        <label>
-          <ha-switch id="show_noon_line" ${this._config.show_noon_line !== false ? "checked" : ""}></ha-switch>
-          Show Noon Line
-        </label>
-        <label>
-          <ha-switch id="dark_mode" ${this._config.dark_mode !== false ? "checked" : ""}></ha-switch>
-          Dark Mode
-        </label>
-      </div>
+  _editorTemplate() {
+    return `
+      <ha-entity-picker id="sun_entity" label="Sun entity"></ha-entity-picker>
+      <ha-textfield id="title" label="Card title (optional)"></ha-textfield>
+      <label class="switch-row"><span>Show elevation</span><ha-switch id="show_elevation"></ha-switch></label>
+      <label class="switch-row"><span>Show azimuth</span><ha-switch id="show_azimuth"></ha-switch></label>
+      <label class="switch-row"><span>Show times</span><ha-switch id="show_times"></ha-switch></label>
     `;
-
-    ["sun_entity", "moon_entity"].forEach(key => {
-      const picker = this.shadowRoot.getElementById(key);
-      picker.hass = this._hass;
-      picker.addEventListener("value-changed", (e) => {
-        this._config = { ...this._config, [key]: e.detail.value }; this._dispatch();
-      });
-    });
-    ["show_moon", "show_azimuth", "show_elevation", "show_noon_line", "dark_mode"].forEach(key => {
-      this.shadowRoot.getElementById(key).addEventListener("change", (e) => {
-        this._config = { ...this._config, [key]: e.target.checked }; this._dispatch();
-      });
-    });
   }
 
-  _dispatch() {
-    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config } }));
+  _setupListeners() {
+    this._bindPicker("sun_entity", "sun_entity");
+    this._bindText("title", "title", (value) => value.trim());
+    ["show_elevation", "show_azimuth", "show_times"].forEach((key) => this._bindSwitch(key, key));
+  }
+
+  _syncValues() {
+    setPickerValue(this.shadowRoot, "sun_entity", this._hass, this._config.sun_entity || "sun.sun");
+    setTextValue(this.shadowRoot, "title", this._config.title || "");
+    setSwitchValue(this.shadowRoot, "show_elevation", this._config.show_elevation !== false);
+    setSwitchValue(this.shadowRoot, "show_azimuth", this._config.show_azimuth !== false);
+    setSwitchValue(this.shadowRoot, "show_times", this._config.show_times !== false);
   }
 }
-customElements.define("astro-horizon-card-editor", AstroHorizonCardEditor);
 
-// ============================================================
-// ASTRO HORIZON CARD
-// ============================================================
 class AstroHorizonCard extends HTMLElement {
   constructor() {
     super();
@@ -815,293 +1178,186 @@ class AstroHorizonCard extends HTMLElement {
   }
 
   static getConfigElement() { return document.createElement("astro-horizon-card-editor"); }
-
   static getStubConfig() {
-    return { sun_entity: "sun.sun", moon_entity: "sensor.moon_phase", show_moon: true, show_azimuth: true, show_elevation: true, show_noon_line: true, dark_mode: true };
+    return {
+      sun_entity: "sun.sun",
+      title: "",
+      show_elevation: true,
+      show_azimuth: true,
+      show_times: true,
+    };
   }
 
   setConfig(config) {
-    this._config = { sun_entity: "sun.sun", moon_entity: "sensor.moon_phase", show_moon: true, show_azimuth: true, show_elevation: true, show_noon_line: true, dark_mode: true, ...config };
+    this._config = { ...AstroHorizonCard.getStubConfig(), ...config };
   }
 
-  set hass(hass) { this._hass = hass; this._render(); }
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
 
   _render() {
     if (!this._hass) return;
-    const sun = this._hass.states[this._config.sun_entity];
+    const sun = getState(this._hass, this._config.sun_entity);
     if (!sun) {
-      this.shadowRoot.innerHTML = `<div class="astro-card" style="padding:24px;text-align:center;color:${ASTRO.text2}">Sun entity not found</div>`;
+      this.shadowRoot.innerHTML = renderErrorCard(`Sun entity not found: ${this._config.sun_entity}`);
       return;
     }
 
-    const elevation = parseFloat(sun.attributes.elevation) || 0;
-    const azimuth = parseFloat(sun.attributes.azimuth) || 0;
-    const rising = sun.attributes.rising || false;
-    const nextRise = sun.attributes.next_rising || "";
-    const nextSet = sun.attributes.next_setting || "";
-    const nextNoon = sun.attributes.next_noon || "";
+    const elevation = toNumber(sun.attributes?.elevation, 0);
+    const azimuth = toNumber(sun.attributes?.azimuth, 0);
+    const rising = Boolean(sun.attributes?.rising);
+    const nextRise = sun.attributes?.next_rising;
+    const nextSet = sun.attributes?.next_setting;
+    const nextNoon = sun.attributes?.next_noon;
 
-    // Calculate sun position on the arc
-    // Map elevation: -90 to 90 -> 0% to 100% of arc height
-    const normalizedElevation = (elevation + 90) / 180;
-    // Map azimuth 0-360 to horizontal position on arc
-    const sunX = (azimuth / 360) * 100;
-    // SVG arc position
     const arcCenterX = 200;
     const arcRadius = 160;
-    const arcStartY = 180;
-    const sunAngle = Math.PI * (1 - sunX / 100);
-    const svgSunX = arcCenterX + arcRadius * Math.cos(sunAngle);
-    const svgSunY = arcStartY - arcRadius * Math.sin(sunAngle) * (elevation > 0 ? 1 : 0.3);
-
-    // If below horizon, place below the horizon line
-    const effectiveSunY = elevation >= 0
-      ? arcStartY - (elevation / 90) * arcRadius
-      : arcStartY + (Math.abs(elevation) / 90) * 40;
-
-    // Time formatting
-    const fmtTime = (iso) => {
-      if (!iso) return "--:--";
-      try { return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
-      catch { return "--:--"; }
-    };
-
-    const riseTime = fmtTime(nextRise);
-    const setTime = fmtTime(nextSet);
-    const noonTime = fmtTime(nextNoon);
-
-    // Moon data
-    let moonHtml = "";
-    if (this._config.show_moon) {
-      const moonEntity = this._hass.states[this._config.moon_entity];
-      const moonPhase = moonEntity ? moonEntity.state : "";
-      const moonIcon = this._getMoonIcon(moonPhase);
-      moonHtml = `
-        <div class="hz-moon">
-          <span class="hz-moon-icon">${moonIcon}</span>
-          <span class="hz-moon-phase">${esc(moonPhase || "Unknown")}</span>
-        </div>
-      `;
-    }
-
-    const darkBg = "var(--ha-card-background, var(--card-background-color, #1e1e2e))";
-    const skyGradient = elevation > 0
-      ? (elevation > 20 ? "linear-gradient(180deg, #1a3a5c 0%, #4a90d9 50%, #87CEEB 100%)" : "linear-gradient(180deg, #1a237e 0%, #ff6b35 40%, #ffd700 100%)")
-      : "linear-gradient(180deg, #0a0e1a 0%, #1a237e 60%, #2a1a4e 100%)";
-
-    const elevLabel = this._config.show_elevation ? `<div class="hz-data-item"><span class="hz-data-label">Elevation</span><span class="hz-data-value">${elevation.toFixed(1)}°</span></div>` : "";
-    const azLabel = this._config.show_azimuth ? `<div class="hz-data-item"><span class="hz-data-label">Azimuth</span><span class="hz-data-value">${azimuth.toFixed(1)}°</span></div>` : "";
+    const baseLineY = 180;
+    const sunAngle = Math.PI * (1 - clamp(azimuth / 360, 0, 1));
+    const visualRadius = elevation >= 0 ? arcRadius * (1 - clamp(elevation / 90, 0, 1)) : arcRadius + Math.min(Math.abs(elevation), 45);
+    const x = arcCenterX + Math.cos(sunAngle) * arcRadius;
+    const y = elevation >= 0 ? 20 + visualRadius : baseLineY + Math.min(Math.abs(elevation) * 1.2, 34);
+    const skyGradient = elevation > 20
+      ? "linear-gradient(180deg, #16385a 0%, #4d8cd7 50%, #9fd6ff 100%)"
+      : elevation >= 0
+        ? "linear-gradient(180deg, #1b2558 0%, #ff7c4a 40%, #ffd76c 100%)"
+        : "linear-gradient(180deg, #090c18 0%, #1f2552 55%, #2e2147 100%)";
 
     this.shadowRoot.innerHTML = `
       <style>
         ${BASE_STYLES}
-        .hz-sky {
+        .hz-scene {
           position: relative;
-          width: 100%;
-          height: 200px;
+          height: 220px;
           background: ${skyGradient};
           overflow: hidden;
-          border-radius: ${ASTRO.radius} ${ASTRO.radius} 0 0;
         }
-        .hz-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-        .hz-horizon-line {
-          stroke: rgba(255,255,255,0.3);
-          stroke-width: 1;
-          stroke-dasharray: 4 4;
-        }
-        .hz-arc {
-          fill: none;
-          stroke: rgba(255,255,255,0.15);
-          stroke-width: 1.5;
-          stroke-dasharray: 3 3;
-        }
-        .hz-noon-line {
-          stroke: rgba(255,215,0,0.3);
-          stroke-width: 1;
-          stroke-dasharray: 2 3;
-        }
-        .hz-sun {
-          filter: drop-shadow(0 0 8px rgba(255,200,0,0.8));
-        }
-        .hz-sun-glow {
-          fill: rgba(255,200,0,0.2);
-        }
-        .hz-sun-body {
-          fill: #ffd700;
-        }
-        .hz-sun-below .hz-sun-body {
-          fill: #ff6b35;
-          opacity: 0.6;
-        }
-        .hz-sun-below .hz-sun-glow {
-          fill: rgba(255,107,53,0.15);
-        }
-        .hz-ground {
-          fill: ${this._config.dark_mode ? "rgba(10,15,26,0.85)" : "rgba(30,50,30,0.7)"};
-        }
-        .hz-time-labels {
+        .hz-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+        .hz-arc { fill: none; stroke: rgba(255,255,255,0.18); stroke-width: 1.5; stroke-dasharray: 4 4; }
+        .hz-line { stroke: rgba(255,255,255,0.25); stroke-width: 1; stroke-dasharray: 4 4; }
+        .hz-ground { fill: rgba(10, 15, 26, 0.9); }
+        .hz-sun-glow { fill: rgba(255, 214, 79, 0.25); }
+        .hz-sun-core { fill: ${elevation >= 0 ? "#ffd54f" : "#ff8a65"}; }
+        .hz-state {
           position: absolute;
-          bottom: 8px;
-          left: 0; right: 0;
+          top: 12px;
+          right: 12px;
+          padding: 6px 10px;
+          border-radius: 999px;
+          background: rgba(0,0,0,0.34);
+          color: white;
+          font-size: 0.72rem;
+          font-weight: 600;
+          backdrop-filter: blur(6px);
+        }
+        .hz-times {
+          position: absolute;
+          left: 12px;
+          right: 12px;
+          bottom: 12px;
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 8px;
+        }
+        .hz-time {
+          padding: 8px 10px;
+          border-radius: 12px;
+          background: rgba(255,255,255,0.12);
+          color: white;
+          text-align: center;
+          font-size: 0.72rem;
+          backdrop-filter: blur(4px);
+        }
+        .hz-time strong { display: block; font-size: 0.8rem; margin-top: 2px; }
+        .hz-meta {
           display: flex;
-          justify-content: space-between;
-          padding: 0 16px;
-        }
-        .hz-time-label {
-          display: flex; flex-direction: column; align-items: center;
-          font-size: 0.68rem; color: rgba(255,255,255,0.8);
-        }
-        .hz-time-label span:first-child { font-size: 0.9rem; margin-bottom: 2px; }
-        .hz-time-label span:last-child { font-weight: 600; }
-        .hz-body { padding: 14px 12px 16px; }
-        .hz-data {
-          display: flex; gap: 16px; justify-content: center;
           flex-wrap: wrap;
+          gap: 8px;
+          padding: 12px;
         }
-        .hz-data-item {
-          display: flex; flex-direction: column; align-items: center;
+        .hz-pill {
           padding: 8px 12px;
-          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
-          border-radius: var(--ha-card-border-radius, 12px);
+          border-radius: 999px;
+          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.05);
+          color: ${ASTRO.text2};
+          font-size: 0.78rem;
         }
-        .hz-data-label {
-          font-size: 0.68rem; color: ${ASTRO.text2};
-          text-transform: uppercase; letter-spacing: 0.3px; font-weight: 500;
-        }
-        .hz-data-value {
-          font-size: 1rem; font-weight: 600; color: ${ASTRO.text1};
-          margin-top: 2px;
-        }
-        .hz-moon {
-          display: flex; align-items: center; gap: 6px;
-          justify-content: center; margin-top: 10px;
-          padding-top: 10px; border-top: 1px solid ${ASTRO.divider};
-        }
-        .hz-moon-icon { font-size: 1.2rem; }
-        .hz-moon-phase { font-size: 0.8rem; color: ${ASTRO.text2}; text-transform: capitalize; }
-        .hz-state-badge {
-          position: absolute; top: 10px; right: 12px;
-          background: rgba(0,0,0,0.5); color: white;
-          padding: 3px 9px; border-radius: 10px;
-          font-size: 0.68rem; font-weight: 600;
-          text-transform: uppercase; letter-spacing: 0.4px;
-        }
-        .hz-state-badge.above { color: ${ASTRO.flare}; }
-        .hz-state-badge.below { color: ${ASTRO.accent}; }
+        .hz-pill strong { color: ${ASTRO.text1}; margin-right: 4px; }
       </style>
-      <div class="astro-card">
-        <div class="hz-sky">
-          <svg class="hz-svg" viewBox="0 0 400 200" preserveAspectRatio="xMidYMid meet">
-            <!-- Arc path -->
-            <path class="hz-arc" d="M 40,180 A 160,160 0 0,1 360,180" />
-            <!-- Horizon line -->
-            <line class="hz-horizon-line" x1="20" y1="180" x2="380" y2="180" />
-            ${this._config.show_noon_line ? '<line class="hz-noon-line" x1="200" y1="20" x2="200" y2="180" />' : ''}
-            <!-- Ground fill -->
-            <rect class="hz-ground" x="0" y="180" width="400" height="20" />
-            <!-- Sun -->
-            <g class="${elevation < 0 ? 'hz-sun-below' : 'hz-sun'}" transform="translate(${svgSunX}, ${effectiveSunY})">
-              <circle class="hz-sun-glow" cx="0" cy="0" r="18" />
-              <circle class="hz-sun-body" cx="0" cy="0" r="8" />
+      <ha-card class="astro-card">
+        <div class="astro-header">
+          <ha-icon icon="mdi:weather-sunset-up"></ha-icon>
+          <span class="astro-title">${esc(this._config.title || "Sun Horizon Arc")}</span>
+          <span class="astro-badge">${elevation >= 0 ? "Above horizon" : "Below horizon"}</span>
+        </div>
+        <div class="hz-scene">
+          <svg class="hz-svg" viewBox="0 0 400 220" preserveAspectRatio="xMidYMid meet">
+            <path class="hz-arc" d="M 40,180 A 160,160 0 0,1 360,180"></path>
+            <line class="hz-line" x1="20" y1="180" x2="380" y2="180"></line>
+            <line class="hz-line" x1="200" y1="20" x2="200" y2="180"></line>
+            <rect class="hz-ground" x="0" y="180" width="400" height="40"></rect>
+            <g transform="translate(${x.toFixed(2)} ${y.toFixed(2)})">
+              <circle class="hz-sun-glow" r="18"></circle>
+              <circle class="hz-sun-core" r="8"></circle>
             </g>
           </svg>
-          <div class="hz-state-badge ${elevation >= 0 ? 'above' : 'below'}">
-            ${elevation >= 0 ? (rising ? '↑ Rising' : '↓ Setting') : '● Below Horizon'}
-          </div>
-          <div class="hz-time-labels">
-            <div class="hz-time-label"><span>🌅</span><span>${riseTime}</span></div>
-            ${this._config.show_noon_line ? `<div class="hz-time-label"><span>☀️</span><span>${noonTime}</span></div>` : ''}
-            <div class="hz-time-label"><span>🌇</span><span>${setTime}</span></div>
-          </div>
+          <div class="hz-state">${elevation >= 0 ? (rising ? "Rising" : "Setting") : "Night arc"}</div>
+          ${this._config.show_times !== false ? `
+            <div class="hz-times">
+              <div class="hz-time">🌅<strong>${formatTime(nextRise)}</strong></div>
+              <div class="hz-time">☀️<strong>${formatTime(nextNoon)}</strong></div>
+              <div class="hz-time">🌇<strong>${formatTime(nextSet)}</strong></div>
+            </div>
+          ` : ""}
         </div>
-        <div class="hz-body">
-          <div class="hz-data">
-            ${elevLabel}
-            ${azLabel}
-            <div class="hz-data-item"><span class="hz-data-label">Sunrise</span><span class="hz-data-value">${riseTime}</span></div>
-            <div class="hz-data-item"><span class="hz-data-label">Sunset</span><span class="hz-data-value">${setTime}</span></div>
-          </div>
-          ${moonHtml}
+        <div class="hz-meta">
+          ${this._config.show_elevation !== false ? `<span class="hz-pill"><strong>Elevation</strong>${elevation.toFixed(1)}°</span>` : ""}
+          ${this._config.show_azimuth !== false ? `<span class="hz-pill"><strong>Azimuth</strong>${azimuth.toFixed(1)}°</span>` : ""}
+          ${this._config.show_times !== false ? `<span class="hz-pill"><strong>Sunset</strong>${formatTime(nextSet)}</span>` : ""}
         </div>
-      </div>
+      </ha-card>
     `;
-  }
-
-  _getMoonIcon(phase) {
-    const icons = {
-      "new_moon": "🌑", "waxing_crescent": "🌒", "first_quarter": "🌓",
-      "waxing_gibbous": "🌔", "full_moon": "🌕", "waning_gibbous": "🌖",
-      "last_quarter": "🌗", "waning_crescent": "🌘",
-    };
-    return icons[phase] || icons[phase?.toLowerCase()?.replace(/ /g, "_")] || "🌙";
   }
 
   getCardSize() { return 5; }
 }
 
-// ============================================================
-// ASTRO LUNAR PHASE CARD CONFIG EDITOR
-// ============================================================
-class AstroLunarCardEditor extends HTMLElement {
-  constructor() {
-    super();
-    this.attachShadow({ mode: "open" });
-    this._config = {};
+class AstroLunarCardEditor extends AstroEditorBase {
+  setConfig(config) {
+    super.setConfig({
+      moon_entity: "sensor.moon_phase",
+      title: "",
+      show_next_phases: true,
+      show_illumination: true,
+      ...config,
+    });
   }
 
-  setConfig(config) { this._config = { ...config }; this._render(); }
-  set hass(hass) { this._hass = hass; this._render(); }
-
-  _render() {
-    if (!this._hass) return;
-    this.shadowRoot.innerHTML = `
-      <style>${EDITOR_STYLES}</style>
-      <div class="editor">
-        <ha-entity-picker
-          label="Moon Phase Entity"
-          value="${this._config.entity || "sensor.moon_phase"}"
-          id="entity"
-        ></ha-entity-picker>
-        <label>
-          <ha-switch id="show_illumination" ${this._config.show_illumination !== false ? "checked" : ""}></ha-switch>
-          Show Illumination
-        </label>
-        <label>
-          <ha-switch id="show_next_phases" ${this._config.show_next_phases !== false ? "checked" : ""}></ha-switch>
-          Show Next Phases
-        </label>
-        <label>
-          <ha-switch id="show_phase_name" ${this._config.show_phase_name !== false ? "checked" : ""}></ha-switch>
-          Show Phase Name
-        </label>
-        <label>
-          <ha-switch id="compact" ${this._config.compact ? "checked" : ""}></ha-switch>
-          Compact Mode
-        </label>
-      </div>
+  _editorTemplate() {
+    return `
+      <ha-entity-picker id="moon_entity" label="Moon phase entity"></ha-entity-picker>
+      <ha-textfield id="title" label="Card title (optional)"></ha-textfield>
+      <label class="switch-row"><span>Show next phases</span><ha-switch id="show_next_phases"></ha-switch></label>
+      <label class="switch-row"><span>Show illumination</span><ha-switch id="show_illumination"></ha-switch></label>
     `;
-
-    const picker = this.shadowRoot.getElementById("entity");
-    picker.hass = this._hass;
-    picker.addEventListener("value-changed", (e) => {
-      this._config = { ...this._config, entity: e.detail.value }; this._dispatch();
-    });
-    ["show_illumination", "show_next_phases", "show_phase_name", "compact"].forEach(key => {
-      this.shadowRoot.getElementById(key).addEventListener("change", (e) => {
-        this._config = { ...this._config, [key]: e.target.checked }; this._dispatch();
-      });
-    });
   }
 
-  _dispatch() {
-    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config } }));
+  _setupListeners() {
+    this._bindPicker("moon_entity", "moon_entity");
+    this._bindText("title", "title", (value) => value.trim());
+    ["show_next_phases", "show_illumination"].forEach((key) => this._bindSwitch(key, key));
+  }
+
+  _syncValues() {
+    setPickerValue(this.shadowRoot, "moon_entity", this._hass, this._config.moon_entity || "sensor.moon_phase");
+    setTextValue(this.shadowRoot, "title", this._config.title || "");
+    setSwitchValue(this.shadowRoot, "show_next_phases", this._config.show_next_phases !== false);
+    setSwitchValue(this.shadowRoot, "show_illumination", this._config.show_illumination !== false);
   }
 }
-customElements.define("astro-lunar-card-editor", AstroLunarCardEditor);
 
-// ============================================================
-// ASTRO LUNAR PHASE CARD
-// ============================================================
 class AstroLunarCard extends HTMLElement {
   constructor() {
     super();
@@ -1110,258 +1366,540 @@ class AstroLunarCard extends HTMLElement {
   }
 
   static getConfigElement() { return document.createElement("astro-lunar-card-editor"); }
-
   static getStubConfig() {
-    return { entity: "sensor.moon_phase", show_illumination: true, show_next_phases: true, show_phase_name: true, compact: false };
+    return {
+      moon_entity: "sensor.moon_phase",
+      title: "",
+      show_next_phases: true,
+      show_illumination: true,
+    };
   }
 
   setConfig(config) {
-    if (!config.entity) throw new Error("You must define an entity");
-    this._config = { show_illumination: true, show_next_phases: true, show_phase_name: true, compact: false, ...config };
+    if (!config.moon_entity) throw new Error("You must define a moon_entity");
+    this._config = { ...AstroLunarCard.getStubConfig(), ...config };
   }
 
-  set hass(hass) { this._hass = hass; this._render(); }
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
 
   _render() {
     if (!this._hass) return;
-    const stateObj = this._hass.states[this._config.entity];
+    const stateObj = getState(this._hass, this._config.moon_entity);
     if (!stateObj) {
-      this.shadowRoot.innerHTML = `<div class="astro-card" style="padding:24px;text-align:center;color:${ASTRO.text2}">Entity not found: ${esc(this._config.entity)}</div>`;
+      this.shadowRoot.innerHTML = renderErrorCard(`Entity not found: ${this._config.moon_entity}`);
       return;
     }
 
-    const phase = stateObj.state || "unknown";
-    const phaseName = phase.replace(/_/g, " ");
-    const phaseData = this._getPhaseData(phase);
-    const illumination = phaseData.illumination;
-    const moonSize = this._config.compact ? 100 : 150;
-
-    // Build the SVG moon visualization
-    const moonSvg = this._renderMoonSvg(phaseData.illuminationFraction, phaseData.waxing, moonSize);
-
-    // Phase cycle (simplified predictions based on ~29.5 day cycle)
-    const phaseOrder = ["new_moon", "waxing_crescent", "first_quarter", "waxing_gibbous", "full_moon", "waning_gibbous", "last_quarter", "waning_crescent"];
-    const currentIdx = phaseOrder.indexOf(phase.toLowerCase().replace(/ /g, "_"));
-    const nextPhases = [];
-    if (this._config.show_next_phases && currentIdx >= 0) {
-      for (let i = 1; i <= 4; i++) {
-        const idx = (currentIdx + i) % 8;
-        const daysAway = Math.round((i / 8) * 29.5);
-        nextPhases.push({
-          name: phaseOrder[idx].replace(/_/g, " "),
-          icon: this._getMoonIcon(phaseOrder[idx]),
-          days: daysAway,
+    const phase = normalizePhase(stateObj.state);
+    const phaseData = getMoonPhaseData(phase);
+    const illumination = toNumber(stateObj.attributes?.illumination, phaseData.illumination);
+    const currentIndex = MOON_PHASE_ORDER.indexOf(phase);
+    const upcoming = [];
+    if (this._config.show_next_phases !== false && currentIndex >= 0) {
+      for (let step = 1; step <= 4; step += 1) {
+        const nextName = MOON_PHASE_ORDER[(currentIndex + step) % MOON_PHASE_ORDER.length];
+        upcoming.push({
+          name: nextName.replace(/_/g, " "),
+          icon: MOON_ICONS[nextName] || "🌙",
+          days: Math.round((step / 8) * 29.5),
         });
       }
     }
 
-    const nextPhasesHtml = this._config.show_next_phases && nextPhases.length > 0 ? `
-      <div class="lunar-phases">
-        ${nextPhases.map(p => `
-          <div class="lunar-next">
-            <span class="lunar-next-icon">${p.icon}</span>
-            <span class="lunar-next-name">${esc(p.name)}</span>
-            <span class="lunar-next-days">~${p.days}d</span>
+    this.shadowRoot.innerHTML = `
+      <style>
+        ${BASE_STYLES}
+        .lunar-sky {
+          position: relative;
+          padding: 18px 16px 20px;
+          background: linear-gradient(180deg, #090d18 0%, #151d39 60%, #1d284d 100%);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          overflow: hidden;
+        }
+        .lunar-stars {
+          position: absolute;
+          inset: 0;
+          background-image:
+            radial-gradient(1px 1px at 18% 28%, rgba(255,255,255,0.6), transparent),
+            radial-gradient(1.4px 1.4px at 82% 22%, rgba(255,255,255,0.5), transparent),
+            radial-gradient(1px 1px at 50% 75%, rgba(255,255,255,0.4), transparent),
+            radial-gradient(1.2px 1.2px at 12% 70%, rgba(255,255,255,0.5), transparent),
+            radial-gradient(1px 1px at 70% 62%, rgba(255,255,255,0.35), transparent);
+          pointer-events: none;
+        }
+        .lunar-moon { position: relative; z-index: 1; filter: drop-shadow(0 0 18px rgba(204, 214, 255, 0.25)); }
+        .lunar-copy { position: relative; z-index: 1; text-align: center; color: #edf1ff; margin-top: 12px; }
+        .lunar-copy strong { display: block; font-size: 1rem; text-transform: capitalize; }
+        .lunar-copy span { display: block; margin-top: 4px; color: rgba(237,241,255,0.72); font-size: 0.8rem; }
+        .lunar-next-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 8px;
+          padding: 12px;
+        }
+        .lunar-next {
+          padding: 10px 6px;
+          border-radius: 14px;
+          text-align: center;
+          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
+        }
+        .lunar-next-icon { font-size: 1.15rem; display: block; margin-bottom: 4px; }
+        .lunar-next-name { display: block; font-size: 0.66rem; color: ${ASTRO.text2}; text-transform: capitalize; line-height: 1.3; }
+        .lunar-next-days { display: block; margin-top: 4px; color: ${ASTRO.accent}; font-size: 0.7rem; font-weight: 600; }
+      </style>
+      <ha-card class="astro-card">
+        <div class="astro-header">
+          <ha-icon icon="mdi:moon-waning-crescent"></ha-icon>
+          <span class="astro-title">${esc(this._config.title || "Lunar Phase")}</span>
+          <span class="astro-badge">${esc(MOON_ICONS[phase] || "🌙")}</span>
+        </div>
+        <div class="lunar-sky">
+          <div class="lunar-stars"></div>
+          <div class="lunar-moon">${renderMoonSvg(phaseData.fraction, phaseData.waxing, 160)}</div>
+          <div class="lunar-copy">
+            <strong>${esc(phaseData.name)}</strong>
+            ${this._config.show_illumination !== false ? `<span>${illumination.toFixed(0)}% illuminated</span>` : ""}
           </div>
-        `).join("")}
-      </div>
-    ` : "";
+        </div>
+        ${this._config.show_next_phases !== false && upcoming.length ? `
+          <div class="lunar-next-grid">
+            ${upcoming.map((item) => `
+              <div class="lunar-next">
+                <span class="lunar-next-icon">${item.icon}</span>
+                <span class="lunar-next-name">${esc(item.name)}</span>
+                <span class="lunar-next-days">~${item.days}d</span>
+              </div>
+            `).join("")}
+          </div>
+        ` : ""}
+      </ha-card>
+    `;
+  }
+
+  getCardSize() { return 5; }
+}
+
+class SolarSystemCardEditor extends AstroEditorBase {
+  setConfig(config) {
+    super.setConfig({
+      title: "",
+      show_labels: true,
+      show_jupiter: false,
+      show_saturn: false,
+      show_stats: true,
+      show_date: true,
+      ...config,
+    });
+  }
+
+  _editorTemplate() {
+    return `
+      <ha-textfield id="title" label="Card title (optional)"></ha-textfield>
+      <label class="switch-row"><span>Show labels</span><ha-switch id="show_labels"></ha-switch></label>
+      <label class="switch-row"><span>Show Jupiter orbit</span><ha-switch id="show_jupiter"></ha-switch></label>
+      <label class="switch-row"><span>Show Saturn orbit</span><ha-switch id="show_saturn"></ha-switch></label>
+      <label class="switch-row"><span>Show stats</span><ha-switch id="show_stats"></ha-switch></label>
+      <label class="switch-row"><span>Show date</span><ha-switch id="show_date"></ha-switch></label>
+    `;
+  }
+
+  _setupListeners() {
+    this._bindText("title", "title", (value) => value.trim());
+    ["show_labels", "show_jupiter", "show_saturn", "show_stats", "show_date"].forEach((key) => this._bindSwitch(key, key));
+  }
+
+  _syncValues() {
+    setTextValue(this.shadowRoot, "title", this._config.title || "");
+    ["show_labels", "show_stats", "show_date"].forEach((key) => setSwitchValue(this.shadowRoot, key, this._config[key] !== false));
+    setSwitchValue(this.shadowRoot, "show_jupiter", this._config.show_jupiter === true);
+    setSwitchValue(this.shadowRoot, "show_saturn", this._config.show_saturn === true);
+  }
+}
+
+class SolarSystemCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._config = {};
+  }
+
+  static getConfigElement() { return document.createElement("solar-system-card-editor"); }
+  static getStubConfig() {
+    return {
+      title: "",
+      show_labels: true,
+      show_jupiter: false,
+      show_saturn: false,
+      show_stats: true,
+      show_date: true,
+    };
+  }
+
+  setConfig(config) {
+    this._config = { ...SolarSystemCard.getStubConfig(), ...config };
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  _render() {
+    const date = new Date();
+    const center = 200;
+    const radius = 165;
+    const names = ["Mercury", "Venus", "Earth", "Mars"];
+    if (this._config.show_jupiter) names.push("Jupiter");
+    if (this._config.show_saturn) names.push("Saturn");
+
+    const positions = names.map((name) => calculatePlanetPosition(name, date));
+    const maxOrbit = Math.max(...names.map((name) => PLANET_ELEMENTS[name].a)) * 1.06;
+    const scale = radius / maxOrbit;
+    const stars = buildStarFieldSvg(400, 400, 70, 84);
 
     this.shadowRoot.innerHTML = `
       <style>
         ${BASE_STYLES}
-        .lunar-body {
-          display: flex; flex-direction: column; align-items: center;
-          padding: ${this._config.compact ? '12px' : '24px'} 16px;
-          background: linear-gradient(180deg, #0a0e1a 0%, #1a1a2e 100%);
-          border-radius: ${ASTRO.radius} ${ASTRO.radius} 0 0;
-          position: relative;
+        .orrery {
+          margin: 0 12px 12px;
+          border-radius: 18px;
           overflow: hidden;
+          background: radial-gradient(circle at center, rgba(255,213,79,0.08) 0%, rgba(4,7,16,0.98) 48%, #03050c 100%);
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
         }
-        .lunar-stars {
-          position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-          background-image:
-            radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.6), transparent),
-            radial-gradient(1px 1px at 80% 20%, rgba(255,255,255,0.4), transparent),
-            radial-gradient(1px 1px at 50% 80%, rgba(255,255,255,0.3), transparent),
-            radial-gradient(1.5px 1.5px at 15% 70%, rgba(255,255,255,0.5), transparent),
-            radial-gradient(1px 1px at 90% 60%, rgba(255,255,255,0.4), transparent),
-            radial-gradient(1px 1px at 35% 10%, rgba(255,255,255,0.3), transparent),
-            radial-gradient(1.5px 1.5px at 65% 50%, rgba(255,255,255,0.4), transparent),
-            radial-gradient(1px 1px at 10% 90%, rgba(255,255,255,0.3), transparent);
-          pointer-events: none;
+        .orrery-svg { width: 100%; display: block; }
+        .orrery-footer { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 12px 14px; }
+        .orrery-pill {
+          padding: 8px 12px;
+          border-radius: 999px;
+          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.05);
+          color: ${ASTRO.text2};
+          font-size: 0.78rem;
         }
-        .lunar-moon {
-          position: relative; z-index: 1;
-          filter: drop-shadow(0 0 15px rgba(200,200,255,0.3));
-        }
-        .lunar-phase-label {
-          margin-top: 14px; text-align: center; z-index: 1;
-        }
-        .lunar-phase-name {
-          font-size: ${this._config.compact ? '0.9rem' : '1rem'};
-          font-weight: 500; color: #e8e8f0;
-          text-transform: capitalize;
-        }
-        .lunar-illumination {
-          font-size: 0.78rem; color: rgba(200,200,255,0.65);
-          margin-top: 4px;
-        }
-        .lunar-info {
-          padding: 14px 12px;
-        }
-        .lunar-phases {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 6px;
-          padding: 12px 12px 14px;
-          border-top: 1px solid ${ASTRO.divider};
-        }
-        .lunar-next {
-          display: flex; flex-direction: column; align-items: center;
-          padding: 10px 4px; border-radius: var(--ha-card-border-radius, 12px);
-          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
-        }
-        .lunar-next-icon { font-size: 1.2rem; margin-bottom: 4px; }
-        .lunar-next-name {
-          font-size: 0.62rem; color: ${ASTRO.text2};
-          text-align: center; text-transform: capitalize;
-          line-height: 1.2;
-        }
-        .lunar-next-days {
-          font-size: 0.68rem; font-weight: 500;
-          color: ${ASTRO.accent}; margin-top: 3px;
-        }
+        .orrery-pill strong { color: ${ASTRO.text1}; margin-right: 4px; }
       </style>
-      <div class="astro-card">
-        <div class="lunar-body">
-          <div class="lunar-stars"></div>
-          <div class="lunar-moon">${moonSvg}</div>
-          ${this._config.show_phase_name ? `
-            <div class="lunar-phase-label">
-              <div class="lunar-phase-name">${esc(phaseName)}</div>
-              ${this._config.show_illumination ? `<div class="lunar-illumination">${illumination}% illuminated</div>` : ""}
-            </div>
-          ` : ""}
+      <ha-card class="astro-card">
+        <div class="astro-header">
+          <ha-icon icon="mdi:orbit"></ha-icon>
+          <span class="astro-title">${esc(this._config.title || "Inner Solar System Orrery")}</span>
+          ${this._config.show_date !== false ? `<span class="astro-badge">${esc(formatDate(date))}</span>` : ""}
         </div>
-        ${nextPhasesHtml}
-      </div>
+        <div class="orrery">
+          <svg class="orrery-svg" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Solar system orrery">
+            ${stars}
+            ${names.map((name) => `<path d="${buildOrbitPath(name, scale, center)}" fill="none" stroke="${PLANET_ELEMENTS[name].color}" stroke-width="1.4" stroke-opacity="0.55"></path>`).join("")}
+            <circle cx="${center}" cy="${center}" r="22" fill="rgba(255,202,40,0.14)"></circle>
+            <circle cx="${center}" cy="${center}" r="12" fill="#ffd54f"></circle>
+            <circle cx="${center}" cy="${center}" r="5" fill="#fff9c4"></circle>
+            ${positions.map((planet) => {
+              const px = center + planet.x * scale;
+              const py = center + planet.y * scale;
+              const pr = planet.name === "Mercury" ? 3.2 : planet.name === "Earth" ? 4.3 : planet.name === "Saturn" ? 5.2 : 4;
+              const label = this._config.show_labels !== false
+                ? `<text x="${(px + 8).toFixed(2)}" y="${(py - 8).toFixed(2)}" fill="${planet.color}" font-size="10" font-weight="600">${planet.name}</text>`
+                : "";
+              return `
+                <g>
+                  <circle cx="${px.toFixed(2)}" cy="${py.toFixed(2)}" r="${pr}" fill="${planet.color}"></circle>
+                  <circle cx="${px.toFixed(2)}" cy="${py.toFixed(2)}" r="${(pr + 2).toFixed(1)}" fill="none" stroke="${planet.color}" stroke-opacity="0.35"></circle>
+                  ${label}
+                </g>
+              `;
+            }).join("")}
+          </svg>
+        </div>
+        ${this._config.show_stats !== false ? `
+          <div class="orrery-footer">
+            <span class="orrery-pill"><strong>Earth</strong>${positions.find((planet) => planet.name === "Earth").r.toFixed(3)} AU</span>
+            <span class="orrery-pill"><strong>Mercury</strong>${positions.find((planet) => planet.name === "Mercury").r.toFixed(3)} AU</span>
+            <span class="orrery-pill"><strong>Scale</strong>Heliocentric</span>
+            <span class="orrery-pill"><strong>Planets</strong>${names.length}</span>
+          </div>
+        ` : ""}
+      </ha-card>
     `;
   }
 
-  _renderMoonSvg(fraction, waxing, size) {
-    // fraction: 0 (new) to 1 (full)
-    // We draw a circle and overlay a shadow using SVG paths
-    const r = size / 2 - 4;
-    const cx = size / 2;
-    const cy = size / 2;
-
-    // Calculate the terminator curve
-    // For waxing: shadow is on the left, shrinking
-    // For waning: shadow is on the right, shrinking
-    let shadowPath;
-
-    if (fraction <= 0.01) {
-      // New moon - full shadow
-      shadowPath = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(10,10,20,0.92)" />`;
-    } else if (fraction >= 0.99) {
-      // Full moon - no shadow
-      shadowPath = "";
-    } else {
-      // Partial illumination
-      const sweep = fraction < 0.5
-        ? (1 - 2 * fraction) * r  // crescent/quarter: bulge inward
-        : (2 * fraction - 1) * r; // gibbous: bulge outward
-
-      const dir = fraction < 0.5 ? 0 : 1; // arc sweep direction
-
-      if (waxing) {
-        // Shadow on right side (waxing = lit from right)
-        // Actually: waxing = right side lit, left side dark
-        shadowPath = `<path d="M ${cx} ${cy - r} A ${r} ${r} 0 0 0 ${cx} ${cy + r} A ${sweep} ${r} 0 0 ${dir} ${cx} ${cy - r} Z" fill="rgba(10,10,20,0.9)" />`;
-      } else {
-        // Shadow on left side (waning = left side dark)
-        shadowPath = `<path d="M ${cx} ${cy - r} A ${r} ${r} 0 0 1 ${cx} ${cy + r} A ${sweep} ${r} 0 0 ${1-dir} ${cx} ${cy - r} Z" fill="rgba(10,10,20,0.9)" />`;
-      }
-    }
-
-    return `
-      <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-        <defs>
-          <radialGradient id="moon-surface" cx="40%" cy="40%">
-            <stop offset="0%" stop-color="#f5f5e8" />
-            <stop offset="50%" stop-color="#d4d0c0" />
-            <stop offset="100%" stop-color="#a8a090" />
-          </radialGradient>
-          <filter id="moon-texture">
-            <feTurbulence type="fractalNoise" baseFrequency="0.4" numOctaves="3" seed="42" result="noise"/>
-            <feColorMatrix type="saturate" values="0" in="noise" result="gray"/>
-            <feBlend in="SourceGraphic" in2="gray" mode="multiply" result="textured"/>
-          </filter>
-        </defs>
-        <!-- Moon body -->
-        <circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#moon-surface)" />
-        <!-- Crater hints -->
-        <circle cx="${cx - r*0.2}" cy="${cy - r*0.1}" r="${r*0.12}" fill="rgba(150,140,120,0.3)" />
-        <circle cx="${cx + r*0.25}" cy="${cy + r*0.3}" r="${r*0.09}" fill="rgba(150,140,120,0.25)" />
-        <circle cx="${cx - r*0.1}" cy="${cy + r*0.35}" r="${r*0.15}" fill="rgba(140,130,110,0.2)" />
-        <circle cx="${cx + r*0.35}" cy="${cy - r*0.25}" r="${r*0.07}" fill="rgba(150,140,120,0.2)" />
-        <circle cx="${cx - r*0.4}" cy="${cy + r*0.1}" r="${r*0.06}" fill="rgba(150,140,120,0.15)" />
-        <!-- Shadow overlay -->
-        ${shadowPath}
-        <!-- Limb darkening -->
-        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(80,70,60,0.3)" stroke-width="2" />
-      </svg>
-    `;
-  }
-
-  _getPhaseData(phase) {
-    const normalized = phase.toLowerCase().replace(/ /g, "_");
-    const data = {
-      "new_moon": { illumination: 0, illuminationFraction: 0, waxing: true },
-      "waxing_crescent": { illumination: 25, illuminationFraction: 0.25, waxing: true },
-      "first_quarter": { illumination: 50, illuminationFraction: 0.5, waxing: true },
-      "waxing_gibbous": { illumination: 75, illuminationFraction: 0.75, waxing: true },
-      "full_moon": { illumination: 100, illuminationFraction: 1.0, waxing: false },
-      "waning_gibbous": { illumination: 75, illuminationFraction: 0.75, waxing: false },
-      "last_quarter": { illumination: 50, illuminationFraction: 0.5, waxing: false },
-      "waning_crescent": { illumination: 25, illuminationFraction: 0.25, waxing: false },
-    };
-    return data[normalized] || { illumination: 0, illuminationFraction: 0, waxing: true };
-  }
-
-  _getMoonIcon(phase) {
-    const icons = {
-      "new_moon": "🌑", "waxing_crescent": "🌒", "first_quarter": "🌓",
-      "waxing_gibbous": "🌔", "full_moon": "🌕", "waning_gibbous": "🌖",
-      "last_quarter": "🌗", "waning_crescent": "🌘",
-    };
-    return icons[phase] || "🌙";
-  }
-
-  getCardSize() { return this._config.compact ? 3 : 5; }
+  getCardSize() { return 6; }
 }
 
-// ============================================================
-// REGISTER ELEMENTS
-// ============================================================
-customElements.define("apod-card", ApodCard);
-customElements.define("neo-threat-card", NeoThreatCard);
-customElements.define("solar-activity-card", SolarActivityCard);
-customElements.define("astro-horizon-card", AstroHorizonCard);
-customElements.define("astro-lunar-card", AstroLunarCard);
+class RocketLaunchCardEditor extends AstroEditorBase {
+  setConfig(config) {
+    super.setConfig({
+      entity_prefix: "sensor.nasa_astronomy_suite_rocket_launch",
+      max_launches: 5,
+      title: "",
+      show_countdown: true,
+      show_weather: true,
+      show_tags: true,
+      ...config,
+    });
+  }
 
-window.customCards = window.customCards || [];
-window.customCards.push(
-  { type: "apod-card", name: "APOD Card", description: "NASA Astronomy Picture of the Day with UI editor", preview: true, documentationURL: "https://github.com/snfx-johaver/home-assistant-astronomy-suite" },
-  { type: "neo-threat-card", name: "NEO Threat Card", description: "Near Earth Object tracker with UI editor", preview: true, documentationURL: "https://github.com/snfx-johaver/home-assistant-astronomy-suite" },
-  { type: "solar-activity-card", name: "Solar Activity Card", description: "Solar activity monitor with UI editor", preview: true, documentationURL: "https://github.com/snfx-johaver/home-assistant-astronomy-suite" },
-  { type: "astro-horizon-card", name: "Astro Horizon Card", description: "Sun/Moon horizon tracker with arc visualization", preview: true, documentationURL: "https://github.com/snfx-johaver/home-assistant-astronomy-suite" },
-  { type: "astro-lunar-card", name: "Astro Lunar Phase Card", description: "Moon phase visualization with SVG rendering", preview: true, documentationURL: "https://github.com/snfx-johaver/home-assistant-astronomy-suite" }
-);
+  _editorTemplate() {
+    return `
+      <ha-textfield id="entity_prefix" label="Entity prefix"></ha-textfield>
+      <ha-textfield id="title" label="Card title (optional)"></ha-textfield>
+      <ha-textfield id="max_launches" label="Max launches (1-5)" type="number"></ha-textfield>
+      <label class="switch-row"><span>Show countdown</span><ha-switch id="show_countdown"></ha-switch></label>
+      <label class="switch-row"><span>Show weather</span><ha-switch id="show_weather"></ha-switch></label>
+      <label class="switch-row"><span>Show tags</span><ha-switch id="show_tags"></ha-switch></label>
+    `;
+  }
+
+  _setupListeners() {
+    this._bindText("entity_prefix", "entity_prefix", (value) => value.trim() || "sensor.nasa_astronomy_suite_rocket_launch");
+    this._bindText("title", "title", (value) => value.trim());
+    this._bindText("max_launches", "max_launches", (value) => clamp(parseInt(value, 10) || 5, 1, 5));
+    ["show_countdown", "show_weather", "show_tags"].forEach((key) => this._bindSwitch(key, key));
+  }
+
+  _syncValues() {
+    setTextValue(this.shadowRoot, "entity_prefix", this._config.entity_prefix || "sensor.nasa_astronomy_suite_rocket_launch");
+    setTextValue(this.shadowRoot, "title", this._config.title || "");
+    setTextValue(this.shadowRoot, "max_launches", this._config.max_launches || 5);
+    setSwitchValue(this.shadowRoot, "show_countdown", this._config.show_countdown !== false);
+    setSwitchValue(this.shadowRoot, "show_weather", this._config.show_weather !== false);
+    setSwitchValue(this.shadowRoot, "show_tags", this._config.show_tags !== false);
+  }
+}
+
+class RocketLaunchCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._config = {};
+  }
+
+  static getConfigElement() { return document.createElement("rocket-launch-card-editor"); }
+  static getStubConfig() {
+    return {
+      entity_prefix: "sensor.nasa_astronomy_suite_rocket_launch",
+      max_launches: 5,
+      title: "",
+      show_countdown: true,
+      show_weather: true,
+      show_tags: true,
+    };
+  }
+
+  setConfig(config) {
+    this._config = { ...RocketLaunchCard.getStubConfig(), ...config };
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  _parseLaunch(stateObj, fallbackName) {
+    const attrs = stateObj.attributes || {};
+    const launchDate = parseDate(
+      attrs.window_start || attrs.net || attrs.target_date || attrs.launch_date || attrs.date || attrs.datetime || stateObj.state,
+    );
+    const padLocation = [
+      attrs.pad_name,
+      attrs.location_name,
+      attrs.pad?.name,
+      attrs.pad?.location?.name,
+      attrs.pad,
+      attrs.location,
+    ].find(Boolean) || "Location TBD";
+    const tags = [
+      ...(safeArray(attrs.tags).map((tag) => (typeof tag === "string" ? tag : tag?.name)).filter(Boolean)),
+      attrs.mission_type,
+      attrs.orbit,
+      attrs.status,
+    ].filter(Boolean);
+    return {
+      mission: attrs.mission_name || attrs.name || attrs.mission || attrs.friendly_name || fallbackName,
+      provider: attrs.provider || attrs.launch_service_provider || attrs.agency || attrs.organization || "Provider TBD",
+      vehicle: attrs.vehicle || attrs.rocket || attrs.rocket_name || attrs.launcher || "Vehicle TBD",
+      padLocation,
+      countdown: launchDate ? formatCountdown(launchDate) : "Date TBD",
+      dateLabel: launchDate ? formatDateTime(launchDate) : (attrs.window_start || attrs.net || stateObj.state || "Date TBD"),
+      weather: attrs.weather_summary || attrs.launch_weather || attrs.weather || attrs.weather_condition || "",
+      tags: [...new Set(tags)].slice(0, 4),
+      media: attrs.media_link || attrs.video_url || attrs.stream_url || attrs.webcast || attrs.url || "",
+      within24h: launchDate ? isWithinHours(launchDate, 24) : false,
+      launchDate,
+    };
+  }
+
+  _render() {
+    if (!this._hass) return;
+    const prefix = this._config.entity_prefix || "sensor.nasa_astronomy_suite_rocket_launch";
+    const maxLaunches = clamp(parseInt(this._config.max_launches, 10) || 5, 1, 5);
+    const launches = [];
+
+    for (let index = 1; index <= 5; index += 1) {
+      const entityId = `${prefix}_${index}`;
+      const stateObj = getState(this._hass, entityId);
+      if (!stateObj || ["unknown", "unavailable"].includes(String(stateObj.state).toLowerCase())) continue;
+      launches.push(this._parseLaunch(stateObj, `Launch ${index}`));
+    }
+
+    launches.sort((a, b) => {
+      if (!a.launchDate && !b.launchDate) return 0;
+      if (!a.launchDate) return 1;
+      if (!b.launchDate) return -1;
+      return a.launchDate - b.launchDate;
+    });
+
+    const visible = launches.slice(0, maxLaunches);
+    if (!visible.length) {
+      this.shadowRoot.innerHTML = renderErrorCard(`No launch sensors found for prefix ${prefix}.`, "mdi:rocket-launch-outline");
+      return;
+    }
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        ${BASE_STYLES}
+        .launch-list { display: flex; flex-direction: column; gap: 10px; padding: 0 12px 14px; }
+        .launch-item {
+          padding: 12px;
+          border-radius: 16px;
+          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
+          display: grid;
+          grid-template-columns: auto 1fr;
+          gap: 12px;
+        }
+        .launch-item.warn {
+          box-shadow: 0 0 0 1px rgba(var(--rgb-warning-color, 255,152,0), 0.25), 0 0 20px rgba(255,152,0,0.12);
+        }
+        .launch-icon {
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(var(--rgb-accent-color, 124,77,255), 0.12);
+          color: ${ASTRO.accent};
+          flex-shrink: 0;
+        }
+        .launch-main { min-width: 0; }
+        .launch-top {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          align-items: flex-start;
+        }
+        .launch-mission { font-size: 0.86rem; font-weight: 700; color: ${ASTRO.text1}; line-height: 1.35; }
+        .launch-provider { font-size: 0.74rem; color: ${ASTRO.text2}; margin-top: 3px; }
+        .launch-when { text-align: right; }
+        .launch-date { font-size: 0.76rem; color: ${ASTRO.text2}; }
+        .launch-countdown {
+          margin-top: 4px;
+          display: inline-flex;
+          padding: 4px 10px;
+          border-radius: 999px;
+          background: rgba(var(--rgb-warning-color, 255,152,0), 0.12);
+          color: ${ASTRO.warning};
+          font-size: 0.72rem;
+          font-weight: 700;
+        }
+        .launch-row { margin-top: 10px; font-size: 0.78rem; color: ${ASTRO.text2}; }
+        .launch-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+        .launch-tag {
+          padding: 4px 9px;
+          border-radius: 999px;
+          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.06);
+          font-size: 0.68rem;
+          color: ${ASTRO.text2};
+        }
+        .launch-actions { margin-top: 10px; }
+        .launch-button {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 12px;
+          border-radius: 999px;
+          text-decoration: none;
+          background: rgba(var(--rgb-accent-color, 124,77,255), 0.1);
+          color: ${ASTRO.accent};
+          font-size: 0.78rem;
+          font-weight: 700;
+        }
+      </style>
+      <ha-card class="astro-card">
+        <div class="astro-header">
+          <ha-icon icon="mdi:rocket-launch-outline"></ha-icon>
+          <span class="astro-title">${esc(this._config.title || "Upcoming Rocket Launches")}</span>
+          <span class="astro-badge">${visible.length} shown</span>
+        </div>
+        <div class="launch-list">
+          ${visible.map((launch) => `
+            <div class="launch-item ${launch.within24h ? "warn" : ""}">
+              <div class="launch-icon"><ha-icon icon="mdi:rocket-launch"></ha-icon></div>
+              <div class="launch-main">
+                <div class="launch-top">
+                  <div>
+                    <div class="launch-mission">${esc(launch.mission)}</div>
+                    <div class="launch-provider">${esc(launch.provider)} · ${esc(launch.vehicle)}</div>
+                  </div>
+                  <div class="launch-when">
+                    <div class="launch-date">${esc(launch.dateLabel)}</div>
+                    ${this._config.show_countdown !== false && launch.within24h ? `<div class="launch-countdown">${esc(launch.countdown)}</div>` : ""}
+                  </div>
+                </div>
+                <div class="launch-row">📍 ${esc(launch.padLocation)}</div>
+                ${this._config.show_weather !== false && launch.weather ? `<div class="launch-row">☁️ ${esc(launch.weather)}</div>` : ""}
+                ${this._config.show_tags !== false && launch.tags.length ? `<div class="launch-tags">${launch.tags.map((tag) => `<span class="launch-tag">${esc(tag)}</span>`).join("")}</div>` : ""}
+                ${launch.media ? `<div class="launch-actions"><a class="launch-button" href="${esc(launch.media)}" target="_blank" rel="noopener">Media link ↗</a></div>` : ""}
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      </ha-card>
+    `;
+  }
+
+  getCardSize() { return 5; }
+}
+
+function defineElement(name, ctor) {
+  if (!customElements.get(name)) customElements.define(name, ctor);
+}
+
+function registerCustomCard(type, name, description) {
+  window.customCards = window.customCards || [];
+  if (!window.customCards.some((card) => card.type === type)) {
+    window.customCards.push({ type, name, description, preview: true, documentationURL: DOCS_URL });
+  }
+}
+
+defineElement("apod-card-editor", ApodCardEditor);
+defineElement("neo-threat-card-editor", NeoThreatCardEditor);
+defineElement("solar-activity-card-editor", SolarActivityCardEditor);
+defineElement("astro-horizon-card-editor", AstroHorizonCardEditor);
+defineElement("astro-lunar-card-editor", AstroLunarCardEditor);
+defineElement("solar-system-card-editor", SolarSystemCardEditor);
+defineElement("rocket-launch-card-editor", RocketLaunchCardEditor);
+
+defineElement("apod-card", ApodCard);
+defineElement("neo-threat-card", NeoThreatCard);
+defineElement("solar-activity-card", SolarActivityCard);
+defineElement("astro-horizon-card", AstroHorizonCard);
+defineElement("astro-lunar-card", AstroLunarCard);
+defineElement("solar-system-card", SolarSystemCard);
+defineElement("rocket-launch-card", RocketLaunchCard);
+
+registerCustomCard("apod-card", "APOD Card", "NASA Astronomy Picture of the Day card with editor");
+registerCustomCard("neo-threat-card", "NEO Threat Card", "Near-Earth object tracker with editor");
+registerCustomCard("solar-activity-card", "Solar Activity Card", "Solar activity monitor with editor");
+registerCustomCard("astro-horizon-card", "Astro Horizon Card", "Sun arc horizon visualization with editor");
+registerCustomCard("astro-lunar-card", "Astro Lunar Card", "Moon phase visualization with editor");
+registerCustomCard("solar-system-card", "Solar System Card", "Client-side heliocentric orrery with editor");
+registerCustomCard("rocket-launch-card", "Rocket Launch Card", "Upcoming rocket launches list with editor");
 
 console.info(
-  "%c NASA-ASTRONOMY-CARDS %c v1.2.8 ",
-  "color:white;background:#1a237e;font-weight:bold;padding:2px 6px;border-radius:4px 0 0 4px;",
-  "color:#1a237e;background:#e8eaf6;font-weight:bold;padding:2px 6px;border-radius:0 4px 4px 0;"
+  "%c NASA Astronomy Cards v1.5.0 %c",
+  "color:white;background:#1a237e;font-weight:bold;padding:2px 8px;border-radius:4px 0 0 4px;",
+  "color:#1a237e;background:#e8eaf6;font-weight:bold;padding:2px 8px;border-radius:0 4px 4px 0;",
 );

@@ -11,7 +11,7 @@ from homeassistant.const import CONF_API_KEY, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import DOMAIN, CONF_UPDATE_INTERVAL
+from .const import DOMAIN, CONF_UPDATE_INTERVAL, CONF_ROCKET_API_KEY
 from .coordinator import NasaDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,11 +38,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     session = async_get_clientsession(hass)
     api_key = entry.data[CONF_API_KEY]
+    rocket_api_key = entry.data.get(CONF_ROCKET_API_KEY, "")
     update_interval = timedelta(
         seconds=entry.options.get(CONF_UPDATE_INTERVAL, 600)
     )
 
-    coordinator = NasaDataCoordinator(hass, session, api_key, update_interval)
+    coordinator = NasaDataCoordinator(
+        hass, session, api_key, rocket_api_key, update_interval
+    )
 
     # Don't block setup — refresh in background
     await coordinator.async_refresh()

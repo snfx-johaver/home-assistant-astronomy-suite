@@ -20,11 +20,11 @@ from .const import (
     DONKI_GST_URL,
     EONET_URL,
     TECHTRANSFER_URL,
+    ROCKET_LAUNCH_URL,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-# 10-second timeout per request to avoid blocking HA setup.
 DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 
@@ -36,6 +36,7 @@ class NasaDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         hass: HomeAssistant,
         session: aiohttp.ClientSession,
         api_key: str,
+        rocket_api_key: str,
         update_interval: timedelta,
     ) -> None:
         """Initialize the coordinator."""
@@ -47,9 +48,10 @@ class NasaDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self._session = session
         self._api_key = api_key
+        self._rocket_api_key = rocket_api_key
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch data from all NASA APIs concurrently."""
+        """Fetch data from all APIs concurrently."""
         results = await asyncio.gather(
             self._fetch_apod(),
             self._fetch_neo(),
@@ -58,10 +60,14 @@ class NasaDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._fetch_donki_gst(),
             self._fetch_eonet(),
             self._fetch_techtransfer(),
+            self._fetch_rocket_launches(),
             return_exceptions=True,
         )
 
-        keys = ["apod", "neo", "donki_cme", "donki_flr", "donki_gst", "eonet", "techtransfer"]
+        keys = [
+            "apod", "neo", "donki_cme", "donki_flr",
+            "donki_gst", "eonet", "techtransfer", "rocket_launches",
+        ]
         data: dict[str, Any] = {}
         for key, result in zip(keys, results):
             data[key] = None if isinstance(result, Exception) else result
@@ -125,3 +131,20 @@ class NasaDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _fetch_techtransfer(self) -> dict[str, Any] | None:
         """Fetch NASA Tech Transfer patents."""
         return await self._fetch_json(TECHTRANSFER_URL, {"engine": "true"})
+
+    async def _fetch_rocket_launches(self) -> list | None:
+        """Fetch next 5 rocket launches from RocketLaunch.Live."""
+        params = {}
+        if self._rocket_api_key:
+            params["key"] = self._rocket_api_key
+
+        try:
+            async with self._session.get(
+                ROCKET_LAUNCH_URL, params=params, timeout=DEFAULT_TIMEOUT
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return data.get("result", [])
+                return None
+        except Exception:
+            return None
