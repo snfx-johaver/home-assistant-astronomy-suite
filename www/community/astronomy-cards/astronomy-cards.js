@@ -1,79 +1,125 @@
 /**
- * NASA Astronomy Cards v1.1.0
+ * NASA Astronomy Cards v1.2.0
  * Pre-built bundle - place in /config/www/community/astronomy-cards/
  *
- * Cards: <apod-card>, <neo-threat-card>, <solar-activity-card>
+ * Cards: <apod-card>, <neo-threat-card>, <solar-activity-card>,
+ *        <astro-horizon-card>, <astro-lunar-card>
  * All cards feature:
  *  - Visual UI config editor (no YAML needed)
- *  - Consistent shared color theme
+ *  - Full light/dark mode support via HA CSS variables
+ *  - Mushroom-aligned design language
  */
 
 // ============================================================
-// SHARED THEME
+// SHARED THEME - Uses HA CSS custom properties for light/dark
 // ============================================================
 const ASTRO = {
-  primary: "#1a237e",
-  accent: "#7c4dff",
+  // All colors reference HA theme variables so they auto-adapt
   radius: "var(--ha-card-border-radius, 12px)",
   shadow: "var(--ha-card-box-shadow, none)",
-  surface: "var(--ha-card-background, var(--card-background-color, #fff))",
+  surface: "var(--ha-card-background, var(--card-background-color, white))",
   text1: "var(--primary-text-color)",
   text2: "var(--secondary-text-color)",
-  bg2: "var(--secondary-background-color)",
+  bg2: "var(--card-background-color, var(--secondary-background-color))",
   divider: "var(--divider-color)",
-  success: "#4caf50",
-  warning: "#ff9800",
-  error: "#f44336",
+  // Mushroom-style chip/badge background
+  chipBg: "rgba(var(--rgb-primary-text-color, 0,0,0), 0.05)",
+  // Status colors from HA theme
+  success: "var(--success-color, #4caf50)",
+  warning: "var(--warning-color, #ff9800)",
+  error: "var(--error-color, #f44336)",
+  info: "var(--info-color, #42a5f5)",
+  // Accent from HA theme
+  accent: "var(--accent-color, #7c4dff)",
+  stateIcon: "var(--state-icon-color, #7c4dff)",
+  // Category colors (work well in both modes)
   cme: "#ff6b35",
-  flare: "#ffd700",
-  storm: "#9c27b0",
-  neo: "#42a5f5",
-  badge: "rgba(26, 35, 126, 0.85)",
-  overlay: "linear-gradient(transparent, rgba(10, 10, 30, 0.92))",
+  flare: "#ffc107",
+  storm: "#ab47bc",
+  neo: "var(--info-color, #42a5f5)",
 };
 
-// Shared base styles injected into all cards
+// Shared base styles - Mushroom-inspired, HA theme adaptive
 const BASE_STYLES = `
-  :host { display:block; contain:content; }
+  :host {
+    display: block;
+    contain: content;
+    --astro-spacing: 12px;
+    --astro-icon-size: 20px;
+  }
   .astro-card {
     background: ${ASTRO.surface};
     border-radius: ${ASTRO.radius};
     box-shadow: ${ASTRO.shadow};
     overflow: hidden;
-    border: 1px solid ${ASTRO.divider};
   }
   .astro-header {
-    display: flex; align-items: center; gap: 8px;
-    padding: 16px 16px 0; margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 12px 0;
+    margin-bottom: var(--astro-spacing);
   }
-  .astro-header ha-icon { color: ${ASTRO.accent}; --mdc-icon-size: 22px; }
+  .astro-header ha-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: rgba(var(--rgb-state-icon-color, 124,77,255), 0.1);
+    color: ${ASTRO.stateIcon};
+    --mdc-icon-size: var(--astro-icon-size);
+  }
   .astro-title {
-    font-size: 0.95rem; font-weight: 600;
-    color: ${ASTRO.text1}; flex: 1;
+    font-size: 0.9rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    color: ${ASTRO.text1};
+    flex: 1;
   }
   .astro-badge {
-    background: ${ASTRO.badge}; color: white;
-    padding: 3px 10px; border-radius: 12px;
-    font-size: 0.72rem; font-weight: 600;
-    letter-spacing: 0.3px; text-transform: uppercase;
+    background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.06);
+    color: ${ASTRO.text2};
+    padding: 4px 10px;
+    border-radius: 16px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
   }
-  .astro-badge.warn { background: ${ASTRO.warning}; }
-  .astro-badge.danger { background: ${ASTRO.error}; }
+  .astro-badge.warn {
+    background: rgba(var(--rgb-warning-color, 255,152,0), 0.12);
+    color: ${ASTRO.warning};
+  }
+  .astro-badge.danger {
+    background: rgba(var(--rgb-error-color, 244,67,54), 0.12);
+    color: ${ASTRO.error};
+  }
   .astro-stat-grid {
-    display: grid; gap: 8px; padding: 0 16px; margin-bottom: 14px;
+    display: grid;
+    gap: 8px;
+    padding: 0 12px;
+    margin-bottom: var(--astro-spacing);
   }
   .astro-stat-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
   .astro-stat-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
   .astro-stat {
-    background: ${ASTRO.bg2}; border-radius: 8px;
-    padding: 10px 8px; text-align: center;
+    background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
+    border-radius: var(--ha-card-border-radius, 12px);
+    padding: 12px 8px;
+    text-align: center;
   }
   .astro-stat-value {
-    font-size: 1.1rem; font-weight: 700; color: ${ASTRO.text1};
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: ${ASTRO.text1};
   }
   .astro-stat-label {
-    font-size: 0.68rem; color: ${ASTRO.text2};
-    margin-top: 2px; text-transform: uppercase; letter-spacing: 0.3px;
+    font-size: 0.68rem;
+    color: ${ASTRO.text2};
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    font-weight: 500;
   }
 `;
 
@@ -224,17 +270,18 @@ class ApodCard extends HTMLElement {
         .apod-media { position:relative; width:100%; min-height:200px; overflow:hidden; }
         .apod-media img { width:100%; height:auto; display:block; object-fit:cover; max-height:420px; }
         .apod-badge-wrap { position:absolute; top:12px; left:12px; }
-        .apod-overlay { position:absolute; bottom:0; left:0; right:0; background:${ASTRO.overlay}; padding:48px 16px 16px; color:white; }
-        .apod-title { font-size:1.1rem; font-weight:600; margin:0 0 4px; text-shadow:0 1px 3px rgba(0,0,0,0.6); }
-        .apod-date { font-size:0.8rem; opacity:0.8; }
+        .apod-badge-wrap .astro-badge { background: rgba(0,0,0,0.5); color: white; backdrop-filter: blur(4px); }
+        .apod-overlay { position:absolute; bottom:0; left:0; right:0; background:linear-gradient(transparent, rgba(0,0,0,0.85)); padding:48px 16px 16px; color:white; }
+        .apod-title { font-size:1.05rem; font-weight:500; margin:0 0 4px; text-shadow:0 1px 2px rgba(0,0,0,0.4); }
+        .apod-date { font-size:0.78rem; opacity:0.75; }
         .apod-video { position:relative; width:100%; padding-bottom:56.25%; }
-        .apod-video iframe { position:absolute; top:0; left:0; width:100%; height:100%; border:none; }
-        .apod-text-header { padding:12px 16px; }
-        .apod-title-text { font-size:1.05rem; font-weight:600; color:${ASTRO.text1}; margin:8px 0 4px; }
-        .apod-date-text { font-size:0.8rem; color:${ASTRO.text2}; }
-        .apod-explanation { padding:12px 16px; font-size:0.84rem; line-height:1.5; color:${ASTRO.text1}; max-height:120px; overflow-y:auto; }
-        .apod-footer { padding:8px 16px 12px; font-size:0.75rem; opacity:0.6; color:${ASTRO.text2}; }
-        .apod-hd { padding:4px 16px 14px; }
+        .apod-video iframe { position:absolute; top:0; left:0; width:100%; height:100%; border:none; border-radius:${ASTRO.radius} ${ASTRO.radius} 0 0; }
+        .apod-text-header { padding:12px; }
+        .apod-title-text { font-size:1rem; font-weight:500; color:${ASTRO.text1}; margin:8px 0 4px; }
+        .apod-date-text { font-size:0.78rem; color:${ASTRO.text2}; }
+        .apod-explanation { padding:12px; font-size:0.84rem; line-height:1.5; color:${ASTRO.text2}; max-height:120px; overflow-y:auto; }
+        .apod-footer { padding:8px 12px 12px; font-size:0.72rem; color:${ASTRO.text2}; opacity:0.7; }
+        .apod-hd { padding:4px 12px 14px; }
         .apod-hd a { font-size:0.78rem; color:${ASTRO.accent}; text-decoration:none; font-weight:500; }
         .apod-hd a:hover { text-decoration:underline; }
       </style>
@@ -376,17 +423,19 @@ class NeoThreatCard extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>
         ${BASE_STYLES}
-        .neo-body { padding: 0 16px 16px; }
+        .neo-body { padding: 0 12px 12px; }
         .neo-item {
           display: grid; grid-template-columns: auto 1fr auto;
-          align-items: center; gap: 10px; padding: 9px 12px;
-          border-radius: 8px; background: ${ASTRO.bg2};
+          align-items: center; gap: 10px; padding: 10px 12px;
+          border-radius: var(--ha-card-border-radius, 12px);
+          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
           margin-bottom: 6px; transition: background 0.15s;
         }
-        .neo-item:hover { background: ${ASTRO.divider}; }
+        .neo-item:hover { background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.08); }
         .neo-dot {
           width: 8px; height: 8px; border-radius: 50%;
           background: ${ASTRO.success};
+          flex-shrink: 0;
         }
         .neo-dot.danger {
           background: ${ASTRO.error};
@@ -398,9 +447,9 @@ class NeoThreatCard extends HTMLElement {
           font-size: 0.84rem; font-weight: 500; color: ${ASTRO.text1};
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
-        .neo-detail { font-size: 0.71rem; color: ${ASTRO.text2}; margin-top: 2px; }
+        .neo-detail { font-size: 0.72rem; color: ${ASTRO.text2}; margin-top: 2px; }
         .neo-dist {
-          font-size: 0.8rem; font-weight: 600; color: ${ASTRO.text1};
+          font-size: 0.8rem; font-weight: 500; color: ${ASTRO.text1};
           text-align: right; white-space: nowrap;
         }
       </style>
@@ -579,17 +628,18 @@ class SolarActivityCard extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>
         ${BASE_STYLES}
-        .solar-body { padding: 0 16px 16px; }
+        .solar-body { padding: 0 12px 12px; }
         .solar-status {
           display: flex; align-items: center; gap: 6px;
-          padding: 8px 12px; border-radius: 8px;
-          margin: 0 16px 12px; font-size: 0.8rem; font-weight: 500;
+          padding: 8px 12px; border-radius: var(--ha-card-border-radius, 12px);
+          margin: 0 12px 12px; font-size: 0.8rem; font-weight: 500;
         }
-        .solar-status.calm { background: rgba(76,175,80,0.1); color: ${ASTRO.success}; }
-        .solar-status.active { background: rgba(255,152,0,0.1); color: ${ASTRO.warning}; }
-        .solar-status.intense { background: rgba(244,67,54,0.1); color: ${ASTRO.error}; }
+        .solar-status.calm { background: rgba(var(--rgb-success-color, 76,175,80), 0.1); color: ${ASTRO.success}; }
+        .solar-status.active { background: rgba(var(--rgb-warning-color, 255,152,0), 0.1); color: ${ASTRO.warning}; }
+        .solar-status.intense { background: rgba(var(--rgb-error-color, 244,67,54), 0.1); color: ${ASTRO.error}; }
         .solar-metric {
-          background: ${ASTRO.bg2}; border-radius: 10px;
+          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
+          border-radius: var(--ha-card-border-radius, 12px);
           padding: 14px 10px; text-align: center;
           position: relative; overflow: hidden;
         }
@@ -600,15 +650,16 @@ class SolarActivityCard extends HTMLElement {
         .solar-metric.flare::before { background: ${ASTRO.flare}; }
         .solar-metric.storm::before { background: ${ASTRO.storm}; }
         .solar-metric-icon { font-size: 1.3rem; margin-bottom: 4px; }
-        .solar-metric-value { font-size: 1.5rem; font-weight: 700; color: ${ASTRO.text1}; }
-        .solar-metric-label { font-size: 0.68rem; color: ${ASTRO.text2}; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.3px; }
-        .solar-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; padding: 0 16px; margin-bottom: 14px; }
-        .solar-timeline { border-top: 1px solid ${ASTRO.divider}; margin: 0 16px; padding-top: 12px; padding-bottom: 4px; }
-        .solar-tl-title { font-size: 0.76rem; font-weight: 600; color: ${ASTRO.text2}; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .solar-metric-value { font-size: 1.5rem; font-weight: 600; color: ${ASTRO.text1}; }
+        .solar-metric-label { font-size: 0.68rem; color: ${ASTRO.text2}; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.3px; font-weight: 500; }
+        .solar-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; padding: 0 12px; margin-bottom: 14px; }
+        .solar-timeline { border-top: 1px solid ${ASTRO.divider}; margin: 0 12px; padding-top: 12px; padding-bottom: 4px; }
+        .solar-tl-title { font-size: 0.72rem; font-weight: 500; color: ${ASTRO.text2}; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
         .solar-tl-list { display: flex; flex-direction: column; gap: 6px; }
         .solar-evt {
           display: flex; align-items: center; gap: 10px;
-          padding: 8px 10px; border-radius: 6px; background: ${ASTRO.bg2};
+          padding: 9px 12px; border-radius: var(--ha-card-border-radius, 12px);
+          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
         }
         .solar-evt-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
         .solar-evt-dot.cme { background: ${ASTRO.cme}; }
@@ -618,8 +669,10 @@ class SolarActivityCard extends HTMLElement {
         .solar-evt-type { font-size: 0.78rem; font-weight: 500; color: ${ASTRO.text1}; }
         .solar-evt-time { font-size: 0.7rem; color: ${ASTRO.text2}; }
         .solar-evt-class {
-          font-size: 0.73rem; font-weight: 600; padding: 2px 7px;
-          border-radius: 4px; background: ${ASTRO.divider}; color: ${ASTRO.text1};
+          font-size: 0.72rem; font-weight: 500; padding: 3px 8px;
+          border-radius: 8px;
+          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.06);
+          color: ${ASTRO.text1};
         }
       </style>
       <div class="astro-card">
@@ -831,7 +884,7 @@ class AstroHorizonCard extends HTMLElement {
       `;
     }
 
-    const darkBg = this._config.dark_mode ? "#0d1117" : ASTRO.bg2;
+    const darkBg = "var(--ha-card-background, var(--card-background-color, #1e1e2e))";
     const skyGradient = elevation > 0
       ? (elevation > 20 ? "linear-gradient(180deg, #1a3a5c 0%, #4a90d9 50%, #87CEEB 100%)" : "linear-gradient(180deg, #1a237e 0%, #ff6b35 40%, #ffd700 100%)")
       : "linear-gradient(180deg, #0a0e1a 0%, #1a237e 60%, #2a1a4e 100%)";
@@ -900,17 +953,20 @@ class AstroHorizonCard extends HTMLElement {
         }
         .hz-time-label span:first-child { font-size: 0.9rem; margin-bottom: 2px; }
         .hz-time-label span:last-child { font-weight: 600; }
-        .hz-body { padding: 14px 16px 16px; background: ${darkBg}; }
+        .hz-body { padding: 14px 12px 16px; }
         .hz-data {
           display: flex; gap: 16px; justify-content: center;
           flex-wrap: wrap;
         }
         .hz-data-item {
           display: flex; flex-direction: column; align-items: center;
+          padding: 8px 12px;
+          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
+          border-radius: var(--ha-card-border-radius, 12px);
         }
         .hz-data-label {
           font-size: 0.68rem; color: ${ASTRO.text2};
-          text-transform: uppercase; letter-spacing: 0.3px;
+          text-transform: uppercase; letter-spacing: 0.3px; font-weight: 500;
         }
         .hz-data-value {
           font-size: 1rem; font-weight: 600; color: ${ASTRO.text1};
@@ -1116,7 +1172,7 @@ class AstroLunarCard extends HTMLElement {
         ${BASE_STYLES}
         .lunar-body {
           display: flex; flex-direction: column; align-items: center;
-          padding: ${this._config.compact ? '12px' : '20px'} 16px;
+          padding: ${this._config.compact ? '12px' : '24px'} 16px;
           background: linear-gradient(180deg, #0a0e1a 0%, #1a1a2e 100%);
           border-radius: ${ASTRO.radius} ${ASTRO.radius} 0 0;
           position: relative;
@@ -1140,31 +1196,31 @@ class AstroLunarCard extends HTMLElement {
           filter: drop-shadow(0 0 15px rgba(200,200,255,0.3));
         }
         .lunar-phase-label {
-          margin-top: 12px; text-align: center; z-index: 1;
+          margin-top: 14px; text-align: center; z-index: 1;
         }
         .lunar-phase-name {
-          font-size: ${this._config.compact ? '0.9rem' : '1.05rem'};
-          font-weight: 600; color: #e8e8f0;
+          font-size: ${this._config.compact ? '0.9rem' : '1rem'};
+          font-weight: 500; color: #e8e8f0;
           text-transform: capitalize;
         }
         .lunar-illumination {
-          font-size: 0.78rem; color: rgba(200,200,255,0.7);
+          font-size: 0.78rem; color: rgba(200,200,255,0.65);
           margin-top: 4px;
         }
         .lunar-info {
-          padding: 14px 16px;
+          padding: 14px 12px;
         }
         .lunar-phases {
           display: grid;
           grid-template-columns: repeat(4, 1fr);
           gap: 6px;
-          padding: 12px 16px 16px;
+          padding: 12px 12px 14px;
           border-top: 1px solid ${ASTRO.divider};
         }
         .lunar-next {
           display: flex; flex-direction: column; align-items: center;
-          padding: 8px 4px; border-radius: 8px;
-          background: ${ASTRO.bg2};
+          padding: 10px 4px; border-radius: var(--ha-card-border-radius, 12px);
+          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
         }
         .lunar-next-icon { font-size: 1.2rem; margin-bottom: 4px; }
         .lunar-next-name {
@@ -1173,7 +1229,7 @@ class AstroLunarCard extends HTMLElement {
           line-height: 1.2;
         }
         .lunar-next-days {
-          font-size: 0.68rem; font-weight: 600;
+          font-size: 0.68rem; font-weight: 500;
           color: ${ASTRO.accent}; margin-top: 3px;
         }
       </style>
