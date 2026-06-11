@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 from datetime import timedelta
 from pathlib import Path
 
@@ -17,19 +18,14 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.CAMERA]
 
-CARDS_URL = f"/{DOMAIN}/astronomy-cards.js"
+CARDS_FILENAME = "astronomy-cards.js"
+CARDS_LOCAL_URL = "/local/community/astronomy-cards/astronomy-cards.js"
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the NASA Astronomy Suite component."""
-    # Register static path for the bundled JS cards (if file exists)
-    cards_path = Path(__file__).parent / "astronomy-cards.js"
-    if cards_path.is_file():
-        from homeassistant.components.http import StaticPathConfig
-
-        await hass.http.async_register_static_paths(
-            [StaticPathConfig(CARDS_URL, str(cards_path), True)]
-        )
+    # Copy JS cards to www/ so they're served at /local/community/astronomy-cards/
+    await hass.async_add_executor_job(_deploy_cards_to_www, hass)
     return True
 
 
@@ -48,7 +44,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = NasaDataCoordinator(hass, session, api_key, update_interval)
 
-    # Don't block setup — refresh in background. Sensors show "unavailable" until ready.
+    # Don't block setup — refresh in background
     await coordinator.async_refresh()
 
     hass.data[DOMAIN][entry.entry_id] = {
@@ -67,14 +63,24 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unload_ok
 
 
+def _deploy_cards_to_www(hass: HomeAssistant) -> None:
+    """Copy astronomy-cards.js to config/www/community/astronomy-cards/."""
+    source = Path(__file__).parent / CARDS_FILENAME
+    if not source.is_file():
+        return
+
+    www_dir = Path(hass.config.path("www")) / "community" / "astronomy-cards"
+    www_dir.mkdir(parents=True, exist_ok=True)
+
+    dest = www_dir / CARDS_FILENAME
+    # Only copy if source is newer or dest doesn't exist
+    if not dest.is_file() or source.stat().st_mtime > dest.stat().st_mtime:
+        shutil.copy2(str(source), str(dest))
+
+
 async def _async_register_cards_resource(hass: HomeAssistant) -> None:
     """Register astronomy-cards.js as a Lovelace resource if not already present."""
     try:
-        # Import here to avoid issues if lovelace component isn't loaded
-        from homeassistant.components.lovelace.resources import (
-            ResourceStorageCollection,
-        )
-
         lovelace_data = hass.data.get("lovelace")
         if lovelace_data is None:
             return
@@ -85,12 +91,13 @@ async def _async_register_cards_resource(hass: HomeAssistant) -> None:
 
         # Check if already registered
         for resource in resources.async_items():
-            if CARDS_URL in resource.get("url", ""):
+            url = resource.get("url", "")
+            if "astronomy-cards" in url:
                 return
 
         # Add the resource
         await resources.async_create_item(
-            {"res_type": "module", "url": CARDS_URL}
+            {"res_type": "module", "url": CARDS_LOCAL_URL}
         )
     except Exception:
         pass

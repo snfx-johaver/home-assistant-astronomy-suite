@@ -1,5 +1,5 @@
 /**
- * NASA Astronomy Cards v1.2.7
+ * NASA Astronomy Cards v1.2.8
  * Pre-built bundle - place in /config/www/community/astronomy-cards/
  *
  * Cards: <apod-card>, <neo-threat-card>, <solar-activity-card>,
@@ -1361,7 +1361,7 @@ window.customCards.push(
 );
 
 console.info(
-  "%c NASA-ASTRONOMY-CARDS %c v1.2.7 ",
+  "%c NASA-ASTRONOMY-CARDS %c v1.2.8 ",
   "color:white;background:#1a237e;font-weight:bold;padding:2px 6px;border-radius:4px 0 0 4px;",
   "color:#1a237e;background:#e8eaf6;font-weight:bold;padding:2px 6px;border-radius:0 4px 4px 0;"
 );
