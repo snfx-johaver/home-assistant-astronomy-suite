@@ -1,0 +1,17 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "NASA Astronomy Suite",
+        "description": "Enter your NASA API key. Get one free at https://api.nasa.gov/",
+        "data": {
+          "api_key": "NASA API Key"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Unable to connect to NASA API",
+      "invalid_auth": "Invalid API key"
+    }
+  }
+}

@@ -1,0 +1,347 @@
+# ============================================================
+# NASA Astronomy Dashboard - Fully Isolated Lovelace Dashboard
+# ============================================================
+# Installation: Copy this file to /config/lovelace/astronomy-dashboard.yaml
+# Then add to configuration.yaml:
+#
+# lovelace:
+#   mode: storage
+#   dashboards:
+#     astronomy:
+#       mode: yaml
+#       title: "🔭 Astronomy"
+#       icon: mdi:telescope
+#       show_in_sidebar: true
+#       filename: lovelace/astronomy-dashboard.yaml
+#
+# Resources: Add to configuration.yaml under lovelace.resources
+# (or via UI: Settings > Dashboards > Resources):
+#
+#   - url: /local/community/astronomy-cards/astronomy-cards.js
+#     type: module
+# ============================================================
+
+title: "🔭 Astronomy Suite"
+views:
+  # ──────────────────────────────────────────────────────────
+  # VIEW 1: Overview
+  # ──────────────────────────────────────────────────────────
+  - title: Overview
+    path: overview
+    icon: mdi:telescope
+    type: sections
+    sections:
+      - title: ""
+        type: grid
+        cards:
+          # APOD Hero Card
+          - type: custom:apod-card
+            entity: sensor.nasa_astronomy_suite_apod
+            show_explanation: true
+            show_copyright: true
+
+      - title: Space Weather
+        type: grid
+        cards:
+          # Solar Activity Card
+          - type: custom:solar-activity-card
+            cme_entity: sensor.nasa_astronomy_suite_coronal_mass_ejections
+            flare_entity: sensor.nasa_astronomy_suite_solar_flares
+            storm_entity: sensor.nasa_astronomy_suite_geomagnetic_storms
+            show_timeline: true
+
+      - title: Near Earth Objects
+        type: grid
+        cards:
+          # NEO Threat Card
+          - type: custom:neo-threat-card
+            entity: sensor.nasa_astronomy_suite_neo_count_today
+            max_items: 8
+
+      - title: Quick Stats
+        type: grid
+        cards:
+          - type: custom:mushroom-entity-card
+            entity: sensor.nasa_astronomy_suite_neo_count_today
+            name: NEOs Today
+            icon: mdi:meteor
+            icon_color: orange
+            layout: vertical
+
+          - type: custom:mushroom-entity-card
+            entity: sensor.nasa_astronomy_suite_coronal_mass_ejections
+            name: CMEs (7d)
+            icon: mdi:white-balance-sunny
+            icon_color: deep-orange
+            layout: vertical
+
+          - type: custom:mushroom-entity-card
+            entity: sensor.nasa_astronomy_suite_solar_flares
+            name: Solar Flares (7d)
+            icon: mdi:flare
+            icon_color: amber
+            layout: vertical
+
+          - type: custom:mushroom-entity-card
+            entity: sensor.nasa_astronomy_suite_geomagnetic_storms
+            name: Geo Storms (30d)
+            icon: mdi:weather-lightning
+            icon_color: purple
+            layout: vertical
+
+          - type: custom:mushroom-entity-card
+            entity: sensor.nasa_astronomy_suite_active_earth_events
+            name: Earth Events
+            icon: mdi:earth
+            icon_color: green
+            layout: vertical
+
+          - type: custom:mushroom-entity-card
+            entity: sensor.nasa_astronomy_suite_closest_neo
+            name: Closest NEO
+            icon: mdi:bullseye-arrow
+            icon_color: red
+            layout: vertical
+
+  # ──────────────────────────────────────────────────────────
+  # VIEW 2: Solar System
+  # ──────────────────────────────────────────────────────────
+  - title: Solar System
+    path: solar-system
+    icon: mdi:orbit
+    type: sections
+    sections:
+      - title: Sun & Moon
+        type: grid
+        cards:
+          # Horizon Card (existing integration)
+          - type: custom:horizon-card
+            darkMode: true
+            showAzimuth: true
+            showElevation: true
+            showMoon: true
+
+          # Lunar Phase Card (existing integration)
+          - type: custom:lunar-phase-card
+            entity: sensor.moon_phase
+            use_default: true
+
+      - title: Sun Elevation Today
+        type: grid
+        cards:
+          - type: custom:apexcharts-card
+            header:
+              title: Sun Elevation
+              show: true
+            graph_span: 24h
+            span:
+              start: day
+            series:
+              - entity: sun.sun
+                attribute: elevation
+                name: Elevation
+                type: area
+                color: "#FFB300"
+                opacity: 0.3
+                stroke_width: 2
+                curve: smooth
+
+      - title: Season & Day Length
+        type: grid
+        cards:
+          - type: custom:mushroom-entity-card
+            entity: sensor.season
+            name: Current Season
+            icon: mdi:weather-sunny
+            icon_color: amber
+
+          - type: custom:mushroom-entity-card
+            entity: sun.sun
+            name: Sun
+            icon: mdi:white-balance-sunny
+            icon_color: yellow
+            attribute: elevation
+            suffix: "°"
+
+  # ──────────────────────────────────────────────────────────
+  # VIEW 3: NEO Tracker
+  # ──────────────────────────────────────────────────────────
+  - title: NEO Tracker
+    path: neo-tracker
+    icon: mdi:meteor
+    type: sections
+    sections:
+      - title: ""
+        type: grid
+        cards:
+          - type: custom:neo-threat-card
+            entity: sensor.nasa_astronomy_suite_neo_count_today
+            max_items: 15
+
+      - title: NEO Statistics
+        type: grid
+        cards:
+          - type: custom:mushroom-entity-card
+            entity: sensor.nasa_astronomy_suite_neo_count_today
+            name: Total NEOs
+            icon: mdi:counter
+            icon_color: blue
+            layout: vertical
+
+          - type: custom:mushroom-entity-card
+            entity: sensor.nasa_astronomy_suite_closest_neo
+            name: Closest Approach
+            icon: mdi:bullseye-arrow
+            icon_color: red
+            layout: vertical
+
+          - type: custom:mushroom-entity-card
+            entity: sensor.nasa_astronomy_suite_fastest_neo
+            name: Fastest Object
+            icon: mdi:speedometer
+            icon_color: orange
+            layout: vertical
+
+          - type: custom:mushroom-entity-card
+            entity: sensor.nasa_astronomy_suite_largest_neo
+            name: Largest Object
+            icon: mdi:resize
+            icon_color: teal
+            layout: vertical
+
+      - title: NEO History (7 Days)
+        type: grid
+        cards:
+          - type: custom:apexcharts-card
+            header:
+              title: Daily NEO Count
+              show: true
+            graph_span: 7d
+            span:
+              end: now
+            series:
+              - entity: sensor.nasa_astronomy_suite_neo_count_today
+                name: NEO Count
+                type: column
+                color: "#FF6D00"
+                group_by:
+                  func: max
+                  duration: 1d
+
+  # ──────────────────────────────────────────────────────────
+  # VIEW 4: Space Weather
+  # ──────────────────────────────────────────────────────────
+  - title: Space Weather
+    path: space-weather
+    icon: mdi:weather-lightning-rainy
+    type: sections
+    sections:
+      - title: ""
+        type: grid
+        cards:
+          - type: custom:solar-activity-card
+            cme_entity: sensor.nasa_astronomy_suite_coronal_mass_ejections
+            flare_entity: sensor.nasa_astronomy_suite_solar_flares
+            storm_entity: sensor.nasa_astronomy_suite_geomagnetic_storms
+            show_timeline: true
+
+      - title: Solar Activity Trends
+        type: grid
+        cards:
+          - type: custom:apexcharts-card
+            header:
+              title: Solar Events (7 Days)
+              show: true
+            graph_span: 7d
+            series:
+              - entity: sensor.nasa_astronomy_suite_coronal_mass_ejections
+                name: CMEs
+                type: line
+                color: "#FF6B35"
+                stroke_width: 2
+              - entity: sensor.nasa_astronomy_suite_solar_flares
+                name: Flares
+                type: line
+                color: "#FFD700"
+                stroke_width: 2
+              - entity: sensor.nasa_astronomy_suite_geomagnetic_storms
+                name: Storms
+                type: line
+                color: "#9C27B0"
+                stroke_width: 2
+
+      - title: Aurora
+        type: grid
+        cards:
+          - type: custom:mushroom-entity-card
+            entity: sensor.aurora_visibility
+            name: Aurora Visibility
+            icon: mdi:aurora
+            icon_color: green
+            layout: vertical
+
+  # ──────────────────────────────────────────────────────────
+  # VIEW 5: ISS Tracker
+  # ──────────────────────────────────────────────────────────
+  - title: ISS
+    path: iss
+    icon: mdi:space-station
+    type: sections
+    sections:
+      - title: International Space Station
+        type: grid
+        cards:
+          - type: map
+            entities:
+              - entity: binary_sensor.iss
+            default_zoom: 3
+            hours_to_show: 0
+            aspect_ratio: "16:9"
+
+          - type: custom:mushroom-entity-card
+            entity: binary_sensor.iss
+            name: ISS Overhead
+            icon: mdi:space-station
+            icon_color: blue
+
+      - title: Next ISS Pass
+        type: grid
+        cards:
+          - type: entities
+            entities:
+              - entity: sensor.iss_next_rise
+                name: Next Rise
+                icon: mdi:arrow-up-bold
+              - entity: sensor.iss_number_of_people_in_space
+                name: People in Space
+                icon: mdi:account-group
+
+  # ──────────────────────────────────────────────────────────
+  # VIEW 6: Earth Events
+  # ──────────────────────────────────────────────────────────
+  - title: Earth Events
+    path: earth-events
+    icon: mdi:earth
+    type: sections
+    sections:
+      - title: Active Natural Events (EONET)
+        type: grid
+        cards:
+          - type: custom:mushroom-entity-card
+            entity: sensor.nasa_astronomy_suite_active_earth_events
+            name: Active Events
+            icon: mdi:earth-arrow-right
+            icon_color: green
+            layout: vertical
+
+          - type: markdown
+            content: >
+              ## 🌍 Earth Observatory Events
+
+              Active natural events tracked by NASA's EONET system.
+              Data includes wildfires, volcanic eruptions, severe storms,
+              and other significant natural events worldwide.
+
+              **Entity:** `sensor.nasa_astronomy_suite_active_earth_events`
+
+              Check entity attributes for detailed event list.
