@@ -114,17 +114,22 @@ views:
       - title: Sun & Moon
         type: grid
         cards:
-          # Horizon Card (existing integration)
-          - type: custom:horizon-card
-            darkMode: true
-            showAzimuth: true
-            showElevation: true
-            showMoon: true
+          # Astro Horizon Card (built-in, no HACS needed)
+          - type: custom:astro-horizon-card
+            sun_entity: sun.sun
+            moon_entity: sensor.moon_phase
+            show_moon: true
+            show_azimuth: true
+            show_elevation: true
+            show_noon_line: true
+            dark_mode: true
 
-          # Lunar Phase Card (existing integration)
-          - type: custom:lunar-phase-card
+          # Astro Lunar Phase Card (built-in, no HACS needed)
+          - type: custom:astro-lunar-card
             entity: sensor.moon_phase
-            use_default: true
+            show_illumination: true
+            show_next_phases: true
+            show_phase_name: true
 
       - title: Sun Elevation Today
         type: grid

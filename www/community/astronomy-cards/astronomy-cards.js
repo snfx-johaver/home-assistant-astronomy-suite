@@ -681,21 +681,631 @@ class SolarActivityCard extends HTMLElement {
 }
 
 // ============================================================
+// ASTRO HORIZON CARD CONFIG EDITOR
+// ============================================================
+class AstroHorizonCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._config = {};
+  }
+
+  setConfig(config) { this._config = { ...config }; this._render(); }
+  set hass(hass) { this._hass = hass; this._render(); }
+
+  _render() {
+    if (!this._hass) return;
+    this.shadowRoot.innerHTML = `
+      <style>${EDITOR_STYLES}</style>
+      <div class="editor">
+        <ha-entity-picker
+          label="Sun Entity"
+          value="${this._config.sun_entity || "sun.sun"}"
+          id="sun_entity"
+        ></ha-entity-picker>
+        <ha-entity-picker
+          label="Moon Entity (optional)"
+          value="${this._config.moon_entity || ""}"
+          id="moon_entity"
+        ></ha-entity-picker>
+        <label>
+          <ha-switch id="show_moon" ${this._config.show_moon !== false ? "checked" : ""}></ha-switch>
+          Show Moon
+        </label>
+        <label>
+          <ha-switch id="show_azimuth" ${this._config.show_azimuth !== false ? "checked" : ""}></ha-switch>
+          Show Azimuth
+        </label>
+        <label>
+          <ha-switch id="show_elevation" ${this._config.show_elevation !== false ? "checked" : ""}></ha-switch>
+          Show Elevation
+        </label>
+        <label>
+          <ha-switch id="show_noon_line" ${this._config.show_noon_line !== false ? "checked" : ""}></ha-switch>
+          Show Noon Line
+        </label>
+        <label>
+          <ha-switch id="dark_mode" ${this._config.dark_mode !== false ? "checked" : ""}></ha-switch>
+          Dark Mode
+        </label>
+      </div>
+    `;
+
+    ["sun_entity", "moon_entity"].forEach(key => {
+      const picker = this.shadowRoot.getElementById(key);
+      picker.hass = this._hass;
+      picker.addEventListener("value-changed", (e) => {
+        this._config = { ...this._config, [key]: e.detail.value }; this._dispatch();
+      });
+    });
+    ["show_moon", "show_azimuth", "show_elevation", "show_noon_line", "dark_mode"].forEach(key => {
+      this.shadowRoot.getElementById(key).addEventListener("change", (e) => {
+        this._config = { ...this._config, [key]: e.target.checked }; this._dispatch();
+      });
+    });
+  }
+
+  _dispatch() {
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config } }));
+  }
+}
+customElements.define("astro-horizon-card-editor", AstroHorizonCardEditor);
+
+// ============================================================
+// ASTRO HORIZON CARD
+// ============================================================
+class AstroHorizonCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._config = {};
+  }
+
+  static getConfigElement() { return document.createElement("astro-horizon-card-editor"); }
+
+  static getStubConfig() {
+    return { sun_entity: "sun.sun", moon_entity: "sensor.moon_phase", show_moon: true, show_azimuth: true, show_elevation: true, show_noon_line: true, dark_mode: true };
+  }
+
+  setConfig(config) {
+    this._config = { sun_entity: "sun.sun", moon_entity: "sensor.moon_phase", show_moon: true, show_azimuth: true, show_elevation: true, show_noon_line: true, dark_mode: true, ...config };
+  }
+
+  set hass(hass) { this._hass = hass; this._render(); }
+
+  _render() {
+    if (!this._hass) return;
+    const sun = this._hass.states[this._config.sun_entity];
+    if (!sun) {
+      this.shadowRoot.innerHTML = `<div class="astro-card" style="padding:24px;text-align:center;color:${ASTRO.text2}">Sun entity not found</div>`;
+      return;
+    }
+
+    const elevation = parseFloat(sun.attributes.elevation) || 0;
+    const azimuth = parseFloat(sun.attributes.azimuth) || 0;
+    const rising = sun.attributes.rising || false;
+    const nextRise = sun.attributes.next_rising || "";
+    const nextSet = sun.attributes.next_setting || "";
+    const nextNoon = sun.attributes.next_noon || "";
+
+    // Calculate sun position on the arc
+    // Map elevation: -90 to 90 -> 0% to 100% of arc height
+    const normalizedElevation = (elevation + 90) / 180;
+    // Map azimuth 0-360 to horizontal position on arc
+    const sunX = (azimuth / 360) * 100;
+    // SVG arc position
+    const arcCenterX = 200;
+    const arcRadius = 160;
+    const arcStartY = 180;
+    const sunAngle = Math.PI * (1 - sunX / 100);
+    const svgSunX = arcCenterX + arcRadius * Math.cos(sunAngle);
+    const svgSunY = arcStartY - arcRadius * Math.sin(sunAngle) * (elevation > 0 ? 1 : 0.3);
+
+    // If below horizon, place below the horizon line
+    const effectiveSunY = elevation >= 0
+      ? arcStartY - (elevation / 90) * arcRadius
+      : arcStartY + (Math.abs(elevation) / 90) * 40;
+
+    // Time formatting
+    const fmtTime = (iso) => {
+      if (!iso) return "--:--";
+      try { return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
+      catch { return "--:--"; }
+    };
+
+    const riseTime = fmtTime(nextRise);
+    const setTime = fmtTime(nextSet);
+    const noonTime = fmtTime(nextNoon);
+
+    // Moon data
+    let moonHtml = "";
+    if (this._config.show_moon) {
+      const moonEntity = this._hass.states[this._config.moon_entity];
+      const moonPhase = moonEntity ? moonEntity.state : "";
+      const moonIcon = this._getMoonIcon(moonPhase);
+      moonHtml = `
+        <div class="hz-moon">
+          <span class="hz-moon-icon">${moonIcon}</span>
+          <span class="hz-moon-phase">${esc(moonPhase || "Unknown")}</span>
+        </div>
+      `;
+    }
+
+    const darkBg = this._config.dark_mode ? "#0d1117" : ASTRO.bg2;
+    const skyGradient = elevation > 0
+      ? (elevation > 20 ? "linear-gradient(180deg, #1a3a5c 0%, #4a90d9 50%, #87CEEB 100%)" : "linear-gradient(180deg, #1a237e 0%, #ff6b35 40%, #ffd700 100%)")
+      : "linear-gradient(180deg, #0a0e1a 0%, #1a237e 60%, #2a1a4e 100%)";
+
+    const elevLabel = this._config.show_elevation ? `<div class="hz-data-item"><span class="hz-data-label">Elevation</span><span class="hz-data-value">${elevation.toFixed(1)}°</span></div>` : "";
+    const azLabel = this._config.show_azimuth ? `<div class="hz-data-item"><span class="hz-data-label">Azimuth</span><span class="hz-data-value">${azimuth.toFixed(1)}°</span></div>` : "";
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        ${BASE_STYLES}
+        .hz-sky {
+          position: relative;
+          width: 100%;
+          height: 200px;
+          background: ${skyGradient};
+          overflow: hidden;
+          border-radius: ${ASTRO.radius} ${ASTRO.radius} 0 0;
+        }
+        .hz-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        .hz-horizon-line {
+          stroke: rgba(255,255,255,0.3);
+          stroke-width: 1;
+          stroke-dasharray: 4 4;
+        }
+        .hz-arc {
+          fill: none;
+          stroke: rgba(255,255,255,0.15);
+          stroke-width: 1.5;
+          stroke-dasharray: 3 3;
+        }
+        .hz-noon-line {
+          stroke: rgba(255,215,0,0.3);
+          stroke-width: 1;
+          stroke-dasharray: 2 3;
+        }
+        .hz-sun {
+          filter: drop-shadow(0 0 8px rgba(255,200,0,0.8));
+        }
+        .hz-sun-glow {
+          fill: rgba(255,200,0,0.2);
+        }
+        .hz-sun-body {
+          fill: #ffd700;
+        }
+        .hz-sun-below .hz-sun-body {
+          fill: #ff6b35;
+          opacity: 0.6;
+        }
+        .hz-sun-below .hz-sun-glow {
+          fill: rgba(255,107,53,0.15);
+        }
+        .hz-ground {
+          fill: ${this._config.dark_mode ? "rgba(10,15,26,0.85)" : "rgba(30,50,30,0.7)"};
+        }
+        .hz-time-labels {
+          position: absolute;
+          bottom: 8px;
+          left: 0; right: 0;
+          display: flex;
+          justify-content: space-between;
+          padding: 0 16px;
+        }
+        .hz-time-label {
+          display: flex; flex-direction: column; align-items: center;
+          font-size: 0.68rem; color: rgba(255,255,255,0.8);
+        }
+        .hz-time-label span:first-child { font-size: 0.9rem; margin-bottom: 2px; }
+        .hz-time-label span:last-child { font-weight: 600; }
+        .hz-body { padding: 14px 16px 16px; background: ${darkBg}; }
+        .hz-data {
+          display: flex; gap: 16px; justify-content: center;
+          flex-wrap: wrap;
+        }
+        .hz-data-item {
+          display: flex; flex-direction: column; align-items: center;
+        }
+        .hz-data-label {
+          font-size: 0.68rem; color: ${ASTRO.text2};
+          text-transform: uppercase; letter-spacing: 0.3px;
+        }
+        .hz-data-value {
+          font-size: 1rem; font-weight: 600; color: ${ASTRO.text1};
+          margin-top: 2px;
+        }
+        .hz-moon {
+          display: flex; align-items: center; gap: 6px;
+          justify-content: center; margin-top: 10px;
+          padding-top: 10px; border-top: 1px solid ${ASTRO.divider};
+        }
+        .hz-moon-icon { font-size: 1.2rem; }
+        .hz-moon-phase { font-size: 0.8rem; color: ${ASTRO.text2}; text-transform: capitalize; }
+        .hz-state-badge {
+          position: absolute; top: 10px; right: 12px;
+          background: rgba(0,0,0,0.5); color: white;
+          padding: 3px 9px; border-radius: 10px;
+          font-size: 0.68rem; font-weight: 600;
+          text-transform: uppercase; letter-spacing: 0.4px;
+        }
+        .hz-state-badge.above { color: ${ASTRO.flare}; }
+        .hz-state-badge.below { color: ${ASTRO.accent}; }
+      </style>
+      <div class="astro-card">
+        <div class="hz-sky">
+          <svg class="hz-svg" viewBox="0 0 400 200" preserveAspectRatio="xMidYMid meet">
+            <!-- Arc path -->
+            <path class="hz-arc" d="M 40,180 A 160,160 0 0,1 360,180" />
+            <!-- Horizon line -->
+            <line class="hz-horizon-line" x1="20" y1="180" x2="380" y2="180" />
+            ${this._config.show_noon_line ? '<line class="hz-noon-line" x1="200" y1="20" x2="200" y2="180" />' : ''}
+            <!-- Ground fill -->
+            <rect class="hz-ground" x="0" y="180" width="400" height="20" />
+            <!-- Sun -->
+            <g class="${elevation < 0 ? 'hz-sun-below' : 'hz-sun'}" transform="translate(${svgSunX}, ${effectiveSunY})">
+              <circle class="hz-sun-glow" cx="0" cy="0" r="18" />
+              <circle class="hz-sun-body" cx="0" cy="0" r="8" />
+            </g>
+          </svg>
+          <div class="hz-state-badge ${elevation >= 0 ? 'above' : 'below'}">
+            ${elevation >= 0 ? (rising ? '↑ Rising' : '↓ Setting') : '● Below Horizon'}
+          </div>
+          <div class="hz-time-labels">
+            <div class="hz-time-label"><span>🌅</span><span>${riseTime}</span></div>
+            ${this._config.show_noon_line ? `<div class="hz-time-label"><span>☀️</span><span>${noonTime}</span></div>` : ''}
+            <div class="hz-time-label"><span>🌇</span><span>${setTime}</span></div>
+          </div>
+        </div>
+        <div class="hz-body">
+          <div class="hz-data">
+            ${elevLabel}
+            ${azLabel}
+            <div class="hz-data-item"><span class="hz-data-label">Sunrise</span><span class="hz-data-value">${riseTime}</span></div>
+            <div class="hz-data-item"><span class="hz-data-label">Sunset</span><span class="hz-data-value">${setTime}</span></div>
+          </div>
+          ${moonHtml}
+        </div>
+      </div>
+    `;
+  }
+
+  _getMoonIcon(phase) {
+    const icons = {
+      "new_moon": "🌑", "waxing_crescent": "🌒", "first_quarter": "🌓",
+      "waxing_gibbous": "🌔", "full_moon": "🌕", "waning_gibbous": "🌖",
+      "last_quarter": "🌗", "waning_crescent": "🌘",
+    };
+    return icons[phase] || icons[phase?.toLowerCase()?.replace(/ /g, "_")] || "🌙";
+  }
+
+  getCardSize() { return 5; }
+}
+
+// ============================================================
+// ASTRO LUNAR PHASE CARD CONFIG EDITOR
+// ============================================================
+class AstroLunarCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._config = {};
+  }
+
+  setConfig(config) { this._config = { ...config }; this._render(); }
+  set hass(hass) { this._hass = hass; this._render(); }
+
+  _render() {
+    if (!this._hass) return;
+    this.shadowRoot.innerHTML = `
+      <style>${EDITOR_STYLES}</style>
+      <div class="editor">
+        <ha-entity-picker
+          label="Moon Phase Entity"
+          value="${this._config.entity || "sensor.moon_phase"}"
+          id="entity"
+        ></ha-entity-picker>
+        <label>
+          <ha-switch id="show_illumination" ${this._config.show_illumination !== false ? "checked" : ""}></ha-switch>
+          Show Illumination
+        </label>
+        <label>
+          <ha-switch id="show_next_phases" ${this._config.show_next_phases !== false ? "checked" : ""}></ha-switch>
+          Show Next Phases
+        </label>
+        <label>
+          <ha-switch id="show_phase_name" ${this._config.show_phase_name !== false ? "checked" : ""}></ha-switch>
+          Show Phase Name
+        </label>
+        <label>
+          <ha-switch id="compact" ${this._config.compact ? "checked" : ""}></ha-switch>
+          Compact Mode
+        </label>
+      </div>
+    `;
+
+    const picker = this.shadowRoot.getElementById("entity");
+    picker.hass = this._hass;
+    picker.addEventListener("value-changed", (e) => {
+      this._config = { ...this._config, entity: e.detail.value }; this._dispatch();
+    });
+    ["show_illumination", "show_next_phases", "show_phase_name", "compact"].forEach(key => {
+      this.shadowRoot.getElementById(key).addEventListener("change", (e) => {
+        this._config = { ...this._config, [key]: e.target.checked }; this._dispatch();
+      });
+    });
+  }
+
+  _dispatch() {
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config } }));
+  }
+}
+customElements.define("astro-lunar-card-editor", AstroLunarCardEditor);
+
+// ============================================================
+// ASTRO LUNAR PHASE CARD
+// ============================================================
+class AstroLunarCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._config = {};
+  }
+
+  static getConfigElement() { return document.createElement("astro-lunar-card-editor"); }
+
+  static getStubConfig() {
+    return { entity: "sensor.moon_phase", show_illumination: true, show_next_phases: true, show_phase_name: true, compact: false };
+  }
+
+  setConfig(config) {
+    if (!config.entity) throw new Error("You must define an entity");
+    this._config = { show_illumination: true, show_next_phases: true, show_phase_name: true, compact: false, ...config };
+  }
+
+  set hass(hass) { this._hass = hass; this._render(); }
+
+  _render() {
+    if (!this._hass) return;
+    const stateObj = this._hass.states[this._config.entity];
+    if (!stateObj) {
+      this.shadowRoot.innerHTML = `<div class="astro-card" style="padding:24px;text-align:center;color:${ASTRO.text2}">Entity not found: ${esc(this._config.entity)}</div>`;
+      return;
+    }
+
+    const phase = stateObj.state || "unknown";
+    const phaseName = phase.replace(/_/g, " ");
+    const phaseData = this._getPhaseData(phase);
+    const illumination = phaseData.illumination;
+    const moonSize = this._config.compact ? 100 : 150;
+
+    // Build the SVG moon visualization
+    const moonSvg = this._renderMoonSvg(phaseData.illuminationFraction, phaseData.waxing, moonSize);
+
+    // Phase cycle (simplified predictions based on ~29.5 day cycle)
+    const phaseOrder = ["new_moon", "waxing_crescent", "first_quarter", "waxing_gibbous", "full_moon", "waning_gibbous", "last_quarter", "waning_crescent"];
+    const currentIdx = phaseOrder.indexOf(phase.toLowerCase().replace(/ /g, "_"));
+    const nextPhases = [];
+    if (this._config.show_next_phases && currentIdx >= 0) {
+      for (let i = 1; i <= 4; i++) {
+        const idx = (currentIdx + i) % 8;
+        const daysAway = Math.round((i / 8) * 29.5);
+        nextPhases.push({
+          name: phaseOrder[idx].replace(/_/g, " "),
+          icon: this._getMoonIcon(phaseOrder[idx]),
+          days: daysAway,
+        });
+      }
+    }
+
+    const nextPhasesHtml = this._config.show_next_phases && nextPhases.length > 0 ? `
+      <div class="lunar-phases">
+        ${nextPhases.map(p => `
+          <div class="lunar-next">
+            <span class="lunar-next-icon">${p.icon}</span>
+            <span class="lunar-next-name">${esc(p.name)}</span>
+            <span class="lunar-next-days">~${p.days}d</span>
+          </div>
+        `).join("")}
+      </div>
+    ` : "";
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        ${BASE_STYLES}
+        .lunar-body {
+          display: flex; flex-direction: column; align-items: center;
+          padding: ${this._config.compact ? '12px' : '20px'} 16px;
+          background: linear-gradient(180deg, #0a0e1a 0%, #1a1a2e 100%);
+          border-radius: ${ASTRO.radius} ${ASTRO.radius} 0 0;
+          position: relative;
+          overflow: hidden;
+        }
+        .lunar-stars {
+          position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+          background-image:
+            radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.6), transparent),
+            radial-gradient(1px 1px at 80% 20%, rgba(255,255,255,0.4), transparent),
+            radial-gradient(1px 1px at 50% 80%, rgba(255,255,255,0.3), transparent),
+            radial-gradient(1.5px 1.5px at 15% 70%, rgba(255,255,255,0.5), transparent),
+            radial-gradient(1px 1px at 90% 60%, rgba(255,255,255,0.4), transparent),
+            radial-gradient(1px 1px at 35% 10%, rgba(255,255,255,0.3), transparent),
+            radial-gradient(1.5px 1.5px at 65% 50%, rgba(255,255,255,0.4), transparent),
+            radial-gradient(1px 1px at 10% 90%, rgba(255,255,255,0.3), transparent);
+          pointer-events: none;
+        }
+        .lunar-moon {
+          position: relative; z-index: 1;
+          filter: drop-shadow(0 0 15px rgba(200,200,255,0.3));
+        }
+        .lunar-phase-label {
+          margin-top: 12px; text-align: center; z-index: 1;
+        }
+        .lunar-phase-name {
+          font-size: ${this._config.compact ? '0.9rem' : '1.05rem'};
+          font-weight: 600; color: #e8e8f0;
+          text-transform: capitalize;
+        }
+        .lunar-illumination {
+          font-size: 0.78rem; color: rgba(200,200,255,0.7);
+          margin-top: 4px;
+        }
+        .lunar-info {
+          padding: 14px 16px;
+        }
+        .lunar-phases {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 6px;
+          padding: 12px 16px 16px;
+          border-top: 1px solid ${ASTRO.divider};
+        }
+        .lunar-next {
+          display: flex; flex-direction: column; align-items: center;
+          padding: 8px 4px; border-radius: 8px;
+          background: ${ASTRO.bg2};
+        }
+        .lunar-next-icon { font-size: 1.2rem; margin-bottom: 4px; }
+        .lunar-next-name {
+          font-size: 0.62rem; color: ${ASTRO.text2};
+          text-align: center; text-transform: capitalize;
+          line-height: 1.2;
+        }
+        .lunar-next-days {
+          font-size: 0.68rem; font-weight: 600;
+          color: ${ASTRO.accent}; margin-top: 3px;
+        }
+      </style>
+      <div class="astro-card">
+        <div class="lunar-body">
+          <div class="lunar-stars"></div>
+          <div class="lunar-moon">${moonSvg}</div>
+          ${this._config.show_phase_name ? `
+            <div class="lunar-phase-label">
+              <div class="lunar-phase-name">${esc(phaseName)}</div>
+              ${this._config.show_illumination ? `<div class="lunar-illumination">${illumination}% illuminated</div>` : ""}
+            </div>
+          ` : ""}
+        </div>
+        ${nextPhasesHtml}
+      </div>
+    `;
+  }
+
+  _renderMoonSvg(fraction, waxing, size) {
+    // fraction: 0 (new) to 1 (full)
+    // We draw a circle and overlay a shadow using SVG paths
+    const r = size / 2 - 4;
+    const cx = size / 2;
+    const cy = size / 2;
+
+    // Calculate the terminator curve
+    // For waxing: shadow is on the left, shrinking
+    // For waning: shadow is on the right, shrinking
+    let shadowPath;
+
+    if (fraction <= 0.01) {
+      // New moon - full shadow
+      shadowPath = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(10,10,20,0.92)" />`;
+    } else if (fraction >= 0.99) {
+      // Full moon - no shadow
+      shadowPath = "";
+    } else {
+      // Partial illumination
+      const sweep = fraction < 0.5
+        ? (1 - 2 * fraction) * r  // crescent/quarter: bulge inward
+        : (2 * fraction - 1) * r; // gibbous: bulge outward
+
+      const dir = fraction < 0.5 ? 0 : 1; // arc sweep direction
+
+      if (waxing) {
+        // Shadow on right side (waxing = lit from right)
+        // Actually: waxing = right side lit, left side dark
+        shadowPath = `<path d="M ${cx} ${cy - r} A ${r} ${r} 0 0 0 ${cx} ${cy + r} A ${sweep} ${r} 0 0 ${dir} ${cx} ${cy - r} Z" fill="rgba(10,10,20,0.9)" />`;
+      } else {
+        // Shadow on left side (waning = left side dark)
+        shadowPath = `<path d="M ${cx} ${cy - r} A ${r} ${r} 0 0 1 ${cx} ${cy + r} A ${sweep} ${r} 0 0 ${1-dir} ${cx} ${cy - r} Z" fill="rgba(10,10,20,0.9)" />`;
+      }
+    }
+
+    return `
+      <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+        <defs>
+          <radialGradient id="moon-surface" cx="40%" cy="40%">
+            <stop offset="0%" stop-color="#f5f5e8" />
+            <stop offset="50%" stop-color="#d4d0c0" />
+            <stop offset="100%" stop-color="#a8a090" />
+          </radialGradient>
+          <filter id="moon-texture">
+            <feTurbulence type="fractalNoise" baseFrequency="0.4" numOctaves="3" seed="42" result="noise"/>
+            <feColorMatrix type="saturate" values="0" in="noise" result="gray"/>
+            <feBlend in="SourceGraphic" in2="gray" mode="multiply" result="textured"/>
+          </filter>
+        </defs>
+        <!-- Moon body -->
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#moon-surface)" />
+        <!-- Crater hints -->
+        <circle cx="${cx - r*0.2}" cy="${cy - r*0.1}" r="${r*0.12}" fill="rgba(150,140,120,0.3)" />
+        <circle cx="${cx + r*0.25}" cy="${cy + r*0.3}" r="${r*0.09}" fill="rgba(150,140,120,0.25)" />
+        <circle cx="${cx - r*0.1}" cy="${cy + r*0.35}" r="${r*0.15}" fill="rgba(140,130,110,0.2)" />
+        <circle cx="${cx + r*0.35}" cy="${cy - r*0.25}" r="${r*0.07}" fill="rgba(150,140,120,0.2)" />
+        <circle cx="${cx - r*0.4}" cy="${cy + r*0.1}" r="${r*0.06}" fill="rgba(150,140,120,0.15)" />
+        <!-- Shadow overlay -->
+        ${shadowPath}
+        <!-- Limb darkening -->
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(80,70,60,0.3)" stroke-width="2" />
+      </svg>
+    `;
+  }
+
+  _getPhaseData(phase) {
+    const normalized = phase.toLowerCase().replace(/ /g, "_");
+    const data = {
+      "new_moon": { illumination: 0, illuminationFraction: 0, waxing: true },
+      "waxing_crescent": { illumination: 25, illuminationFraction: 0.25, waxing: true },
+      "first_quarter": { illumination: 50, illuminationFraction: 0.5, waxing: true },
+      "waxing_gibbous": { illumination: 75, illuminationFraction: 0.75, waxing: true },
+      "full_moon": { illumination: 100, illuminationFraction: 1.0, waxing: false },
+      "waning_gibbous": { illumination: 75, illuminationFraction: 0.75, waxing: false },
+      "last_quarter": { illumination: 50, illuminationFraction: 0.5, waxing: false },
+      "waning_crescent": { illumination: 25, illuminationFraction: 0.25, waxing: false },
+    };
+    return data[normalized] || { illumination: 0, illuminationFraction: 0, waxing: true };
+  }
+
+  _getMoonIcon(phase) {
+    const icons = {
+      "new_moon": "🌑", "waxing_crescent": "🌒", "first_quarter": "🌓",
+      "waxing_gibbous": "🌔", "full_moon": "🌕", "waning_gibbous": "🌖",
+      "last_quarter": "🌗", "waning_crescent": "🌘",
+    };
+    return icons[phase] || "🌙";
+  }
+
+  getCardSize() { return this._config.compact ? 3 : 5; }
+}
+
+// ============================================================
 // REGISTER ELEMENTS
 // ============================================================
 customElements.define("apod-card", ApodCard);
 customElements.define("neo-threat-card", NeoThreatCard);
 customElements.define("solar-activity-card", SolarActivityCard);
+customElements.define("astro-horizon-card", AstroHorizonCard);
+customElements.define("astro-lunar-card", AstroLunarCard);
 
 window.customCards = window.customCards || [];
 window.customCards.push(
   { type: "apod-card", name: "APOD Card", description: "NASA Astronomy Picture of the Day with UI editor", preview: true, documentationURL: "https://github.com/snfx-johaver/home-assistant-astronomy-suite" },
   { type: "neo-threat-card", name: "NEO Threat Card", description: "Near Earth Object tracker with UI editor", preview: true, documentationURL: "https://github.com/snfx-johaver/home-assistant-astronomy-suite" },
-  { type: "solar-activity-card", name: "Solar Activity Card", description: "Solar activity monitor with UI editor", preview: true, documentationURL: "https://github.com/snfx-johaver/home-assistant-astronomy-suite" }
+  { type: "solar-activity-card", name: "Solar Activity Card", description: "Solar activity monitor with UI editor", preview: true, documentationURL: "https://github.com/snfx-johaver/home-assistant-astronomy-suite" },
+  { type: "astro-horizon-card", name: "Astro Horizon Card", description: "Sun/Moon horizon tracker with arc visualization", preview: true, documentationURL: "https://github.com/snfx-johaver/home-assistant-astronomy-suite" },
+  { type: "astro-lunar-card", name: "Astro Lunar Phase Card", description: "Moon phase visualization with SVG rendering", preview: true, documentationURL: "https://github.com/snfx-johaver/home-assistant-astronomy-suite" }
 );
 
 console.info(
-  "%c NASA-ASTRONOMY-CARDS %c v1.1.0 ",
+  "%c NASA-ASTRONOMY-CARDS %c v1.2.0 ",
   "color:white;background:#1a237e;font-weight:bold;padding:2px 6px;border-radius:4px 0 0 4px;",
   "color:#1a237e;background:#e8eaf6;font-weight:bold;padding:2px 6px;border-radius:0 4px 4px 0;"
 );
