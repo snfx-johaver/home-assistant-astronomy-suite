@@ -116,11 +116,12 @@ def git_tag_and_commit(new_version: str) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) != 2 or sys.argv[1] not in ("major", "minor", "patch"):
-        print("Usage: python scripts/bump_version.py [major|minor|patch]")
+    if len(sys.argv) < 2 or sys.argv[1] not in ("major", "minor", "patch"):
+        print("Usage: python scripts/bump_version.py [major|minor|patch] [--no-git]")
         sys.exit(1)
 
     part = sys.argv[1]
+    no_git = "--no-git" in sys.argv
     current = get_current_version()
     new_version = bump(current, part)
 
@@ -139,7 +140,10 @@ def main() -> None:
     update_cards_js(new_version)
     print(f"  ✓ astronomy-cards.js")
 
-    git_tag_and_commit(new_version)
+    if no_git:
+        print(f"\n✅ Version bumped to {new_version} (git skipped)")
+    else:
+        git_tag_and_commit(new_version)
 
 
 if __name__ == "__main__":
