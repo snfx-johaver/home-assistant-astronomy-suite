@@ -1,6 +1,5 @@
 {
   "name": "NASA Astronomy Suite",
-  "hacs": "integration",
   "homeassistant": "2024.1.0",
   "render_readme": true,
   "zip_release": false
