@@ -1,11 +1,7 @@
 {
   "name": "NASA Astronomy Suite",
-  "domains": ["sensor", "camera"],
   "hacs": "integration",
   "homeassistant": "2024.1.0",
-  "iot_class": "cloud_polling",
   "render_readme": true,
-  "content_in_root": true,
-  "filename": "custom_components/nasa_astronomy",
   "zip_release": false
 }
