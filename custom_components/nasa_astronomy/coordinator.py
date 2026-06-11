@@ -1,6 +1,7 @@
 """NASA API coordinator for data fetching."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Any
@@ -8,7 +9,7 @@ from typing import Any
 import aiohttp
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
     DOMAIN,
@@ -23,9 +24,8 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# NASA API: 1,000 requests/hour limit per key.
-# We fetch 7 endpoints per cycle. At 10-min intervals = 42 requests/hour (well under limit).
-DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=30)
+# 10-second timeout per request to avoid blocking HA setup.
+DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 
 class NasaDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -49,26 +49,27 @@ class NasaDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._api_key = api_key
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch data from all NASA APIs."""
+        """Fetch data from all NASA APIs concurrently."""
+        results = await asyncio.gather(
+            self._fetch_apod(),
+            self._fetch_neo(),
+            self._fetch_donki_cme(),
+            self._fetch_donki_flr(),
+            self._fetch_donki_gst(),
+            self._fetch_eonet(),
+            self._fetch_techtransfer(),
+            return_exceptions=True,
+        )
+
+        keys = ["apod", "neo", "donki_cme", "donki_flr", "donki_gst", "eonet", "techtransfer"]
         data: dict[str, Any] = {}
-
-        data["apod"] = await self._fetch_apod()
-        data["neo"] = await self._fetch_neo()
-        data["donki_cme"] = await self._fetch_donki_cme()
-        data["donki_flr"] = await self._fetch_donki_flr()
-        data["donki_gst"] = await self._fetch_donki_gst()
-        data["eonet"] = await self._fetch_eonet()
-        data["techtransfer"] = await self._fetch_techtransfer()
-
-        # Only raise UpdateFailed if ALL endpoints returned nothing
-        # This prevents setup from failing when NASA API is temporarily down
-        if all(v is None for v in data.values()):
-            _LOGGER.debug("All NASA API endpoints unreachable — will retry next cycle")
+        for key, result in zip(keys, results):
+            data[key] = None if isinstance(result, Exception) else result
 
         return data
 
     async def _fetch_json(self, url: str, params: dict | None = None) -> Any:
-        """Fetch JSON from a URL with rate-limit awareness."""
+        """Fetch JSON from a URL."""
         if params is None:
             params = {}
         params["api_key"] = self._api_key
@@ -79,20 +80,8 @@ class NasaDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ) as resp:
                 if resp.status == 200:
                     return await resp.json()
-                if resp.status == 429:
-                    # Rate limited — back off silently
-                    _LOGGER.debug("NASA API rate limited on %s", url)
-                    return None
-                if resp.status in (500, 502, 503, 504):
-                    # Server-side issue — silent, will retry next cycle
-                    _LOGGER.debug("NASA API temporarily unavailable (%s)", resp.status)
-                    return None
-                if resp.status in (401, 403):
-                    _LOGGER.warning("NASA API key rejected (HTTP %s)", resp.status)
-                    return None
-                _LOGGER.debug("NASA API unexpected status %s for %s", resp.status, url)
                 return None
-        except (aiohttp.ClientError, TimeoutError):
+        except Exception:
             return None
 
     async def _fetch_apod(self) -> dict[str, Any] | None:
@@ -122,7 +111,6 @@ class NasaDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _fetch_eonet(self) -> dict[str, Any] | None:
         """Fetch Earth Observatory Natural Event Tracker."""
-        # EONET uses its own endpoint without NASA API key
         params = {"limit": "10", "status": "open"}
         try:
             async with self._session.get(
@@ -131,7 +119,7 @@ class NasaDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if resp.status == 200:
                     return await resp.json()
                 return None
-        except (aiohttp.ClientError, TimeoutError):
+        except Exception:
             return None
 
     async def _fetch_techtransfer(self) -> dict[str, Any] | None:

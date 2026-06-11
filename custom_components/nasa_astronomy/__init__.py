@@ -47,7 +47,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     coordinator = NasaDataCoordinator(hass, session, api_key, update_interval)
-    await coordinator.async_config_entry_first_refresh()
+
+    # Don't block setup — refresh in background. Sensors show "unavailable" until ready.
+    await coordinator.async_refresh()
 
     hass.data[DOMAIN][entry.entry_id] = {
         "coordinator": coordinator,
