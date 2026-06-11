@@ -28,7 +28,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     # Register static path for the bundled JS cards
     hass.http.register_static_path(
         CARDS_URL,
-        str(Path(__file__).parent / "www" / "astronomy-cards.js"),
+        str(Path(__file__).parent / "astronomy-cards.js"),
         cache_headers=True,
     )
     return True
