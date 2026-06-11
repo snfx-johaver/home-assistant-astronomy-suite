@@ -5,9 +5,6 @@ import logging
 from datetime import timedelta
 from pathlib import Path
 
-from homeassistant.components.lovelace.resources import (
-    ResourceStorageCollection,
-)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY, Platform
 from homeassistant.core import HomeAssistant
@@ -25,12 +22,14 @@ CARDS_URL = f"/{DOMAIN}/astronomy-cards.js"
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the NASA Astronomy Suite component."""
-    # Register static path for the bundled JS cards
-    hass.http.register_static_path(
-        CARDS_URL,
-        str(Path(__file__).parent / "astronomy-cards.js"),
-        cache_headers=True,
-    )
+    # Register static path for the bundled JS cards (if file exists)
+    cards_path = Path(__file__).parent / "astronomy-cards.js"
+    if cards_path.is_file():
+        from homeassistant.components.http import StaticPathConfig
+
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(CARDS_URL, str(cards_path), True)]
+        )
     return True
 
 
@@ -69,25 +68,27 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def _async_register_cards_resource(hass: HomeAssistant) -> None:
     """Register astronomy-cards.js as a Lovelace resource if not already present."""
     try:
-        resources: ResourceStorageCollection = hass.data["lovelace"]["resources"]
+        # Import here to avoid issues if lovelace component isn't loaded
+        from homeassistant.components.lovelace.resources import (
+            ResourceStorageCollection,
+        )
+
+        lovelace_data = hass.data.get("lovelace")
+        if lovelace_data is None:
+            return
+
+        resources = lovelace_data.get("resources")
+        if resources is None:
+            return
 
         # Check if already registered
-        if resources.async_items():
-            for resource in resources.async_items():
-                if CARDS_URL in resource.get("url", ""):
-                    return
+        for resource in resources.async_items():
+            if CARDS_URL in resource.get("url", ""):
+                return
 
         # Add the resource
         await resources.async_create_item(
             {"res_type": "module", "url": CARDS_URL}
         )
-        _LOGGER.debug("Registered astronomy-cards.js as Lovelace resource")
     except Exception:
-        # Fallback: if lovelace resources API isn't available (YAML mode),
-        # the user must add the resource manually
-        _LOGGER.debug(
-            "Could not auto-register Lovelace resource. "
-            "If using YAML mode, add to configuration.yaml: "
-            "lovelace.resources: [{url: '%s', type: module}]",
-            CARDS_URL,
-        )
+        pass

@@ -5,11 +5,14 @@
     "@snfx-johaver"
   ],
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": [
+    "http",
+    "lovelace"
+  ],
   "documentation": "https://github.com/snfx-johaver/home-assistant-astronomy-suite",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/snfx-johaver/home-assistant-astronomy-suite/issues",
   "requirements": [],
-  "version": "1.2.5"
+  "version": "1.2.6"
 }
