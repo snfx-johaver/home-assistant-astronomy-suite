@@ -23,6 +23,10 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# NASA API: 1,000 requests/hour limit per key.
+# We fetch 7 endpoints per cycle. At 10-min intervals = 42 requests/hour (well under limit).
+DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=30)
+
 
 class NasaDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator to fetch data from NASA APIs."""
@@ -48,30 +52,49 @@ class NasaDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Fetch data from all NASA APIs."""
         data: dict[str, Any] = {}
 
-        try:
-            data["apod"] = await self._fetch_apod()
-            data["neo"] = await self._fetch_neo()
-            data["donki_cme"] = await self._fetch_donki_cme()
-            data["donki_flr"] = await self._fetch_donki_flr()
-            data["donki_gst"] = await self._fetch_donki_gst()
-            data["eonet"] = await self._fetch_eonet()
-            data["techtransfer"] = await self._fetch_techtransfer()
-        except (aiohttp.ClientError, TimeoutError) as err:
-            raise UpdateFailed(f"Error communicating with NASA API: {err}") from err
+        data["apod"] = await self._fetch_apod()
+        data["neo"] = await self._fetch_neo()
+        data["donki_cme"] = await self._fetch_donki_cme()
+        data["donki_flr"] = await self._fetch_donki_flr()
+        data["donki_gst"] = await self._fetch_donki_gst()
+        data["eonet"] = await self._fetch_eonet()
+        data["techtransfer"] = await self._fetch_techtransfer()
+
+        # Only raise UpdateFailed if ALL endpoints returned nothing
+        if all(v is None for v in data.values()):
+            raise UpdateFailed(
+                "All NASA API endpoints unreachable — will retry next cycle"
+            )
 
         return data
 
     async def _fetch_json(self, url: str, params: dict | None = None) -> Any:
-        """Fetch JSON from a URL."""
+        """Fetch JSON from a URL with rate-limit awareness."""
         if params is None:
             params = {}
         params["api_key"] = self._api_key
 
-        async with self._session.get(url, params=params, timeout=30) as resp:
-            if resp.status != 200:
-                _LOGGER.warning("NASA API returned %s for %s", resp.status, url)
+        try:
+            async with self._session.get(
+                url, params=params, timeout=DEFAULT_TIMEOUT
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                if resp.status == 429:
+                    # Rate limited — back off silently
+                    _LOGGER.debug("NASA API rate limited on %s", url)
+                    return None
+                if resp.status in (500, 502, 503, 504):
+                    # Server-side issue — silent, will retry next cycle
+                    _LOGGER.debug("NASA API temporarily unavailable (%s)", resp.status)
+                    return None
+                if resp.status in (401, 403):
+                    _LOGGER.warning("NASA API key rejected (HTTP %s)", resp.status)
+                    return None
+                _LOGGER.debug("NASA API unexpected status %s for %s", resp.status, url)
                 return None
-            return await resp.json()
+        except (aiohttp.ClientError, TimeoutError):
+            return None
 
     async def _fetch_apod(self) -> dict[str, Any] | None:
         """Fetch Astronomy Picture of the Day."""
@@ -100,15 +123,15 @@ class NasaDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _fetch_eonet(self) -> dict[str, Any] | None:
         """Fetch Earth Observatory Natural Event Tracker."""
-        params = {"limit": 10, "status": "open"}
-        # EONET doesn't use api_key param
+        # EONET uses its own endpoint without NASA API key
+        params = {"limit": "10", "status": "open"}
         try:
             async with self._session.get(
-                EONET_URL, params=params, timeout=30
+                EONET_URL, params=params, timeout=DEFAULT_TIMEOUT
             ) as resp:
-                if resp.status != 200:
-                    return None
-                return await resp.json()
+                if resp.status == 200:
+                    return await resp.json()
+                return None
         except (aiohttp.ClientError, TimeoutError):
             return None
 

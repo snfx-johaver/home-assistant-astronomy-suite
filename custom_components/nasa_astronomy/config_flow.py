@@ -54,28 +54,21 @@ class NasaAstronomyConfigFlow(ConfigFlow, domain=DOMAIN):
                         )
                     elif resp.status in (401, 403):
                         errors["base"] = "invalid_auth"
-                    elif resp.status == 503:
-                        # NASA API is temporarily down — allow setup anyway
-                        _LOGGER.warning(
-                            "NASA API returned 503 (unavailable). "
-                            "Allowing setup — data will sync when API recovers."
+                    elif resp.status == 429:
+                        # Rate limited — allow setup, will sync later
+                        return self.async_create_entry(
+                            title="NASA Astronomy Suite",
+                            data={CONF_API_KEY: api_key},
                         )
+                    elif resp.status in (500, 502, 503, 504):
+                        # NASA API temporarily unavailable — allow setup
                         return self.async_create_entry(
                             title="NASA Astronomy Suite",
                             data={CONF_API_KEY: api_key},
                         )
                     else:
-                        _LOGGER.error(
-                            "NASA API returned status %s: %s",
-                            resp.status,
-                            await resp.text(),
-                        )
                         errors["base"] = "cannot_connect"
-            except aiohttp.ClientError as err:
-                _LOGGER.error("Connection error to NASA API: %s", err)
-                errors["base"] = "cannot_connect"
-            except TimeoutError:
-                _LOGGER.error("Timeout connecting to NASA API")
+            except (aiohttp.ClientError, TimeoutError):
                 errors["base"] = "cannot_connect"
 
         return self.async_show_form(
