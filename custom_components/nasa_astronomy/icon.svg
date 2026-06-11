@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0e2a"/>
+      <stop offset="100%" style="stop-color:#1a237e"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="45%" r="45%">
+      <stop offset="0%" style="stop-color:#7c4dff;stop-opacity:0.3"/>
+      <stop offset="100%" style="stop-color:#1a237e;stop-opacity:0"/>
+    </radialGradient>
+  </defs>
+  <!-- Background circle -->
+  <circle cx="128" cy="128" r="120" fill="url(#bg)"/>
+  <circle cx="128" cy="128" r="120" fill="url(#glow)"/>
+  <!-- Stars -->
+  <circle cx="45" cy="55" r="1.5" fill="white" opacity="0.6"/>
+  <circle cx="200" cy="40" r="1" fill="white" opacity="0.5"/>
+  <circle cx="180" cy="190" r="1.5" fill="white" opacity="0.4"/>
+  <circle cx="60" cy="180" r="1" fill="white" opacity="0.5"/>
+  <circle cx="100" cy="35" r="1" fill="white" opacity="0.3"/>
+  <circle cx="220" cy="100" r="1.2" fill="white" opacity="0.4"/>
+  <circle cx="35" cy="130" r="1" fill="white" opacity="0.3"/>
+  <!-- Telescope -->
+  <g transform="translate(128,128)">
+    <!-- Tripod legs -->
+    <line x1="0" y1="20" x2="-30" y2="65" stroke="#b0bec5" stroke-width="3" stroke-linecap="round"/>
+    <line x1="0" y1="20" x2="30" y2="65" stroke="#b0bec5" stroke-width="3" stroke-linecap="round"/>
+    <line x1="0" y1="20" x2="0" y2="68" stroke="#b0bec5" stroke-width="3" stroke-linecap="round"/>
+    <!-- Telescope body -->
+    <g transform="rotate(-35)">
+      <rect x="-8" y="-55" width="16" height="60" rx="4" fill="#546e7a"/>
+      <!-- Lens end (wider) -->
+      <rect x="-12" y="-65" width="24" height="14" rx="4" fill="#37474f"/>
+      <rect x="-10" y="-63" width="20" height="10" rx="3" fill="#7c4dff" opacity="0.6"/>
+      <!-- Eyepiece -->
+      <rect x="-5" y="5" width="10" height="12" rx="2" fill="#455a64"/>
+    </g>
+  </g>
+  <!-- Orbit ring -->
+  <ellipse cx="128" cy="75" rx="50" ry="12" fill="none" stroke="#7c4dff" stroke-width="1.5" opacity="0.5" stroke-dasharray="3 3"/>
+  <!-- Planet/satellite on orbit -->
+  <circle cx="170" cy="70" r="5" fill="#ffd700"/>
+  <circle cx="170" cy="70" r="3" fill="#ffecb3"/>
+  <!-- NASA swoosh hint -->
+  <path d="M 55 200 Q 128 175 200 200" fill="none" stroke="#7c4dff" stroke-width="2" opacity="0.4"/>
+</svg>
