@@ -34,12 +34,15 @@ class NasaAstronomyConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            api_key = user_input[CONF_API_KEY]
+            api_key = user_input[CONF_API_KEY].strip()
             session = async_get_clientsession(self.hass)
+            timeout = aiohttp.ClientTimeout(total=30)
 
             try:
                 async with session.get(
-                    APOD_URL, params={"api_key": api_key}, timeout=10
+                    APOD_URL,
+                    params={"api_key": api_key},
+                    timeout=timeout,
                 ) as resp:
                     if resp.status == 200:
                         await self._async_abort_entries_match(
@@ -47,13 +50,32 @@ class NasaAstronomyConfigFlow(ConfigFlow, domain=DOMAIN):
                         )
                         return self.async_create_entry(
                             title="NASA Astronomy Suite",
-                            data=user_input,
+                            data={CONF_API_KEY: api_key},
                         )
-                    elif resp.status == 403:
+                    elif resp.status in (401, 403):
                         errors["base"] = "invalid_auth"
+                    elif resp.status == 503:
+                        # NASA API is temporarily down — allow setup anyway
+                        _LOGGER.warning(
+                            "NASA API returned 503 (unavailable). "
+                            "Allowing setup — data will sync when API recovers."
+                        )
+                        return self.async_create_entry(
+                            title="NASA Astronomy Suite",
+                            data={CONF_API_KEY: api_key},
+                        )
                     else:
+                        _LOGGER.error(
+                            "NASA API returned status %s: %s",
+                            resp.status,
+                            await resp.text(),
+                        )
                         errors["base"] = "cannot_connect"
-            except (aiohttp.ClientError, TimeoutError):
+            except aiohttp.ClientError as err:
+                _LOGGER.error("Connection error to NASA API: %s", err)
+                errors["base"] = "cannot_connect"
+            except TimeoutError:
+                _LOGGER.error("Timeout connecting to NASA API")
                 errors["base"] = "cannot_connect"
 
         return self.async_show_form(
