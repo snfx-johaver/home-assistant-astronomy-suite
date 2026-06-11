@@ -11,9 +11,10 @@ A complete, production-ready astronomy dashboard for Home Assistant powered by N
 - **DONKI** — Space weather: CMEs, Solar Flares, Geomagnetic Storms
 - **EONET** — Earth Observatory Natural Event Tracker
 - **TechTransfer** — NASA patent/technology transfer data
-- **3 Custom Lovelace Cards** — `<apod-card>`, `<neo-threat-card>`, `<solar-activity-card>`
+- **5 Custom Lovelace Cards** — `<apod-card>`, `<neo-threat-card>`, `<solar-activity-card>`, `<astro-horizon-card>`, `<astro-lunar-card>`
 - **6-view dashboard** — Overview, Solar System, NEO Tracker, Space Weather, ISS, Earth Events
-- **Integrates with** — Horizon Card, Lunar Phase Card, ApexCharts, Mushroom, ISS, Moon, Sun, Season, Aurora
+- **Built-in Horizon & Lunar Phase cards** — No external card dependencies required
+- **Works alongside** — ApexCharts, Mushroom, ISS, Moon, Sun, Season, Aurora
 
 ## Installation
 

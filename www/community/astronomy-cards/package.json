@@ -1,6 +1,6 @@
 {
   "name": "astronomy-cards",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Custom Lovelace cards for NASA Astronomy Suite",
   "main": "dist/astronomy-cards.js",
   "scripts": {
