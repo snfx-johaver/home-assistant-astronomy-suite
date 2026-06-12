@@ -68,19 +68,27 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 def _deploy_cards_to_www(hass: HomeAssistant) -> None:
-    """Copy astronomy-cards.js to config/www/community/astronomy-cards/."""
-    source = Path(__file__).parent / CARDS_FILENAME
-    if not source.is_file():
-        _LOGGER.warning("Cards JS source not found: %s", source)
-        return
-
+    """Copy astronomy-cards.js and world-map.png to config/www/community/astronomy-cards/."""
     www_dir = Path(hass.config.path("www")) / "community" / "astronomy-cards"
     www_dir.mkdir(parents=True, exist_ok=True)
 
-    dest = www_dir / CARDS_FILENAME
-    # Always copy to ensure updates are deployed
-    shutil.copy2(str(source), str(dest))
-    _LOGGER.info("Deployed %s to %s", CARDS_FILENAME, dest)
+    # Deploy JS
+    source = Path(__file__).parent / CARDS_FILENAME
+    if source.is_file():
+        dest = www_dir / CARDS_FILENAME
+        shutil.copy2(str(source), str(dest))
+        _LOGGER.info("Deployed %s to %s", CARDS_FILENAME, dest)
+    else:
+        _LOGGER.warning("Cards JS source not found: %s", source)
+
+    # Deploy world map image
+    map_source = Path(__file__).parent / "world-map.png"
+    if map_source.is_file():
+        map_dest = www_dir / "world-map.png"
+        shutil.copy2(str(map_source), str(map_dest))
+        _LOGGER.info("Deployed world-map.png to %s", map_dest)
+    else:
+        _LOGGER.warning("world-map.png not found: %s", map_source)
 
 
 async def _async_register_cards_resource(hass: HomeAssistant) -> None:

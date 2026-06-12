@@ -1639,6 +1639,7 @@ class SolarSystemCardEditor extends AstroEditorBase {
     super.setConfig({
       title: "",
       show_labels: true,
+      show_orbits: true,
       show_jupiter: false,
       show_saturn: false,
       show_stats: true,
@@ -1651,6 +1652,7 @@ class SolarSystemCardEditor extends AstroEditorBase {
     return `
       <ha-textfield id="title" label="Card title (optional)"></ha-textfield>
       <label class="switch-row"><span>Show labels</span><ha-switch id="show_labels"></ha-switch></label>
+      <label class="switch-row"><span>Show orbits</span><ha-switch id="show_orbits"></ha-switch></label>
       <label class="switch-row"><span>Show Jupiter orbit</span><ha-switch id="show_jupiter"></ha-switch></label>
       <label class="switch-row"><span>Show Saturn orbit</span><ha-switch id="show_saturn"></ha-switch></label>
       <label class="switch-row"><span>Show stats</span><ha-switch id="show_stats"></ha-switch></label>
@@ -1660,12 +1662,12 @@ class SolarSystemCardEditor extends AstroEditorBase {
 
   _setupListeners() {
     this._bindText("title", "title", (value) => value.trim());
-    ["show_labels", "show_jupiter", "show_saturn", "show_stats", "show_date"].forEach((key) => this._bindSwitch(key, key));
+    ["show_labels", "show_orbits", "show_jupiter", "show_saturn", "show_stats", "show_date"].forEach((key) => this._bindSwitch(key, key));
   }
 
   _syncValues() {
     setTextValue(this.shadowRoot, "title", this._config.title || "");
-    ["show_labels", "show_stats", "show_date"].forEach((key) => setSwitchValue(this.shadowRoot, key, this._config[key] !== false));
+    ["show_labels", "show_orbits", "show_stats", "show_date"].forEach((key) => setSwitchValue(this.shadowRoot, key, this._config[key] !== false));
     setSwitchValue(this.shadowRoot, "show_jupiter", this._config.show_jupiter === true);
     setSwitchValue(this.shadowRoot, "show_saturn", this._config.show_saturn === true);
   }
@@ -1683,6 +1685,7 @@ class SolarSystemCard extends HTMLElement {
     return {
       title: "",
       show_labels: true,
+      show_orbits: true,
       show_jupiter: false,
       show_saturn: false,
       show_stats: true,
@@ -1742,7 +1745,7 @@ class SolarSystemCard extends HTMLElement {
         <div class="orrery">
           <svg class="orrery-svg" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Solar system orrery">
             ${stars}
-            ${names.map((name) => `<path d="${buildOrbitPath(name, scale, center)}" fill="none" stroke="${PLANET_ELEMENTS[name].color}" stroke-width="1.4" stroke-opacity="0.55"></path>`).join("")}
+            ${this._config.show_orbits !== false ? names.map((name) => `<path d="${buildOrbitPath(name, scale, center)}" fill="none" stroke="${PLANET_ELEMENTS[name].color}" stroke-width="1.4" stroke-opacity="0.55"></path>`).join("") : ""}
             <circle cx="${center}" cy="${center}" r="22" fill="rgba(255,202,40,0.14)"></circle>
             <circle cx="${center}" cy="${center}" r="12" fill="#ffd54f"></circle>
             <circle cx="${center}" cy="${center}" r="5" fill="#fff9c4"></circle>
@@ -2017,6 +2020,7 @@ class IssTrackerCardEditor extends AstroEditorBase {
     super.setConfig({
       entity: "sensor.nasa_astronomy_suite_iss_position",
       title: "ISS Tracker",
+      stream_url: "https://www.youtube.com/watch?v=uwXgcTc8oY8",
       show_map: true,
       show_trail: true,
       show_stream_button: true,
@@ -2028,6 +2032,7 @@ class IssTrackerCardEditor extends AstroEditorBase {
     return `
       <ha-entity-picker id="entity" label="ISS position entity"></ha-entity-picker>
       <ha-textfield id="title" label="Card title"></ha-textfield>
+      <ha-textfield id="stream_url" label="ISS livestream URL"></ha-textfield>
       <label class="switch-row"><span>Show map</span><ha-switch id="show_map"></ha-switch></label>
       <label class="switch-row"><span>Show trail</span><ha-switch id="show_trail"></ha-switch></label>
       <label class="switch-row"><span>Show stream button</span><ha-switch id="show_stream_button"></ha-switch></label>
@@ -2037,12 +2042,14 @@ class IssTrackerCardEditor extends AstroEditorBase {
   _setupListeners() {
     this._bindPicker("entity", "entity");
     this._bindText("title", "title", (value) => value.trim() || "ISS Tracker");
+    this._bindText("stream_url", "stream_url", (value) => value.trim());
     ["show_map", "show_trail", "show_stream_button"].forEach((key) => this._bindSwitch(key, key));
   }
 
   _syncValues() {
     setPickerValue(this.shadowRoot, "entity", this._hass, this._config.entity || "sensor.nasa_astronomy_suite_iss_position");
     setTextValue(this.shadowRoot, "title", this._config.title || "ISS Tracker");
+    setTextValue(this.shadowRoot, "stream_url", this._config.stream_url || "https://www.youtube.com/watch?v=uwXgcTc8oY8");
     setSwitchValue(this.shadowRoot, "show_map", this._config.show_map !== false);
     setSwitchValue(this.shadowRoot, "show_trail", this._config.show_trail !== false);
     setSwitchValue(this.shadowRoot, "show_stream_button", this._config.show_stream_button !== false);
@@ -2064,6 +2071,7 @@ class IssTrackerCard extends HTMLElement {
     return {
       entity: "sensor.nasa_astronomy_suite_iss_position",
       title: "ISS Tracker",
+      stream_url: "https://www.youtube.com/watch?v=uwXgcTc8oY8",
       show_map: true,
       show_trail: true,
       show_stream_button: true,
@@ -2092,7 +2100,7 @@ class IssTrackerCard extends HTMLElement {
       latitude,
       longitude,
       timestamp: attrs.timestamp || stateObj?.last_changed || stateObj?.last_updated || "",
-      liveStreamUrl: attrs.live_stream_url || "https://www.youtube.com/watch?v=86YLFOog4GM",
+      liveStreamUrl: this._config.stream_url || attrs.live_stream_url || "https://www.youtube.com/watch?v=uwXgcTc8oY8",
     };
   }
 
@@ -2138,8 +2146,8 @@ class IssTrackerCard extends HTMLElement {
 
   _project(latitude, longitude) {
     return {
-      x: clamp(((longitude + 180) / 360) * 1000, 0, 1000),
-      y: clamp(((90 - latitude) / 180) * 500, 0, 500),
+      x: clamp(((longitude + 180) / 360) * 100, 0, 100),
+      y: clamp(((90 - latitude) / 180) * 100, 0, 100),
     };
   }
 
@@ -2158,8 +2166,8 @@ class IssTrackerCard extends HTMLElement {
       ? trail.slice(0, -1).map((item, index, items) => {
         const point = this._project(item.latitude, item.longitude);
         const opacity = ((index + 1) / Math.max(items.length, 1)) * 0.7;
-        const radius = 2 + ((index + 1) / Math.max(items.length, 1)) * 3;
-        return `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${radius.toFixed(1)}" fill="rgba(255,107,107,${opacity.toFixed(2)})"></circle>`;
+        const size = 4 + ((index + 1) / Math.max(items.length, 1)) * 6;
+        return `<div class="iss-trail-dot" style="left:${point.x.toFixed(2)}%;top:${point.y.toFixed(2)}%;width:${size.toFixed(1)}px;height:${size.toFixed(1)}px;background:rgba(255,107,107,${opacity.toFixed(2)});"></div>`;
       }).join("")
       : "";
 
@@ -2170,10 +2178,23 @@ class IssTrackerCard extends HTMLElement {
         .iss-map {
           border-radius: 18px;
           overflow: hidden;
-          background: radial-gradient(circle at 50% 40%, rgba(66,165,245,0.24), rgba(10,20,45,0.95));
-          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+          position: relative;
+          background: #f8f9fa;
+          box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06);
         }
-        .iss-map svg { display: block; width: 100%; height: auto; }
+        .iss-map img.iss-world { display: block; width: 100%; height: auto; }
+        .iss-marker {
+          position: absolute;
+          transform: translate(-50%, -50%);
+          pointer-events: none;
+        }
+        .iss-trail-dot {
+          position: absolute;
+          border-radius: 50%;
+          transform: translate(-50%, -50%);
+          pointer-events: none;
+        }
+        .iss-icon-svg { filter: drop-shadow(0 1px 3px rgba(0,0,0,0.4)); }
         .iss-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
         .iss-stat {
           border-radius: 14px;
@@ -2198,7 +2219,6 @@ class IssTrackerCard extends HTMLElement {
         }
         .iss-dot-core { fill: #ff5252; }
         .iss-dot-pulse { fill: rgba(255,82,82,0.35); transform-origin: center; animation: iss-pulse 2s ease-out infinite; }
-        .iss-continent { fill: rgba(134, 181, 106, 0.38); stroke: rgba(182, 230, 157, 0.6); stroke-width: 3; stroke-linejoin: round; }
         @keyframes iss-pulse {
           0% { transform: scale(0.8); opacity: 0.9; }
           100% { transform: scale(2.4); opacity: 0; }
@@ -2213,19 +2233,13 @@ class IssTrackerCard extends HTMLElement {
         <div class="iss-body">
           ${this._config.show_map !== false ? `
             <div class="iss-map">
-              <svg viewBox="0 0 1000 500" role="img" aria-label="ISS world map tracker">
-                <rect width="1000" height="500" fill="rgba(19, 43, 80, 0.55)"></rect>
-                <path class="iss-continent" d="M97 134 L142 98 L214 84 L282 111 L304 148 L275 182 L212 205 L160 193 L114 168 Z"></path>
-                <path class="iss-continent" d="M249 225 L286 246 L314 301 L298 394 L257 468 L219 424 L231 334 L216 278 Z"></path>
-                <path class="iss-continent" d="M454 105 L522 84 L600 92 L661 118 L708 110 L766 132 L835 161 L882 210 L851 238 L796 220 L748 245 L688 235 L630 261 L597 326 L557 382 L509 360 L488 289 L457 237 L437 174 Z"></path>
-                <path class="iss-continent" d="M486 255 L533 236 L572 258 L578 329 L551 396 L506 421 L470 390 L458 325 Z"></path>
-                <path class="iss-continent" d="M792 336 L842 348 L894 389 L876 431 L816 442 L762 407 L748 362 Z"></path>
-                ${trailDots}
-                <g transform="translate(${projected.x.toFixed(1)} ${projected.y.toFixed(1)})">
-                  <circle class="iss-dot-pulse" r="8"></circle>
-                  <circle class="iss-dot-core" r="5"></circle>
-                </g>
-              </svg>
+              <img class="iss-world" src="/local/community/astronomy-cards/world-map.png" alt="World map" />
+              ${trailDots}
+              <div class="iss-marker" style="left:${projected.x.toFixed(2)}%;top:${projected.y.toFixed(2)}%;">
+                <svg class="iss-icon-svg" width="28" height="28" viewBox="0 0 24 24">
+                  <path fill="#ff5252" d="M11.38 2l-1.75 5.25h4.75L12.62 2h-1.24m1.24 22l1.76-5.25H9.62L11.38 24h1.24M2 11.38v1.24l5.25 1.76V9.62L2 11.38m20 1.24v-1.24l-5.25-1.76v4.76L22 12.62M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 1.5a2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 1-2.5 2.5A2.5 2.5 0 0 1 9.5 12 2.5 2.5 0 0 1 12 9.5Z"/>
+                </svg>
+              </div>
             </div>
           ` : ""}
           <div class="iss-grid">
