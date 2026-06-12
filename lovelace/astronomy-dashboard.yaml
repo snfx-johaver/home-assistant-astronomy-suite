@@ -239,7 +239,7 @@ views:
             entity: sun.sun
             title: Sun Arc
           - type: custom:astro-lunar-card
-            entity: sensor.moon_phase
+            entity: sensor.moon
             title: Moon Phase
 
   # ═══════════════════════════════════════════════════════════════

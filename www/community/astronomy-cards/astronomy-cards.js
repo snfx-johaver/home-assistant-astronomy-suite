@@ -945,6 +945,10 @@ class SolarActivityCardEditor extends AstroEditorBase {
       show_cme: true,
       show_flares: true,
       show_storms: true,
+      show_kp_gauge: true,
+      show_live_sun: true,
+      show_sdo: true,
+      show_soho: true,
       time_range: 7,
       ...config,
     });
@@ -962,6 +966,10 @@ class SolarActivityCardEditor extends AstroEditorBase {
       <label class="switch-row"><span>Show CMEs</span><ha-switch id="show_cme"></ha-switch></label>
       <label class="switch-row"><span>Show flares</span><ha-switch id="show_flares"></ha-switch></label>
       <label class="switch-row"><span>Show storms</span><ha-switch id="show_storms"></ha-switch></label>
+      <label class="switch-row"><span>Show KP gauge</span><ha-switch id="show_kp_gauge"></ha-switch></label>
+      <label class="switch-row"><span>Show live sun section</span><ha-switch id="show_live_sun"></ha-switch></label>
+      <label class="switch-row"><span>Show SDO</span><ha-switch id="show_sdo"></ha-switch></label>
+      <label class="switch-row"><span>Show SOHO</span><ha-switch id="show_soho"></ha-switch></label>
       <div class="editor-section">
         <div class="editor-title">Time range</div>
         <select id="time_range" class="native-select">
@@ -975,7 +983,7 @@ class SolarActivityCardEditor extends AstroEditorBase {
   _setupListeners() {
     ["cme_entity", "flare_entity", "storm_entity", "kp_entity", "sdo_entity", "soho_entity"].forEach((key) => this._bindPicker(key, key));
     this._bindText("title", "title", (value) => value.trim());
-    ["show_cme", "show_flares", "show_storms"].forEach((key) => this._bindSwitch(key, key));
+    ["show_cme", "show_flares", "show_storms", "show_kp_gauge", "show_live_sun", "show_sdo", "show_soho"].forEach((key) => this._bindSwitch(key, key));
     this._bindSelect("time_range", "time_range", (value) => (String(value) === "30" ? 30 : 7));
   }
 
@@ -985,6 +993,10 @@ class SolarActivityCardEditor extends AstroEditorBase {
     setSwitchValue(this.shadowRoot, "show_cme", this._config.show_cme !== false);
     setSwitchValue(this.shadowRoot, "show_flares", this._config.show_flares !== false);
     setSwitchValue(this.shadowRoot, "show_storms", this._config.show_storms !== false);
+    setSwitchValue(this.shadowRoot, "show_kp_gauge", this._config.show_kp_gauge !== false);
+    setSwitchValue(this.shadowRoot, "show_live_sun", this._config.show_live_sun !== false);
+    setSwitchValue(this.shadowRoot, "show_sdo", this._config.show_sdo !== false);
+    setSwitchValue(this.shadowRoot, "show_soho", this._config.show_soho !== false);
     setSelectValue(this.shadowRoot, "time_range", this._config.time_range || 7);
   }
 }
@@ -1009,6 +1021,10 @@ class SolarActivityCard extends HTMLElement {
       show_cme: true,
       show_flares: true,
       show_storms: true,
+      show_kp_gauge: true,
+      show_live_sun: true,
+      show_sdo: true,
+      show_soho: true,
       time_range: 7,
     };
   }
@@ -1088,11 +1104,18 @@ class SolarActivityCard extends HTMLElement {
       { enabled: this._config.show_flares !== false, kind: "flare", title: "Flares", icon: "☀️", color: ASTRO.flare, state: flareState, events: this._collectEvents(flareState, "flare", timeRange), count: toNumber(flareState?.state, 0) },
       { enabled: this._config.show_storms !== false, kind: "storm", title: "Storms", icon: "🌊", color: ASTRO.storm, state: stormState, events: this._collectEvents(stormState, "storm", timeRange), count: toNumber(stormState?.state, 0) },
     ].filter((section) => section.enabled);
-    const kpDetails = this._config.kp_entity ? this._getKpDetails(kpState) : null;
-    const sunFeeds = [
-      { title: "SDO", entityId: this._config.sdo_entity, stateObj: getState(this._hass, this._config.sdo_entity) },
-      { title: "SOHO", entityId: this._config.soho_entity, stateObj: getState(this._hass, this._config.soho_entity) },
-    ].filter((feed) => feed.entityId && feed.stateObj);
+    const kpDetails = this._config.show_kp_gauge !== false && this._config.kp_entity ? this._getKpDetails(kpState) : null;
+    const sunFeeds = [];
+    if (this._config.show_live_sun !== false) {
+      if (this._config.show_sdo !== false && this._config.sdo_entity) {
+        const sdo = getState(this._hass, this._config.sdo_entity);
+        if (sdo) sunFeeds.push({ title: "SDO", entityId: this._config.sdo_entity, stateObj: sdo });
+      }
+      if (this._config.show_soho !== false && this._config.soho_entity) {
+        const soho = getState(this._hass, this._config.soho_entity);
+        if (soho) sunFeeds.push({ title: "SOHO", entityId: this._config.soho_entity, stateObj: soho });
+      }
+    }
 
     if (!sections.length) {
       this.shadowRoot.innerHTML = renderErrorCard("Enable at least one solar activity feed in the card editor.", "mdi:white-balance-sunny");
@@ -1246,7 +1269,7 @@ class SolarActivityCard extends HTMLElement {
             <div class="live-sun-grid">
               ${sunFeeds.map((feed) => `
                 <div class="live-sun-card">
-                  <img src="/api/camera_proxy/${feed.entityId}?t=${Date.now()}" alt="${esc(feed.title)} live sun image">
+                  <img src="/api/camera_proxy/${feed.entityId}" alt="${esc(feed.title)} live sun image" onerror="this.style.opacity='0.3'">
                   <div class="live-sun-label">${esc(feed.title)}</div>
                 </div>
               `).join("")}
@@ -1972,11 +1995,10 @@ class RocketLaunchCard extends HTMLElement {
                   </div>
                   <div class="launch-when">
                     <div class="launch-date">${esc(launch.dateLabel)}</div>
-                    ${this._config.show_countdown !== false && launch.within24h ? `<div class="launch-countdown">${esc(launch.countdown)}</div>` : ""}
                   </div>
                 </div>
-                <div class="launch-row">📍 ${esc(launch.padLocation)}</div>
-                ${this._config.show_weather !== false && launch.weather ? `<div class="launch-row">☁️ ${esc(launch.weather)}</div>` : ""}
+                <div class="launch-row">${launch.padLocation ? `📍 ${esc(launch.padLocation)}` : ""}${this._config.show_weather !== false && launch.weather ? ` · ☁️ ${esc(launch.weather)}` : ""}</div>
+                ${this._config.show_countdown !== false ? `<div class="launch-countdown">${esc(launch.countdown)}</div>` : ""}
                 ${this._config.show_tags !== false && launch.tags.length ? `<div class="launch-tags">${launch.tags.map((tag) => `<span class="launch-tag">${esc(tag)}</span>`).join("")}</div>` : ""}
                 ${launch.media ? `<div class="launch-actions"><a class="launch-button" href="${esc(launch.media)}" target="_blank" rel="noopener">Media link ↗</a></div>` : ""}
               </div>
