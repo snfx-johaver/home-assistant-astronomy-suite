@@ -6,126 +6,98 @@ The most complete astronomy and space dashboard for Home Assistant. Yes, we know
 
 Fully isolated — does not modify any existing dashboards, integrations, or resources.
 
-## Features
+---
 
-- **APOD** — Astronomy Picture of the Day with full metadata
-- **NeoWs** — Near Earth Object tracking with threat indicators
-- **DONKI** — Space weather: CMEs, Solar Flares, Geomagnetic Storms
-- **EONET** — Earth Observatory Natural Event Tracker
-- **TechTransfer** — NASA patent/technology transfer data
-- **Rocket Launch Live** — Next 5 upcoming launches with countdown timers
-- **ISS Tracker** — Real-time position on world map + live video stream
-- **Planetary KP Index** — Real-time aurora/geomagnetic activity from NOAA
-- **7 Satellite Cameras** — APOD, EPIC Earth, GOES-16, GOES-18, Himawari-8, SDO Sun, SOHO Sun
-- **9 Custom Lovelace Cards** — All prefixed "ASS" for easy finding in the card picker
-- **Solar System Orrery** — Real-time planet positions from orbital mechanics
-- **Built-in Horizon & Lunar Phase cards** — No external card dependencies required
-- **Works alongside** — ApexCharts, Mushroom, ISS, Moon, Sun, Season, Aurora
+## ✨ Features
 
-## Installation
+### 🛰️ Sensors (17+)
+| Sensor | Source | Auth |
+|--------|--------|------|
+| Astronomy Picture of the Day (APOD) | NASA | API key |
+| Near Earth Objects (count, closest, fastest, largest) | NASA NeoWs | API key |
+| Coronal Mass Ejections (7-day) | NASA DONKI | API key |
+| Solar Flares (7-day) | NASA DONKI | API key |
+| Geomagnetic Storms (30-day) | NASA DONKI | API key |
+| Earth Events (EONET) | NASA | API key |
+| Tech Transfer Patents | NASA | API key |
+| Rocket Launch 1–5 | RocketLaunch.Live | Optional |
+| ISS Position (lat/lon) | Open Notify | None |
+| Planetary KP Index (aurora) | NOAA SWPC | None |
 
-### 1. Custom Integration
+### 📷 Cameras (7)
+| Camera | Source | Auth |
+|--------|--------|------|
+| APOD Image | NASA | API key |
+| EPIC Earth (full-disk natural color) | NASA | None |
+| GOES-16 Earth (Americas) | NOAA | None |
+| GOES-18 Earth (Pacific) | NOAA | None |
+| Himawari-8 Earth (Asia/Pacific) | NICT Japan | None |
+| SDO Sun (171Å corona, extreme UV) | NASA | None |
+| SOHO Sun (LASCO C3 coronagraph) | ESA/NASA | None |
 
-Copy the `custom_components/nasa_astronomy/` folder to your HA config:
+### 🃏 Custom Lovelace Cards (9)
+All cards are prefixed **"ASS"** in the card picker for easy discovery.
 
-```
-<your-ha-config>/custom_components/nasa_astronomy/
-```
+| Card | Description |
+|------|-------------|
+| `apod-card` | Astronomy Picture of the Day with metadata |
+| `neo-threat-card` | Near Earth Object tracker with threat levels |
+| `solar-activity-card` | CME/Flare/Storm monitor + optional KP gauge + live Sun thumbnails |
+| `astro-horizon-card` | Sun arc horizon visualization |
+| `astro-lunar-card` | Moon phase visualization |
+| `solar-system-card` | Real-time heliocentric orrery (orbital mechanics) |
+| `rocket-launch-card` | Next 5 launches with countdown timers |
+| `iss-tracker-card` | SVG world map with ISS position + live stream button |
+| `earth-observation-card` | Multi-source satellite imagery (EPIC, GOES, Himawari, SDO, SOHO) |
 
-### 2. Custom Cards
+### 🛡️ Isolation Guarantees
+- ✅ All entity IDs namespaced under `nasa_astronomy_suite_`
+- ✅ Custom cards use unique Shadow DOM elements (no global CSS)
+- ✅ Does NOT modify any existing dashboards or resources
+- ✅ Cards JS auto-deployed and auto-registered on setup
+- ✅ Separate integration domain — no shared state
 
-Copy `www/community/astronomy-cards/` to your HA config:
+---
 
-```
-<your-ha-config>/www/community/astronomy-cards/
-```
+## 📦 Installation
 
-### 3. Dashboard
+### Via HACS (Recommended)
 
-Copy `lovelace/astronomy-dashboard.yaml` to your HA config:
+1. Open HACS in your Home Assistant
+2. Click the button above, or manually add as a custom repository:
+   - URL: `https://github.com/snfx-johaver/home-assistant-astronomy-suite`
+   - Category: **Integration**
+3. Click **Download**
+4. **Restart Home Assistant**
+5. Go to **Settings → Devices & Services → Add Integration**
+6. Search for **Astronomy Space Suite**
+7. Enter your NASA API key (get one free at [api.nasa.gov](https://api.nasa.gov/))
+8. Optionally enter your RocketLaunch.Live API key (or leave blank for free tier)
 
-```
-<your-ha-config>/lovelace/astronomy-dashboard.yaml
-```
+**That's it!** The integration automatically:
+- Deploys the custom cards JS to your `www/` folder
+- Registers the cards as a Lovelace resource
+- Creates all sensors and cameras
 
-### 4. Configuration
+No manual file copying. No YAML editing. Just install, restart, configure.
 
-Add to your `configuration.yaml`:
+### Manual Installation (Advanced)
 
-```yaml
-# Register the astronomy dashboard
-lovelace:
-  mode: storage
-  dashboards:
-    astronomy:
-      mode: yaml
-      title: "🔭 Astronomy"
-      icon: mdi:telescope
-      show_in_sidebar: true
-      filename: lovelace/astronomy-dashboard.yaml
-  resources:
-    - url: /local/community/astronomy-cards/astronomy-cards.js
-      type: module
-```
+If you don't use HACS:
+1. Download the [latest release](https://github.com/snfx-johaver/home-assistant-astronomy-suite/releases)
+2. Copy the `custom_components/nasa_astronomy/` folder to your HA config directory
+3. Restart Home Assistant
+4. Add the integration via Settings → Devices & Services
 
-### 5. Add Integration
+The integration handles everything else (card deployment + resource registration) automatically on first setup.
 
-1. Restart Home Assistant
-2. Go to **Settings → Devices & Services → Add Integration**
-3. Search for **Astronomy Space Suite**
-4. Enter your NASA API key (get one free at https://api.nasa.gov/)
+---
 
-## Repository Structure
+## 🃏 Card Configuration Examples
 
-```
-home-assistant-astronomy-suite/
-├── custom_components/
-│   └── nasa_astronomy/
-│       ├── __init__.py          # Integration setup
-│       ├── const.py             # Constants & URLs
-│       ├── manifest.json        # HA integration manifest
-│       ├── config_flow.py       # Config flow UI
-│       ├── strings.json         # Translations
-│       ├── coordinator.py       # Data update coordinator
-│       ├── sensor.py            # Sensor platform (11 sensors)
-│       └── camera.py            # Camera platform (APOD image)
-├── www/
-│   └── community/
-│       └── astronomy-cards/
-│           ├── astronomy-cards.js    # Pre-built card bundle (USE THIS)
-│           ├── apod-card.ts          # APOD card source
-│           ├── neo-threat-card.ts    # NEO card source
-│           ├── solar-activity-card.ts # Solar card source
-│           ├── index.ts             # Bundle entry point
-│           ├── package.json         # NPM config
-│           ├── tsconfig.json        # TypeScript config
-│           ├── rollup.config.mjs    # Build config
-│           └── hacs.json            # HACS frontend metadata
-├── lovelace/
-│   └── astronomy-dashboard.yaml     # Complete dashboard (6 views)
-├── hacs.json                        # HACS integration metadata
-└── README.md                        # This file
-```
+All cards are configurable via the visual editor (no YAML needed). Just add a card and search for "ASS".
 
-## Entities Created
-
-| Entity ID | Type | Description |
-|-----------|------|-------------|
-| `sensor.nasa_astronomy_suite_apod` | Sensor | APOD title + full attributes |
-| `sensor.nasa_astronomy_suite_neo_count_today` | Sensor | Number of NEOs today |
-| `sensor.nasa_astronomy_suite_closest_neo` | Sensor | Closest NEO distance |
-| `sensor.nasa_astronomy_suite_fastest_neo` | Sensor | Fastest NEO speed |
-| `sensor.nasa_astronomy_suite_largest_neo` | Sensor | Largest NEO diameter |
-| `sensor.nasa_astronomy_suite_coronal_mass_ejections` | Sensor | CME count (7d) |
-| `sensor.nasa_astronomy_suite_solar_flares` | Sensor | Solar flare count (7d) |
-| `sensor.nasa_astronomy_suite_geomagnetic_storms` | Sensor | Geomagnetic storm count (30d) |
-| `sensor.nasa_astronomy_suite_active_earth_events` | Sensor | EONET active events |
-| `sensor.nasa_astronomy_suite_tech_transfer_patents` | Sensor | Tech transfer count |
-| `camera.nasa_astronomy_suite_apod_image` | Camera | APOD as camera entity |
-
-## Custom Cards
-
-### `<apod-card>`
+### ASS APOD Card
 ```yaml
 type: custom:apod-card
 entity: sensor.nasa_astronomy_suite_apod
@@ -133,40 +105,128 @@ show_explanation: true
 show_copyright: true
 ```
 
-### `<neo-threat-card>`
+### ASS NEO Threat Card
 ```yaml
 type: custom:neo-threat-card
 entity: sensor.nasa_astronomy_suite_neo_count_today
 max_items: 8
 ```
 
-### `<solar-activity-card>`
+### ASS Solar Activity Card
 ```yaml
 type: custom:solar-activity-card
 cme_entity: sensor.nasa_astronomy_suite_coronal_mass_ejections
 flare_entity: sensor.nasa_astronomy_suite_solar_flares
 storm_entity: sensor.nasa_astronomy_suite_geomagnetic_storms
-show_timeline: true
+kp_entity: sensor.nasa_astronomy_suite_planetary_kp_index
+sdo_entity: camera.nasa_astronomy_suite_sdo_sun
+soho_entity: camera.nasa_astronomy_suite_soho_sun
 ```
 
-## Isolation Guarantees
+### ASS Solar System Card
+```yaml
+type: custom:solar-system-card
+title: Solar System
+show_jupiter: true
+show_saturn: true
+```
 
-- ✅ All entity IDs namespaced under `nasa_astronomy_suite_`
-- ✅ Dashboard is a separate YAML-mode dashboard (not modifying default)
-- ✅ Custom cards use unique element names that won't conflict
-- ✅ All CSS is scoped inside Shadow DOM (no global styles)
-- ✅ Integration uses its own `DOMAIN` — no shared state
-- ✅ Resources loaded from dedicated `/local/community/astronomy-cards/` path
-- ✅ No modifications to existing configuration required beyond additive entries
+### ASS Rocket Launch Card
+```yaml
+type: custom:rocket-launch-card
+entity_prefix: sensor.nasa_astronomy_suite_rocket_launch
+max_launches: 5
+```
 
-## HACS Installation (Alternative)
+### ASS ISS Tracker Card
+```yaml
+type: custom:iss-tracker-card
+entity: sensor.nasa_astronomy_suite_iss_position
+show_map: true
+show_trail: true
+show_stream_button: true
+```
 
-Add this repository as a custom repository in HACS:
-1. HACS → Integrations → ⋮ → Custom repositories
-2. URL: `https://github.com/your-username/home-assistant-astronomy-suite`
-3. Category: Integration
-4. For the cards: HACS → Frontend → Custom repositories → same URL → Category: Lovelace
+### ASS Earth Observation Card
+```yaml
+type: custom:earth-observation-card
+epic_entity: camera.nasa_astronomy_suite_epic_earth
+goes_entity: camera.nasa_astronomy_suite_goes_16_earth
+goes18_entity: camera.nasa_astronomy_suite_goes_18_earth
+himawari_entity: camera.nasa_astronomy_suite_himawari_8_earth
+sdo_entity: camera.nasa_astronomy_suite_sdo_sun
+soho_entity: camera.nasa_astronomy_suite_soho_sun
+```
 
-## License
+---
+
+## 🏗️ Architecture
+
+```
+home-assistant-astronomy-suite/
+├── custom_components/nasa_astronomy/
+│   ├── __init__.py          # Auto-deploys cards, registers resources
+│   ├── manifest.json        # HA integration manifest
+│   ├── config_flow.py       # Config flow (NASA + Rocket API keys)
+│   ├── coordinator.py       # Concurrent data fetching (asyncio.gather)
+│   ├── sensor.py            # 17+ sensor entities
+│   ├── camera.py            # 7 camera entities
+│   ├── const.py             # URLs and constants
+│   ├── strings.json         # UI strings
+│   ├── astronomy-cards.js   # Bundled card JS (auto-deployed to www/)
+│   ├── icon.png             # Integration icon
+│   └── logo.png             # Integration logo
+├── www/community/astronomy-cards/
+│   └── astronomy-cards.js   # Card source (development copy)
+├── hacs.json                # HACS metadata
+├── icon.png                 # Repository icon
+├── logo.png                 # Repository logo
+└── README.md
+```
+
+---
+
+## 📡 Data Sources
+
+| Source | URL | Auth | Update |
+|--------|-----|------|--------|
+| NASA APOD | api.nasa.gov/planetary/apod | API key | 10 min |
+| NASA NeoWs | api.nasa.gov/neo/rest/v1/feed | API key | 10 min |
+| NASA DONKI | api.nasa.gov/DONKI/ | API key | 10 min |
+| NASA EONET | eonet.gsfc.nasa.gov/api/v3 | None | 10 min |
+| NASA EPIC | epic.gsfc.nasa.gov/api/natural | None | 10 min |
+| RocketLaunch.Live | fdo.rocketlaunch.live | Optional | 10 min |
+| ISS Position | api.open-notify.org/iss-now.json | None | 10 min |
+| NOAA SWPC KP | services.swpc.noaa.gov | None | 10 min |
+| GOES-16 | cdn.star.nesdis.noaa.gov | None | Camera |
+| GOES-18 | cdn.star.nesdis.noaa.gov | None | Camera |
+| Himawari-8 | himawari8.nict.go.jp | None | Camera |
+| NASA SDO | sdo.gsfc.nasa.gov | None | Camera |
+| ESA/NASA SOHO | soho.nascom.nasa.gov | None | Camera |
+
+---
+
+## 🔑 API Keys
+
+| Key | Required | Where to get it |
+|-----|----------|----------------|
+| NASA API Key | ✅ Yes | [api.nasa.gov](https://api.nasa.gov/) — free, instant |
+| RocketLaunch.Live | ❌ Optional | [rocketlaunch.live](https://www.rocketlaunch.live/) — free tier works without key |
+
+---
+
+## 🐛 Troubleshooting
+
+**Cards not showing?** → Restart HA after install. The integration auto-registers cards on first setup.
+
+**"Custom element doesn't exist"?** → Go to Settings → Dashboards → ⋮ → Resources and verify `/local/community/astronomy-cards/astronomy-cards.js` is listed as a module.
+
+**Integration not loading?** → Check HA logs. Most common issue is NASA API returning 503 (temporary outage).
+
+**Sensors show "unavailable"?** → Data sources may be temporarily down. The integration retries every 10 minutes.
+
+---
+
+## 📜 License
 
 MIT
