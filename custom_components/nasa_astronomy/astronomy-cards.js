@@ -1,5 +1,5 @@
 /**
- * Astronomy Space Suite Cards v1.7.0
+ * Astronomy Space Suite Cards v1.7.2
  * Pre-built Astronomy Space Suite bundle for Home Assistant Lovelace.
  *
  * Cards:
@@ -2402,10 +2402,10 @@ class EarthObservationCard extends HTMLElement {
           display: flex;
           gap: 10px;
           padding-bottom: 12px;
-          overflow-x: auto;
+          flex-wrap: wrap;
           scrollbar-width: thin;
         }
-        .earth-tab-section { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
+        .earth-tab-section { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; width: 100%; }
         .earth-tab-label {
           font-size: 0.7rem;
           font-weight: 700;
@@ -2463,7 +2463,7 @@ class EarthObservationCard extends HTMLElement {
                   </div>
                 </div>
               ` : ""}
-              ${earthViews.length && sunViews.length ? `<div class="earth-tab-divider"></div>` : ""}
+              ${earthViews.length && sunViews.length ? `</div><div class="earth-tabs">` : ""}
               ${sunViews.length ? `
                 <div class="earth-tab-section">
                   <div class="earth-tab-label">☀️ Sun</div>
@@ -2537,7 +2537,7 @@ registerCustomCard("iss-tracker-card", "ASS ISS Tracker Card", "International Sp
 registerCustomCard("earth-observation-card", "ASS Earth Observation Card", "NASA EPIC and NOAA GOES Earth imagery viewer with editor");
 
 console.info(
-  "%c Astronomy Space Suite Cards v1.7.0 %c",
+  "%c Astronomy Space Suite Cards v1.7.2 %c",
   "color:white;background:#1a237e;font-weight:bold;padding:2px 8px;border-radius:4px 0 0 4px;",
   "color:#1a237e;background:#e8eaf6;font-weight:bold;padding:2px 8px;border-radius:0 4px 4px 0;",
 );

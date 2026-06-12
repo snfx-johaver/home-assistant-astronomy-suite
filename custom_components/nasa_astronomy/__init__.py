@@ -33,7 +33,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Astronomy Space Suite from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
-    # Auto-register the cards JS as a Lovelace resource
+    # Deploy cards to www/ and register as Lovelace resource
+    await hass.async_add_executor_job(_deploy_cards_to_www, hass)
     await _async_register_cards_resource(hass)
 
     session = async_get_clientsession(hass)
@@ -70,37 +71,82 @@ def _deploy_cards_to_www(hass: HomeAssistant) -> None:
     """Copy astronomy-cards.js to config/www/community/astronomy-cards/."""
     source = Path(__file__).parent / CARDS_FILENAME
     if not source.is_file():
+        _LOGGER.warning("Cards JS source not found: %s", source)
         return
 
     www_dir = Path(hass.config.path("www")) / "community" / "astronomy-cards"
     www_dir.mkdir(parents=True, exist_ok=True)
 
     dest = www_dir / CARDS_FILENAME
-    # Only copy if source is newer or dest doesn't exist
-    if not dest.is_file() or source.stat().st_mtime > dest.stat().st_mtime:
-        shutil.copy2(str(source), str(dest))
+    # Always copy to ensure updates are deployed
+    shutil.copy2(str(source), str(dest))
+    _LOGGER.info("Deployed %s to %s", CARDS_FILENAME, dest)
 
 
 async def _async_register_cards_resource(hass: HomeAssistant) -> None:
     """Register astronomy-cards.js as a Lovelace resource if not already present."""
+    # First try the HA API approach
     try:
         lovelace_data = hass.data.get("lovelace")
-        if lovelace_data is None:
-            return
-
-        resources = lovelace_data.get("resources")
-        if resources is None:
-            return
-
-        # Check if already registered
-        for resource in resources.async_items():
-            url = resource.get("url", "")
-            if "astronomy-cards" in url:
+        if lovelace_data is not None:
+            resources = lovelace_data.get("resources")
+            if resources is not None:
+                for resource in resources.async_items():
+                    url = resource.get("url", "")
+                    if "astronomy-cards" in url:
+                        return
+                await resources.async_create_item(
+                    {"res_type": "module", "url": CARDS_LOCAL_URL}
+                )
+                _LOGGER.info("Registered Lovelace resource via API: %s", CARDS_LOCAL_URL)
                 return
+    except Exception as err:
+        _LOGGER.debug("API resource registration failed: %s", err)
 
-        # Add the resource
-        await resources.async_create_item(
-            {"res_type": "module", "url": CARDS_LOCAL_URL}
-        )
-    except Exception:
-        pass
+    # Fallback: directly update .storage/lovelace_resources
+    await hass.async_add_executor_job(_register_resource_via_storage, hass)
+
+
+def _register_resource_via_storage(hass: HomeAssistant) -> None:
+    """Fallback: register resource by editing .storage/lovelace_resources."""
+    import json
+
+    storage_path = Path(hass.config.path(".storage")) / "lovelace_resources"
+    if not storage_path.is_file():
+        # Create the storage file with our resource
+        data = {
+            "version": 1,
+            "minor_version": 1,
+            "key": "lovelace_resources",
+            "data": {
+                "items": [
+                    {
+                        "url": CARDS_LOCAL_URL,
+                        "type": "module",
+                        "id": "astronomy_space_suite_cards",
+                    }
+                ]
+            },
+        }
+        storage_path.parent.mkdir(parents=True, exist_ok=True)
+        storage_path.write_text(json.dumps(data, indent=2))
+        _LOGGER.info("Created lovelace_resources with astronomy-cards.js")
+        return
+
+    content = json.loads(storage_path.read_text())
+    items = content.get("data", {}).get("items", [])
+
+    # Check if already registered
+    for item in items:
+        if "astronomy-cards" in item.get("url", ""):
+            return
+
+    # Add our resource
+    items.append({
+        "url": CARDS_LOCAL_URL,
+        "type": "module",
+        "id": "astronomy_space_suite_cards",
+    })
+    content["data"]["items"] = items
+    storage_path.write_text(json.dumps(content, indent=2))
+    _LOGGER.info("Registered Lovelace resource via storage: %s", CARDS_LOCAL_URL)

@@ -109,7 +109,8 @@ show_copyright: true
 ```yaml
 type: custom:neo-threat-card
 entity: sensor.nasa_astronomy_suite_neo_count_today
-max_items: 8
+max_items: 8          # UI configurable: 1-20
+show_hazardous_only: false
 ```
 
 ### ASS Solar Activity Card
@@ -135,7 +136,8 @@ show_saturn: true
 ```yaml
 type: custom:rocket-launch-card
 entity_prefix: sensor.nasa_astronomy_suite_rocket_launch
-max_launches: 5
+max_launches: 5       # UI configurable: 1-5
+show_countdown: true
 ```
 
 ### ASS ISS Tracker Card
@@ -148,6 +150,7 @@ show_stream_button: true
 ```
 
 ### ASS Earth Observation Card
+Earth sources are grouped on the first row; Sun sources on the second row.
 ```yaml
 type: custom:earth-observation-card
 epic_entity: camera.nasa_astronomy_suite_epic_earth
@@ -212,6 +215,25 @@ home-assistant-astronomy-suite/
 |-----|----------|----------------|
 | NASA API Key | ✅ Yes | [api.nasa.gov](https://api.nasa.gov/) — free, instant |
 | RocketLaunch.Live | ❌ Optional | [rocketlaunch.live](https://www.rocketlaunch.live/) — free tier works without key |
+
+---
+
+## 📋 Required Home Assistant Integrations
+
+The following built-in HA integrations are recommended for full dashboard functionality:
+
+| Integration | Purpose | Link |
+|-------------|---------|------|
+| **Sun** | Sun position for horizon card | [Sun integration](https://www.home-assistant.io/integrations/sun/) |
+| **Moon** | Moon phase data for lunar card | [Moon integration](https://www.home-assistant.io/integrations/moon/) |
+| **Season** | Season sensor for dashboard context | [Season integration](https://www.home-assistant.io/integrations/season/) |
+
+Optional but recommended:
+| Integration | Purpose | Link |
+|-------------|---------|------|
+| **Aurora** | Aurora KP forecast (supplements NOAA KP sensor) | [Aurora integration](https://www.home-assistant.io/integrations/aurora/) |
+
+These are standard HA integrations — just enable them in Settings → Devices & Services if not already active.
 
 ---
 
