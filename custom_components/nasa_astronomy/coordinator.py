@@ -21,6 +21,9 @@ from .const import (
     EONET_URL,
     TECHTRANSFER_URL,
     ROCKET_LAUNCH_URL,
+    ISS_POSITION_URL,
+    EPIC_EARTH_URL,
+    SWPC_KP_INDEX_URL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -61,21 +64,29 @@ class NasaDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._fetch_eonet(),
             self._fetch_techtransfer(),
             self._fetch_rocket_launches(),
+            self._fetch_iss_position(),
+            self._fetch_epic_earth(),
+            self._fetch_swpc_kp_index(),
             return_exceptions=True,
         )
 
         keys = [
             "apod", "neo", "donki_cme", "donki_flr",
             "donki_gst", "eonet", "techtransfer", "rocket_launches",
+            "iss_position", "epic_earth", "swpc_kp_index",
         ]
         data: dict[str, Any] = {}
         for key, result in zip(keys, results):
-            data[key] = None if isinstance(result, Exception) else result
+            if isinstance(result, Exception):
+                _LOGGER.debug("Failed to fetch %s: %s", key, result)
+                data[key] = None
+            else:
+                data[key] = result
 
         return data
 
     async def _fetch_json(self, url: str, params: dict | None = None) -> Any:
-        """Fetch JSON from a URL."""
+        """Fetch JSON from a URL with NASA API key."""
         if params is None:
             params = {}
         params["api_key"] = self._api_key
@@ -83,6 +94,18 @@ class NasaDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             async with self._session.get(
                 url, params=params, timeout=DEFAULT_TIMEOUT
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return None
+        except Exception:
+            return None
+
+    async def _fetch_json_noauth(self, url: str, params: dict | None = None) -> Any:
+        """Fetch JSON from a URL without API key."""
+        try:
+            async with self._session.get(
+                url, params=params or {}, timeout=DEFAULT_TIMEOUT
             ) as resp:
                 if resp.status == 200:
                     return await resp.json()
@@ -148,3 +171,15 @@ class NasaDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return None
         except Exception:
             return None
+
+    async def _fetch_iss_position(self) -> dict[str, Any] | None:
+        """Fetch current ISS position from Open Notify API."""
+        return await self._fetch_json_noauth(ISS_POSITION_URL)
+
+    async def _fetch_epic_earth(self) -> list | None:
+        """Fetch NASA EPIC natural color Earth images metadata."""
+        return await self._fetch_json_noauth(EPIC_EARTH_URL)
+
+    async def _fetch_swpc_kp_index(self) -> list | None:
+        """Fetch NOAA SWPC planetary K-index (1-minute)."""
+        return await self._fetch_json_noauth(SWPC_KP_INDEX_URL)

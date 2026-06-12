@@ -1,5 +1,5 @@
 /**
- * NASA Astronomy Cards v1.5.0
+ * NASA Astronomy Cards v1.6.0
  * Pre-built bundle for Home Assistant Lovelace.
  *
  * Cards:
@@ -10,6 +10,8 @@
  *  - <astro-lunar-card>
  *  - <solar-system-card>
  *  - <rocket-launch-card>
+ *  - <iss-tracker-card>
+ *  - <earth-observation-card>
  */
 
 const ASTRO = {
@@ -172,7 +174,7 @@ const EDITOR_STYLES = `
 `;
 
 const DOCS_URL = "https://github.com/snfx-johaver/home-assistant-astronomy-suite";
-const VERSION = "1.5.0";
+const VERSION = "1.6.0";
 const DAY_MS = 86400000;
 const J2000 = 2451545.0;
 
@@ -936,6 +938,7 @@ class SolarActivityCardEditor extends AstroEditorBase {
       cme_entity: "sensor.nasa_astronomy_suite_coronal_mass_ejections",
       flare_entity: "sensor.nasa_astronomy_suite_solar_flares",
       storm_entity: "sensor.nasa_astronomy_suite_geomagnetic_storms",
+      kp_entity: "sensor.nasa_astronomy_suite_planetary_kp_index",
       title: "",
       show_cme: true,
       show_flares: true,
@@ -950,6 +953,7 @@ class SolarActivityCardEditor extends AstroEditorBase {
       <ha-entity-picker id="cme_entity" label="CME entity"></ha-entity-picker>
       <ha-entity-picker id="flare_entity" label="Solar flare entity"></ha-entity-picker>
       <ha-entity-picker id="storm_entity" label="Geomagnetic storm entity"></ha-entity-picker>
+      <ha-entity-picker id="kp_entity" label="Planetary KP entity"></ha-entity-picker>
       <ha-textfield id="title" label="Card title (optional)"></ha-textfield>
       <label class="switch-row"><span>Show CMEs</span><ha-switch id="show_cme"></ha-switch></label>
       <label class="switch-row"><span>Show flares</span><ha-switch id="show_flares"></ha-switch></label>
@@ -965,14 +969,14 @@ class SolarActivityCardEditor extends AstroEditorBase {
   }
 
   _setupListeners() {
-    ["cme_entity", "flare_entity", "storm_entity"].forEach((key) => this._bindPicker(key, key));
+    ["cme_entity", "flare_entity", "storm_entity", "kp_entity"].forEach((key) => this._bindPicker(key, key));
     this._bindText("title", "title", (value) => value.trim());
     ["show_cme", "show_flares", "show_storms"].forEach((key) => this._bindSwitch(key, key));
     this._bindSelect("time_range", "time_range", (value) => (String(value) === "30" ? 30 : 7));
   }
 
   _syncValues() {
-    ["cme_entity", "flare_entity", "storm_entity"].forEach((key) => setPickerValue(this.shadowRoot, key, this._hass, this._config[key]));
+    ["cme_entity", "flare_entity", "storm_entity", "kp_entity"].forEach((key) => setPickerValue(this.shadowRoot, key, this._hass, this._config[key]));
     setTextValue(this.shadowRoot, "title", this._config.title || "");
     setSwitchValue(this.shadowRoot, "show_cme", this._config.show_cme !== false);
     setSwitchValue(this.shadowRoot, "show_flares", this._config.show_flares !== false);
@@ -994,6 +998,7 @@ class SolarActivityCard extends HTMLElement {
       cme_entity: "sensor.nasa_astronomy_suite_coronal_mass_ejections",
       flare_entity: "sensor.nasa_astronomy_suite_solar_flares",
       storm_entity: "sensor.nasa_astronomy_suite_geomagnetic_storms",
+      kp_entity: "sensor.nasa_astronomy_suite_planetary_kp_index",
       title: "",
       show_cme: true,
       show_flares: true,
@@ -1043,11 +1048,33 @@ class SolarActivityCard extends HTMLElement {
       .sort((a, b) => b.date - a.date);
   }
 
+  _getKpDetails(stateObj) {
+    if (!stateObj || ["unknown", "unavailable"].includes(String(stateObj.state).toLowerCase())) return null;
+    const value = toNumber(stateObj.state, NaN);
+    if (!Number.isFinite(value)) return null;
+    const normalized = clamp(value, 0, 9);
+    const attrs = stateObj.attributes || {};
+    const band = normalized >= 8
+      ? { color: ASTRO.error, label: "Severe" }
+      : normalized >= 6
+        ? { color: ASTRO.warning, label: "Storm" }
+        : normalized >= 4
+          ? { color: "#fdd835", label: "Active" }
+          : { color: ASTRO.success, label: "Quiet" };
+    return {
+      value: normalized,
+      color: band.color,
+      auroraLevel: attrs.aurora_level || band.label,
+      percent: clamp((normalized / 9) * 100, 0, 100),
+    };
+  }
+
   _render() {
     if (!this._hass) return;
     const cmeState = getState(this._hass, this._config.cme_entity);
     const flareState = getState(this._hass, this._config.flare_entity);
     const stormState = getState(this._hass, this._config.storm_entity);
+    const kpState = getState(this._hass, this._config.kp_entity);
     const timeRange = this._config.time_range === 30 ? 30 : 7;
 
     const sections = [
@@ -1055,6 +1082,7 @@ class SolarActivityCard extends HTMLElement {
       { enabled: this._config.show_flares !== false, kind: "flare", title: "Flares", icon: "☀️", color: ASTRO.flare, state: flareState, events: this._collectEvents(flareState, "flare", timeRange), count: toNumber(flareState?.state, 0) },
       { enabled: this._config.show_storms !== false, kind: "storm", title: "Storms", icon: "🌊", color: ASTRO.storm, state: stormState, events: this._collectEvents(stormState, "storm", timeRange), count: toNumber(stormState?.state, 0) },
     ].filter((section) => section.enabled);
+    const kpDetails = this._config.kp_entity ? this._getKpDetails(kpState) : null;
 
     if (!sections.length) {
       this.shadowRoot.innerHTML = renderErrorCard("Enable at least one solar activity feed in the card editor.", "mdi:white-balance-sunny");
@@ -1081,6 +1109,35 @@ class SolarActivityCard extends HTMLElement {
         .solar-icon { font-size: 1.25rem; margin-bottom: 4px; }
         .solar-value { font-size: 1.45rem; font-weight: 700; color: ${ASTRO.text1}; }
         .solar-label { font-size: 0.7rem; color: ${ASTRO.text2}; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.05em; }
+        .kp-panel {
+          margin: 0 12px 12px;
+          padding: 14px;
+          border-radius: 16px;
+          background: linear-gradient(180deg, rgba(var(--rgb-primary-text-color, 0,0,0), 0.04), rgba(var(--rgb-primary-text-color, 0,0,0), 0.02));
+        }
+        .kp-top { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+        .kp-title { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; color: ${ASTRO.text2}; }
+        .kp-value { font-size: 2rem; font-weight: 800; color: ${ASTRO.text1}; line-height: 1; }
+        .kp-level { font-size: 0.8rem; font-weight: 600; color: var(--kp-color); }
+        .kp-scale { position: relative; margin-top: 12px; }
+        .kp-bar {
+          height: 10px;
+          border-radius: 999px;
+          background: linear-gradient(90deg, ${ASTRO.success} 0 33.33%, #fdd835 33.33% 55.55%, ${ASTRO.warning} 55.55% 77.77%, ${ASTRO.error} 77.77% 100%);
+        }
+        .kp-marker {
+          position: absolute;
+          top: 50%;
+          left: var(--kp-percent);
+          width: 16px;
+          height: 16px;
+          border-radius: 50%;
+          transform: translate(-50%, -50%);
+          background: var(--kp-color);
+          border: 3px solid ${ASTRO.surface};
+          box-shadow: 0 0 0 2px rgba(var(--rgb-primary-text-color, 0,0,0), 0.12);
+        }
+        .kp-ticks { display: flex; justify-content: space-between; margin-top: 8px; font-size: 0.68rem; color: ${ASTRO.text2}; }
         .solar-list { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 14px; }
         .solar-item {
           display: grid;
@@ -1112,6 +1169,22 @@ class SolarActivityCard extends HTMLElement {
             </div>
           `).join("")}
         </div>
+        ${kpDetails ? `
+          <div class="kp-panel" style="--kp-color:${kpDetails.color}; --kp-percent:${kpDetails.percent}%">
+            <div class="kp-top">
+              <div>
+                <div class="kp-title">Planetary KP Index</div>
+                <div class="kp-value">${kpDetails.value.toFixed(1)}</div>
+              </div>
+              <div class="kp-level">${esc(kpDetails.auroraLevel)}</div>
+            </div>
+            <div class="kp-scale">
+              <div class="kp-bar"></div>
+              <div class="kp-marker"></div>
+            </div>
+            <div class="kp-ticks"><span>0-3</span><span>4-5</span><span>6-7</span><span>8-9</span></div>
+          </div>
+        ` : ""}
         <div class="solar-list">
           ${timeline.length
             ? timeline.map((event) => `
@@ -1863,6 +1936,460 @@ class RocketLaunchCard extends HTMLElement {
   getCardSize() { return 5; }
 }
 
+class IssTrackerCardEditor extends AstroEditorBase {
+  setConfig(config) {
+    super.setConfig({
+      entity: "sensor.nasa_astronomy_suite_iss_position",
+      title: "ISS Tracker",
+      show_map: true,
+      show_trail: true,
+      show_stream_button: true,
+      ...config,
+    });
+  }
+
+  _editorTemplate() {
+    return `
+      <ha-entity-picker id="entity" label="ISS position entity"></ha-entity-picker>
+      <ha-textfield id="title" label="Card title"></ha-textfield>
+      <label class="switch-row"><span>Show map</span><ha-switch id="show_map"></ha-switch></label>
+      <label class="switch-row"><span>Show trail</span><ha-switch id="show_trail"></ha-switch></label>
+      <label class="switch-row"><span>Show stream button</span><ha-switch id="show_stream_button"></ha-switch></label>
+    `;
+  }
+
+  _setupListeners() {
+    this._bindPicker("entity", "entity");
+    this._bindText("title", "title", (value) => value.trim() || "ISS Tracker");
+    ["show_map", "show_trail", "show_stream_button"].forEach((key) => this._bindSwitch(key, key));
+  }
+
+  _syncValues() {
+    setPickerValue(this.shadowRoot, "entity", this._hass, this._config.entity || "sensor.nasa_astronomy_suite_iss_position");
+    setTextValue(this.shadowRoot, "title", this._config.title || "ISS Tracker");
+    setSwitchValue(this.shadowRoot, "show_map", this._config.show_map !== false);
+    setSwitchValue(this.shadowRoot, "show_trail", this._config.show_trail !== false);
+    setSwitchValue(this.shadowRoot, "show_stream_button", this._config.show_stream_button !== false);
+  }
+}
+
+class IssTrackerCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._config = {};
+    this._trail = [];
+    this._trailKey = "";
+    this._lastTrailStamp = "";
+  }
+
+  static getConfigElement() { return document.createElement("iss-tracker-card-editor"); }
+  static getStubConfig() {
+    return {
+      entity: "sensor.nasa_astronomy_suite_iss_position",
+      title: "ISS Tracker",
+      show_map: true,
+      show_trail: true,
+      show_stream_button: true,
+    };
+  }
+
+  setConfig(config) {
+    this._config = { ...IssTrackerCard.getStubConfig(), ...config };
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  _parsePosition(stateObj) {
+    const attrs = stateObj?.attributes || {};
+    let latitude = toNumber(attrs.latitude, NaN);
+    let longitude = toNumber(attrs.longitude, NaN);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      const parts = String(stateObj?.state || "").split(",").map((part) => parseFloat(part.trim()));
+      latitude = parts[0];
+      longitude = parts[1];
+    }
+    return {
+      latitude,
+      longitude,
+      timestamp: attrs.timestamp || stateObj?.last_changed || stateObj?.last_updated || "",
+      liveStreamUrl: attrs.live_stream_url || "https://www.youtube.com/watch?v=86YLFOog4GM",
+    };
+  }
+
+  _getTrailKey() {
+    return `astronomy-cards:iss-trail:${this._config.entity || "sensor.nasa_astronomy_suite_iss_position"}`;
+  }
+
+  _loadTrail() {
+    const key = this._getTrailKey();
+    if (this._trailKey === key) return;
+    this._trailKey = key;
+    this._lastTrailStamp = "";
+    try {
+      const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+      this._trail = safeArray(parsed)
+        .filter((item) => Number.isFinite(item?.latitude) && Number.isFinite(item?.longitude))
+        .slice(-12);
+      const latest = this._trail[this._trail.length - 1];
+      this._lastTrailStamp = latest?.stamp || "";
+    } catch (_error) {
+      this._trail = [];
+    }
+  }
+
+  _updateTrail(position) {
+    this._loadTrail();
+    if (!Number.isFinite(position.latitude) || !Number.isFinite(position.longitude)) return this._trail;
+    const stamp = String(position.timestamp || `${position.latitude.toFixed(3)},${position.longitude.toFixed(3)}`);
+    if (stamp === this._lastTrailStamp) return this._trail;
+    this._lastTrailStamp = stamp;
+    this._trail = [...this._trail.filter((item) => item.stamp !== stamp), {
+      latitude: position.latitude,
+      longitude: position.longitude,
+      stamp,
+    }].slice(-12);
+    try {
+      localStorage.setItem(this._trailKey, JSON.stringify(this._trail));
+    } catch (_error) {
+      // Ignore storage quota issues.
+    }
+    return this._trail;
+  }
+
+  _project(latitude, longitude) {
+    return {
+      x: clamp(((longitude + 180) / 360) * 1000, 0, 1000),
+      y: clamp(((90 - latitude) / 180) * 500, 0, 500),
+    };
+  }
+
+  _render() {
+    if (!this._hass) return;
+    const stateObj = getState(this._hass, this._config.entity);
+    const position = this._parsePosition(stateObj);
+    if (!stateObj || !Number.isFinite(position.latitude) || !Number.isFinite(position.longitude)) {
+      this.shadowRoot.innerHTML = renderErrorCard(`No ISS position data available for ${this._config.entity}.`, "mdi:space-station");
+      return;
+    }
+
+    const trail = this._updateTrail(position);
+    const projected = this._project(position.latitude, position.longitude);
+    const trailDots = this._config.show_trail !== false
+      ? trail.slice(0, -1).map((item, index, items) => {
+        const point = this._project(item.latitude, item.longitude);
+        const opacity = ((index + 1) / Math.max(items.length, 1)) * 0.7;
+        const radius = 2 + ((index + 1) / Math.max(items.length, 1)) * 3;
+        return `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${radius.toFixed(1)}" fill="rgba(255,107,107,${opacity.toFixed(2)})"></circle>`;
+      }).join("")
+      : "";
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        ${BASE_STYLES}
+        .iss-body { padding: 0 12px 14px; display: flex; flex-direction: column; gap: 12px; }
+        .iss-map {
+          border-radius: 18px;
+          overflow: hidden;
+          background: radial-gradient(circle at 50% 40%, rgba(66,165,245,0.24), rgba(10,20,45,0.95));
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+        }
+        .iss-map svg { display: block; width: 100%; height: auto; }
+        .iss-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        .iss-stat {
+          border-radius: 14px;
+          padding: 12px;
+          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
+        }
+        .iss-stat-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: ${ASTRO.text2}; }
+        .iss-stat-value { margin-top: 4px; font-size: 1rem; font-weight: 700; color: ${ASTRO.text1}; }
+        .iss-footer { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+        .iss-time { font-size: 0.75rem; color: ${ASTRO.text2}; }
+        .iss-button {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 9px 14px;
+          border-radius: 999px;
+          text-decoration: none;
+          background: rgba(var(--rgb-error-color, 244,67,54), 0.12);
+          color: ${ASTRO.error};
+          font-size: 0.78rem;
+          font-weight: 700;
+        }
+        .iss-dot-core { fill: #ff5252; }
+        .iss-dot-pulse { fill: rgba(255,82,82,0.35); transform-origin: center; animation: iss-pulse 2s ease-out infinite; }
+        .iss-continent { fill: rgba(134, 181, 106, 0.38); stroke: rgba(182, 230, 157, 0.6); stroke-width: 3; stroke-linejoin: round; }
+        @keyframes iss-pulse {
+          0% { transform: scale(0.8); opacity: 0.9; }
+          100% { transform: scale(2.4); opacity: 0; }
+        }
+      </style>
+      <ha-card class="astro-card">
+        <div class="astro-header">
+          <ha-icon icon="mdi:space-station"></ha-icon>
+          <span class="astro-title">${esc(this._config.title || "ISS Tracker")}</span>
+          <span class="astro-badge">Live orbit</span>
+        </div>
+        <div class="iss-body">
+          ${this._config.show_map !== false ? `
+            <div class="iss-map">
+              <svg viewBox="0 0 1000 500" role="img" aria-label="ISS world map tracker">
+                <rect width="1000" height="500" fill="rgba(19, 43, 80, 0.55)"></rect>
+                <path class="iss-continent" d="M97 134 L142 98 L214 84 L282 111 L304 148 L275 182 L212 205 L160 193 L114 168 Z"></path>
+                <path class="iss-continent" d="M249 225 L286 246 L314 301 L298 394 L257 468 L219 424 L231 334 L216 278 Z"></path>
+                <path class="iss-continent" d="M454 105 L522 84 L600 92 L661 118 L708 110 L766 132 L835 161 L882 210 L851 238 L796 220 L748 245 L688 235 L630 261 L597 326 L557 382 L509 360 L488 289 L457 237 L437 174 Z"></path>
+                <path class="iss-continent" d="M486 255 L533 236 L572 258 L578 329 L551 396 L506 421 L470 390 L458 325 Z"></path>
+                <path class="iss-continent" d="M792 336 L842 348 L894 389 L876 431 L816 442 L762 407 L748 362 Z"></path>
+                ${trailDots}
+                <g transform="translate(${projected.x.toFixed(1)} ${projected.y.toFixed(1)})">
+                  <circle class="iss-dot-pulse" r="8"></circle>
+                  <circle class="iss-dot-core" r="5"></circle>
+                </g>
+              </svg>
+            </div>
+          ` : ""}
+          <div class="iss-grid">
+            <div class="iss-stat"><div class="iss-stat-label">Latitude</div><div class="iss-stat-value">${position.latitude.toFixed(2)}°</div></div>
+            <div class="iss-stat"><div class="iss-stat-label">Longitude</div><div class="iss-stat-value">${position.longitude.toFixed(2)}°</div></div>
+          </div>
+          <div class="iss-footer">
+            <div class="iss-time">Updated ${esc(formatDateTime(position.timestamp))}</div>
+            ${this._config.show_stream_button !== false ? `<a class="iss-button" href="${esc(position.liveStreamUrl)}" target="_blank" rel="noopener">Live Stream ↗</a>` : ""}
+          </div>
+        </div>
+      </ha-card>
+    `;
+  }
+
+  getCardSize() { return this._config.show_map === false ? 3 : 5; }
+}
+
+class EarthObservationCardEditor extends AstroEditorBase {
+  setConfig(config) {
+    super.setConfig({
+      epic_entity: "camera.nasa_astronomy_suite_epic_earth",
+      goes_entity: "camera.nasa_astronomy_suite_goes_16_earth",
+      title: "Earth Observation",
+      show_epic: true,
+      show_goes: true,
+      refresh_interval: 5,
+      ...config,
+    });
+  }
+
+  _editorTemplate() {
+    return `
+      <ha-entity-picker id="epic_entity" label="EPIC camera entity"></ha-entity-picker>
+      <ha-entity-picker id="goes_entity" label="GOES camera entity"></ha-entity-picker>
+      <ha-textfield id="title" label="Card title"></ha-textfield>
+      <ha-textfield id="refresh_interval" label="Refresh interval (minutes)" type="number"></ha-textfield>
+      <label class="switch-row"><span>Show EPIC</span><ha-switch id="show_epic"></ha-switch></label>
+      <label class="switch-row"><span>Show GOES</span><ha-switch id="show_goes"></ha-switch></label>
+    `;
+  }
+
+  _setupListeners() {
+    ["epic_entity", "goes_entity"].forEach((key) => this._bindPicker(key, key));
+    this._bindText("title", "title", (value) => value.trim() || "Earth Observation");
+    this._bindText("refresh_interval", "refresh_interval", (value) => clamp(parseInt(value, 10) || 5, 1, 60));
+    ["show_epic", "show_goes"].forEach((key) => this._bindSwitch(key, key));
+  }
+
+  _syncValues() {
+    setPickerValue(this.shadowRoot, "epic_entity", this._hass, this._config.epic_entity || "camera.nasa_astronomy_suite_epic_earth");
+    setPickerValue(this.shadowRoot, "goes_entity", this._hass, this._config.goes_entity || "camera.nasa_astronomy_suite_goes_16_earth");
+    setTextValue(this.shadowRoot, "title", this._config.title || "Earth Observation");
+    setTextValue(this.shadowRoot, "refresh_interval", this._config.refresh_interval || 5);
+    setSwitchValue(this.shadowRoot, "show_epic", this._config.show_epic !== false);
+    setSwitchValue(this.shadowRoot, "show_goes", this._config.show_goes !== false);
+  }
+}
+
+class EarthObservationCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._config = {};
+    this._activeView = "epic";
+    this._refreshHandle = 0;
+    this._refreshToken = Date.now();
+  }
+
+  static getConfigElement() { return document.createElement("earth-observation-card-editor"); }
+  static getStubConfig() {
+    return {
+      epic_entity: "camera.nasa_astronomy_suite_epic_earth",
+      goes_entity: "camera.nasa_astronomy_suite_goes_16_earth",
+      title: "Earth Observation",
+      show_epic: true,
+      show_goes: true,
+      refresh_interval: 5,
+    };
+  }
+
+  connectedCallback() {
+    this._ensureRefreshTimer();
+  }
+
+  disconnectedCallback() {
+    if (this._refreshHandle) {
+      clearInterval(this._refreshHandle);
+      this._refreshHandle = 0;
+    }
+  }
+
+  setConfig(config) {
+    this._config = { ...EarthObservationCard.getStubConfig(), ...config };
+    this._selectDefaultView();
+    this._ensureRefreshTimer();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._selectDefaultView();
+    this._render();
+  }
+
+  _getViews() {
+    return [
+      { key: "epic", title: "EPIC", entityId: this._config.epic_entity, enabled: this._config.show_epic !== false },
+      { key: "goes", title: "GOES-16", entityId: this._config.goes_entity, enabled: this._config.show_goes !== false },
+    ].filter((view) => view.enabled);
+  }
+
+  _selectDefaultView() {
+    const views = this._getViews();
+    if (!views.some((view) => view.key === this._activeView)) {
+      this._activeView = views[0]?.key || "epic";
+    }
+  }
+
+  _ensureRefreshTimer() {
+    if (this._refreshHandle) {
+      clearInterval(this._refreshHandle);
+      this._refreshHandle = 0;
+    }
+    if (!this.isConnected) return;
+    const intervalMinutes = clamp(parseInt(this._config.refresh_interval, 10) || 5, 1, 60);
+    this._refreshHandle = window.setInterval(() => {
+      this._refreshToken = Date.now();
+      this._render();
+    }, intervalMinutes * 60 * 1000);
+  }
+
+  _getImageUrl(entityId, stateObj) {
+    const picture = stateObj?.attributes?.entity_picture;
+    if (picture) return `${picture}${picture.includes("?") ? "&" : "?"}t=${this._refreshToken}`;
+    return `/api/camera_proxy/${entityId}?t=${this._refreshToken}`;
+  }
+
+  _getViewData(view) {
+    const stateObj = getState(this._hass, view.entityId);
+    if (!stateObj) return null;
+    const attrs = stateObj.attributes || {};
+    if (view.key === "epic") {
+      return {
+        ...view,
+        stateObj,
+        imageUrl: this._getImageUrl(view.entityId, stateObj),
+        source: attrs.source || attrs.attribution || "NASA EPIC",
+        headline: formatDateTime(attrs.date || attrs.timestamp || stateObj.last_updated || stateObj.last_changed),
+        detail: attrs.caption || attrs.description || attrs.summary || "Daily Earth imagery from NASA EPIC.",
+      };
+    }
+    return {
+      ...view,
+      stateObj,
+      imageUrl: this._getImageUrl(view.entityId, stateObj),
+      source: attrs.source_info || attrs.source || attrs.attribution || "NOAA GOES-16",
+      headline: formatDateTime(attrs.date || attrs.timestamp || stateObj.last_updated || stateObj.last_changed),
+      detail: attrs.caption || attrs.sector || attrs.view || "Geostationary Earth observation imagery.",
+    };
+  }
+
+  _render() {
+    if (!this._hass) return;
+    const views = this._getViews();
+    if (!views.length) {
+      this.shadowRoot.innerHTML = renderErrorCard("Enable EPIC or GOES imagery in the card editor.", "mdi:earth");
+      return;
+    }
+
+    this._selectDefaultView();
+    const dataOptions = views.map((view) => this._getViewData(view)).filter(Boolean);
+    const active = dataOptions.find((view) => view.key === this._activeView) || dataOptions[0];
+    if (!active) {
+      this.shadowRoot.innerHTML = renderErrorCard("No Earth observation cameras are currently available.", "mdi:earth");
+      return;
+    }
+    this._activeView = active.key;
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        ${BASE_STYLES}
+        .earth-body { padding: 0 12px 14px; }
+        .earth-tabs { display: flex; gap: 8px; padding-bottom: 12px; }
+        .earth-tab {
+          border: none;
+          cursor: pointer;
+          border-radius: 999px;
+          padding: 8px 12px;
+          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.06);
+          color: ${ASTRO.text2};
+          font: inherit;
+          font-size: 0.78rem;
+          font-weight: 700;
+        }
+        .earth-tab.active { background: rgba(var(--rgb-accent-color, 124,77,255), 0.14); color: ${ASTRO.accent}; }
+        .earth-frame {
+          border-radius: 18px;
+          overflow: hidden;
+          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
+          box-shadow: inset 0 0 0 1px rgba(var(--rgb-primary-text-color, 0,0,0), 0.06);
+        }
+        .earth-frame img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+        .earth-meta { padding: 12px 2px 0; display: flex; flex-direction: column; gap: 8px; }
+        .earth-headline { font-size: 0.84rem; font-weight: 700; color: ${ASTRO.text1}; }
+        .earth-detail { font-size: 0.78rem; line-height: 1.45; color: ${ASTRO.text2}; }
+        .earth-source { font-size: 0.74rem; color: ${ASTRO.text2}; }
+      </style>
+      <ha-card class="astro-card">
+        <div class="astro-header">
+          <ha-icon icon="mdi:earth"></ha-icon>
+          <span class="astro-title">${esc(this._config.title || "Earth Observation")}</span>
+          <span class="astro-badge">${clamp(parseInt(this._config.refresh_interval, 10) || 5, 1, 60)}m refresh</span>
+        </div>
+        <div class="earth-body">
+          ${dataOptions.length > 1 ? `
+            <div class="earth-tabs">
+              ${dataOptions.map((view) => `<button type="button" class="earth-tab ${view.key === active.key ? "active" : ""}" data-view="${view.key}">${esc(view.title)}</button>`).join("")}
+            </div>
+          ` : ""}
+          <div class="earth-frame"><img src="${esc(active.imageUrl)}" alt="${esc(active.title)} Earth observation"></div>
+          <div class="earth-meta">
+            <div class="earth-headline">${esc(active.headline)}</div>
+            <div class="earth-detail">${esc(active.detail)}</div>
+            <div class="earth-source">Source: ${esc(active.source)}</div>
+          </div>
+        </div>
+      </ha-card>
+    `;
+
+    this.shadowRoot.querySelectorAll(".earth-tab").forEach((button) => {
+      button.addEventListener("click", () => {
+        this._activeView = button.dataset.view;
+        this._render();
+      });
+    });
+  }
+
+  getCardSize() { return 5; }
+}
+
 function defineElement(name, ctor) {
   if (!customElements.get(name)) customElements.define(name, ctor);
 }
@@ -1881,6 +2408,8 @@ defineElement("astro-horizon-card-editor", AstroHorizonCardEditor);
 defineElement("astro-lunar-card-editor", AstroLunarCardEditor);
 defineElement("solar-system-card-editor", SolarSystemCardEditor);
 defineElement("rocket-launch-card-editor", RocketLaunchCardEditor);
+defineElement("iss-tracker-card-editor", IssTrackerCardEditor);
+defineElement("earth-observation-card-editor", EarthObservationCardEditor);
 
 defineElement("apod-card", ApodCard);
 defineElement("neo-threat-card", NeoThreatCard);
@@ -1889,6 +2418,8 @@ defineElement("astro-horizon-card", AstroHorizonCard);
 defineElement("astro-lunar-card", AstroLunarCard);
 defineElement("solar-system-card", SolarSystemCard);
 defineElement("rocket-launch-card", RocketLaunchCard);
+defineElement("iss-tracker-card", IssTrackerCard);
+defineElement("earth-observation-card", EarthObservationCard);
 
 registerCustomCard("apod-card", "APOD Card", "NASA Astronomy Picture of the Day card with editor");
 registerCustomCard("neo-threat-card", "NEO Threat Card", "Near-Earth object tracker with editor");
@@ -1897,9 +2428,11 @@ registerCustomCard("astro-horizon-card", "Astro Horizon Card", "Sun arc horizon 
 registerCustomCard("astro-lunar-card", "Astro Lunar Card", "Moon phase visualization with editor");
 registerCustomCard("solar-system-card", "Solar System Card", "Client-side heliocentric orrery with editor");
 registerCustomCard("rocket-launch-card", "Rocket Launch Card", "Upcoming rocket launches list with editor");
+registerCustomCard("iss-tracker-card", "ISS Tracker Card", "International Space Station position tracker with editor");
+registerCustomCard("earth-observation-card", "Earth Observation Card", "NASA EPIC and NOAA GOES Earth imagery viewer with editor");
 
 console.info(
-  "%c NASA Astronomy Cards v1.5.0 %c",
+  "%c NASA Astronomy Cards v1.6.0 %c",
   "color:white;background:#1a237e;font-weight:bold;padding:2px 8px;border-radius:4px 0 0 4px;",
   "color:#1a237e;background:#e8eaf6;font-weight:bold;padding:2px 8px;border-radius:0 4px 4px 0;",
 );

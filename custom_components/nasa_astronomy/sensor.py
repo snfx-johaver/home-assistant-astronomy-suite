@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, ATTR_NEO_LIST
+from .const import DOMAIN, ATTR_NEO_LIST, ISS_STREAM_URL
 from .coordinator import NasaDataCoordinator
 
 SENSOR_DESCRIPTIONS: list[SensorEntityDescription] = [
@@ -99,6 +99,12 @@ async def async_setup_entry(
     # Add 5 rocket launch sensors
     for i in range(5):
         entities.append(RocketLaunchSensor(coordinator, i, entry))
+
+    # Add ISS position sensor
+    entities.append(ISSPositionSensor(coordinator, entry))
+
+    # Add KP index sensor
+    entities.append(KPIndexSensor(coordinator, entry))
 
     async_add_entities(entities, True)
 
@@ -441,3 +447,138 @@ class RocketLaunchSensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
         if self._index < len(launches):
             return launches[self._index]
         return None
+
+
+class ISSPositionSensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
+    """Sensor for the current ISS position."""
+
+    _attr_has_entity_name = True
+    _attr_name = "ISS Position"
+    _attr_icon = "mdi:space-station"
+
+    def __init__(
+        self,
+        coordinator: NasaDataCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize the ISS position sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_iss_position"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, entry.entry_id)},
+            "name": "NASA Astronomy Suite",
+            "manufacturer": "NASA",
+            "model": "Open APIs",
+            "sw_version": "1.6.0",
+        }
+
+    @property
+    def native_value(self) -> str | None:
+        """Return lat/lon as state string."""
+        if not self.coordinator.data:
+            return None
+        iss = self.coordinator.data.get("iss_position")
+        if not iss or "iss_position" not in iss:
+            return None
+        pos = iss["iss_position"]
+        lat = pos.get("latitude", "?")
+        lon = pos.get("longitude", "?")
+        return f"{lat}, {lon}"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return ISS position details."""
+        if not self.coordinator.data:
+            return {}
+        iss = self.coordinator.data.get("iss_position")
+        if not iss or "iss_position" not in iss:
+            return {}
+        pos = iss["iss_position"]
+        return {
+            "latitude": float(pos.get("latitude", 0)),
+            "longitude": float(pos.get("longitude", 0)),
+            "timestamp": iss.get("timestamp"),
+            "live_stream_url": ISS_STREAM_URL,
+        }
+
+
+class KPIndexSensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
+    """Sensor for the real-time planetary KP index from SWPC."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Planetary KP Index"
+    _attr_icon = "mdi:aurora"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        coordinator: NasaDataCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize the KP index sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_kp_index"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, entry.entry_id)},
+            "name": "NASA Astronomy Suite",
+            "manufacturer": "NASA",
+            "model": "Open APIs",
+            "sw_version": "1.6.0",
+        }
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the latest KP index value."""
+        if not self.coordinator.data:
+            return None
+        kp_data = self.coordinator.data.get("swpc_kp_index")
+        if not kp_data or not isinstance(kp_data, list) or len(kp_data) == 0:
+            return None
+        # Last entry is most recent
+        latest = kp_data[-1]
+        return float(latest.get("kp_index", 0))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return KP index details and recent history."""
+        if not self.coordinator.data:
+            return {}
+        kp_data = self.coordinator.data.get("swpc_kp_index")
+        if not kp_data or not isinstance(kp_data, list) or len(kp_data) == 0:
+            return {}
+
+        latest = kp_data[-1]
+        attrs: dict[str, Any] = {
+            "time_tag": latest.get("time_tag"),
+            "kp_index": float(latest.get("kp_index", 0)),
+            "estimated_kp": float(latest.get("estimated_kp", 0)) if latest.get("estimated_kp") else None,
+        }
+
+        # Aurora level description based on KP
+        kp = float(latest.get("kp_index", 0))
+        if kp < 2:
+            attrs["aurora_level"] = "Quiet"
+        elif kp < 4:
+            attrs["aurora_level"] = "Unsettled"
+        elif kp < 5:
+            attrs["aurora_level"] = "Active"
+        elif kp < 6:
+            attrs["aurora_level"] = "Minor Storm (G1)"
+        elif kp < 7:
+            attrs["aurora_level"] = "Moderate Storm (G2)"
+        elif kp < 8:
+            attrs["aurora_level"] = "Strong Storm (G3)"
+        elif kp < 9:
+            attrs["aurora_level"] = "Severe Storm (G4)"
+        else:
+            attrs["aurora_level"] = "Extreme Storm (G5)"
+
+        # Recent 3-hour history (last 180 entries = 3 hours at 1-min resolution)
+        recent = kp_data[-180:] if len(kp_data) >= 180 else kp_data
+        kp_values = [float(e.get("kp_index", 0)) for e in recent if e.get("kp_index") is not None]
+        if kp_values:
+            attrs["kp_3h_max"] = max(kp_values)
+            attrs["kp_3h_min"] = min(kp_values)
+            attrs["kp_3h_avg"] = round(sum(kp_values) / len(kp_values), 2)
+
+        return attrs
