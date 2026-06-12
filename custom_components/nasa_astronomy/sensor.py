@@ -1,4 +1,4 @@
-"""Sensor platform for NASA Astronomy Suite."""
+"""Sensor platform for Astronomy Space Suite."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -88,7 +88,7 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up NASA Astronomy sensors from a config entry."""
+    """Set up Astronomy Space Suite sensors from a config entry."""
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
 
     entities = [
@@ -110,7 +110,7 @@ async def async_setup_entry(
 
 
 class NasaAstronomySensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
-    """Representation of a NASA Astronomy sensor."""
+    """Representation of a Astronomy Space Suite sensor."""
 
     _attr_has_entity_name = True
 

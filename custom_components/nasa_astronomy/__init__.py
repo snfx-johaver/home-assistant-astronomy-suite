@@ -30,7 +30,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up NASA Astronomy from a config entry."""
+    """Set up Astronomy Space Suite from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
     # Auto-register the cards JS as a Lovelace resource

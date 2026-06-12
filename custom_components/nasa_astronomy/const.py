@@ -1,4 +1,4 @@
-"""Constants for NASA Astronomy Suite."""
+"""Constants for Astronomy Space Suite."""
 
 DOMAIN = "nasa_astronomy"
 

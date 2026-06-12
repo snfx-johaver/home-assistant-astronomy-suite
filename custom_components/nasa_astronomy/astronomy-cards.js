@@ -1,5 +1,5 @@
 /**
- * NASA Astronomy Cards v1.7.0
+ * Astronomy Space Suite Cards v1.7.0
  * Pre-built Astronomy Space Suite bundle for Home Assistant Lovelace.
  *
  * Cards:
@@ -2526,7 +2526,7 @@ defineElement("rocket-launch-card", RocketLaunchCard);
 defineElement("iss-tracker-card", IssTrackerCard);
 defineElement("earth-observation-card", EarthObservationCard);
 
-registerCustomCard("apod-card", "ASS APOD Card", "NASA Astronomy Picture of the Day card with editor");
+registerCustomCard("apod-card", "ASS APOD Card", "Astronomy Picture of the Day card with editor");
 registerCustomCard("neo-threat-card", "ASS NEO Threat Card", "Near-Earth object tracker with editor");
 registerCustomCard("solar-activity-card", "ASS Solar Activity Card", "Solar activity monitor with editor");
 registerCustomCard("astro-horizon-card", "ASS Horizon Card", "Sun arc horizon visualization with editor");
@@ -2537,7 +2537,7 @@ registerCustomCard("iss-tracker-card", "ASS ISS Tracker Card", "International Sp
 registerCustomCard("earth-observation-card", "ASS Earth Observation Card", "NASA EPIC and NOAA GOES Earth imagery viewer with editor");
 
 console.info(
-  "%c NASA Astronomy Cards v1.7.0 %c",
+  "%c Astronomy Space Suite Cards v1.7.0 %c",
   "color:white;background:#1a237e;font-weight:bold;padding:2px 8px;border-radius:4px 0 0 4px;",
   "color:#1a237e;background:#e8eaf6;font-weight:bold;padding:2px 8px;border-radius:0 4px 4px 0;",
 );

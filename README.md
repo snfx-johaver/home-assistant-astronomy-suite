@@ -72,7 +72,7 @@ lovelace:
 
 1. Restart Home Assistant
 2. Go to **Settings → Devices & Services → Add Integration**
-3. Search for **NASA Astronomy Suite**
+3. Search for **Astronomy Space Suite**
 4. Enter your NASA API key (get one free at https://api.nasa.gov/)
 
 ## Repository Structure
