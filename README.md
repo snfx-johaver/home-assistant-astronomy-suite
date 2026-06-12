@@ -1,8 +1,10 @@
-# 🔭 Home Assistant Astronomy Suite
+# 🔭 Home Assistant Astronomy Space Suite (ASS)
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=snfx-johaver&repository=home-assistant-astronomy-suite&category=integration)
 
-A complete, production-ready astronomy dashboard for Home Assistant powered by NASA APIs. Fully isolated — does not modify any existing dashboards, integrations, or resources.
+The most complete astronomy and space dashboard for Home Assistant. Yes, we know what the acronym spells — and no, we're not changing it. The universe has a sense of humor, and so do we. 🍑🚀
+
+Fully isolated — does not modify any existing dashboards, integrations, or resources.
 
 ## Features
 
@@ -11,8 +13,12 @@ A complete, production-ready astronomy dashboard for Home Assistant powered by N
 - **DONKI** — Space weather: CMEs, Solar Flares, Geomagnetic Storms
 - **EONET** — Earth Observatory Natural Event Tracker
 - **TechTransfer** — NASA patent/technology transfer data
-- **5 Custom Lovelace Cards** — `<apod-card>`, `<neo-threat-card>`, `<solar-activity-card>`, `<astro-horizon-card>`, `<astro-lunar-card>`
-- **6-view dashboard** — Overview, Solar System, NEO Tracker, Space Weather, ISS, Earth Events
+- **Rocket Launch Live** — Next 5 upcoming launches with countdown timers
+- **ISS Tracker** — Real-time position on world map + live video stream
+- **Planetary KP Index** — Real-time aurora/geomagnetic activity from NOAA
+- **7 Satellite Cameras** — APOD, EPIC Earth, GOES-16, GOES-18, Himawari-8, SDO Sun, SOHO Sun
+- **9 Custom Lovelace Cards** — All prefixed "ASS" for easy finding in the card picker
+- **Solar System Orrery** — Real-time planet positions from orbital mechanics
 - **Built-in Horizon & Lunar Phase cards** — No external card dependencies required
 - **Works alongside** — ApexCharts, Mushroom, ISS, Moon, Sun, Season, Aurora
 

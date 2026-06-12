@@ -126,10 +126,10 @@ class NasaAstronomySensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": "NASA Astronomy Suite",
+            "name": "Astronomy Space Suite",
             "manufacturer": "NASA",
             "model": "Open APIs",
-            "sw_version": "1.0.0",
+            "sw_version": "1.7.0",
         }
 
     @property
@@ -377,10 +377,10 @@ class RocketLaunchSensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
         self._attr_name = f"Rocket Launch {launch_index + 1}"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": "NASA Astronomy Suite",
+            "name": "Astronomy Space Suite",
             "manufacturer": "NASA",
             "model": "Open APIs",
-            "sw_version": "1.5.0",
+            "sw_version": "1.7.0",
         }
 
     @property
@@ -466,10 +466,10 @@ class ISSPositionSensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
         self._attr_unique_id = f"{entry.entry_id}_iss_position"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": "NASA Astronomy Suite",
+            "name": "Astronomy Space Suite",
             "manufacturer": "NASA",
             "model": "Open APIs",
-            "sw_version": "1.6.0",
+            "sw_version": "1.7.0",
         }
 
     @property
@@ -520,10 +520,10 @@ class KPIndexSensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
         self._attr_unique_id = f"{entry.entry_id}_kp_index"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": "NASA Astronomy Suite",
+            "name": "Astronomy Space Suite",
             "manufacturer": "NASA",
             "model": "Open APIs",
-            "sw_version": "1.6.0",
+            "sw_version": "1.7.0",
         }
 
     @property

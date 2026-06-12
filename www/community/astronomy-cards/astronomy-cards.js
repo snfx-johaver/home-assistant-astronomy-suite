@@ -1,6 +1,6 @@
 /**
- * NASA Astronomy Cards v1.6.0
- * Pre-built bundle for Home Assistant Lovelace.
+ * NASA Astronomy Cards v1.7.0
+ * Pre-built Astronomy Space Suite bundle for Home Assistant Lovelace.
  *
  * Cards:
  *  - <apod-card>
@@ -174,7 +174,7 @@ const EDITOR_STYLES = `
 `;
 
 const DOCS_URL = "https://github.com/snfx-johaver/home-assistant-astronomy-suite";
-const VERSION = "1.6.0";
+const VERSION = "1.7.0";
 const DAY_MS = 86400000;
 const J2000 = 2451545.0;
 
@@ -939,6 +939,8 @@ class SolarActivityCardEditor extends AstroEditorBase {
       flare_entity: "sensor.nasa_astronomy_suite_solar_flares",
       storm_entity: "sensor.nasa_astronomy_suite_geomagnetic_storms",
       kp_entity: "sensor.nasa_astronomy_suite_planetary_kp_index",
+      sdo_entity: "",
+      soho_entity: "",
       title: "",
       show_cme: true,
       show_flares: true,
@@ -954,6 +956,8 @@ class SolarActivityCardEditor extends AstroEditorBase {
       <ha-entity-picker id="flare_entity" label="Solar flare entity"></ha-entity-picker>
       <ha-entity-picker id="storm_entity" label="Geomagnetic storm entity"></ha-entity-picker>
       <ha-entity-picker id="kp_entity" label="Planetary KP entity"></ha-entity-picker>
+      <ha-entity-picker id="sdo_entity" label="SDO sun camera entity"></ha-entity-picker>
+      <ha-entity-picker id="soho_entity" label="SOHO sun camera entity"></ha-entity-picker>
       <ha-textfield id="title" label="Card title (optional)"></ha-textfield>
       <label class="switch-row"><span>Show CMEs</span><ha-switch id="show_cme"></ha-switch></label>
       <label class="switch-row"><span>Show flares</span><ha-switch id="show_flares"></ha-switch></label>
@@ -969,14 +973,14 @@ class SolarActivityCardEditor extends AstroEditorBase {
   }
 
   _setupListeners() {
-    ["cme_entity", "flare_entity", "storm_entity", "kp_entity"].forEach((key) => this._bindPicker(key, key));
+    ["cme_entity", "flare_entity", "storm_entity", "kp_entity", "sdo_entity", "soho_entity"].forEach((key) => this._bindPicker(key, key));
     this._bindText("title", "title", (value) => value.trim());
     ["show_cme", "show_flares", "show_storms"].forEach((key) => this._bindSwitch(key, key));
     this._bindSelect("time_range", "time_range", (value) => (String(value) === "30" ? 30 : 7));
   }
 
   _syncValues() {
-    ["cme_entity", "flare_entity", "storm_entity", "kp_entity"].forEach((key) => setPickerValue(this.shadowRoot, key, this._hass, this._config[key]));
+    ["cme_entity", "flare_entity", "storm_entity", "kp_entity", "sdo_entity", "soho_entity"].forEach((key) => setPickerValue(this.shadowRoot, key, this._hass, this._config[key]));
     setTextValue(this.shadowRoot, "title", this._config.title || "");
     setSwitchValue(this.shadowRoot, "show_cme", this._config.show_cme !== false);
     setSwitchValue(this.shadowRoot, "show_flares", this._config.show_flares !== false);
@@ -999,6 +1003,8 @@ class SolarActivityCard extends HTMLElement {
       flare_entity: "sensor.nasa_astronomy_suite_solar_flares",
       storm_entity: "sensor.nasa_astronomy_suite_geomagnetic_storms",
       kp_entity: "sensor.nasa_astronomy_suite_planetary_kp_index",
+      sdo_entity: "",
+      soho_entity: "",
       title: "",
       show_cme: true,
       show_flares: true,
@@ -1083,6 +1089,10 @@ class SolarActivityCard extends HTMLElement {
       { enabled: this._config.show_storms !== false, kind: "storm", title: "Storms", icon: "🌊", color: ASTRO.storm, state: stormState, events: this._collectEvents(stormState, "storm", timeRange), count: toNumber(stormState?.state, 0) },
     ].filter((section) => section.enabled);
     const kpDetails = this._config.kp_entity ? this._getKpDetails(kpState) : null;
+    const sunFeeds = [
+      { title: "SDO", entityId: this._config.sdo_entity, stateObj: getState(this._hass, this._config.sdo_entity) },
+      { title: "SOHO", entityId: this._config.soho_entity, stateObj: getState(this._hass, this._config.soho_entity) },
+    ].filter((feed) => feed.entityId && feed.stateObj);
 
     if (!sections.length) {
       this.shadowRoot.innerHTML = renderErrorCard("Enable at least one solar activity feed in the card editor.", "mdi:white-balance-sunny");
@@ -1153,6 +1163,37 @@ class SolarActivityCard extends HTMLElement {
         .solar-item-title { font-size: 0.8rem; font-weight: 600; color: ${ASTRO.text1}; }
         .solar-item-meta { font-size: 0.72rem; color: ${ASTRO.text2}; margin-top: 3px; }
         .solar-item-time { font-size: 0.74rem; color: ${ASTRO.text2}; text-align: right; }
+        .live-sun {
+          margin: 0 12px 14px;
+          padding-top: 12px;
+          border-top: 1px solid rgba(var(--rgb-primary-text-color, 0,0,0), 0.08);
+        }
+        .live-sun-title {
+          font-size: 0.78rem;
+          font-weight: 700;
+          color: ${ASTRO.text1};
+          margin-bottom: 8px;
+        }
+        .live-sun-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+        .live-sun-card {
+          border-radius: 14px;
+          overflow: hidden;
+          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
+        }
+        .live-sun-card img {
+          display: block;
+          width: 100%;
+          aspect-ratio: 4 / 3;
+          object-fit: cover;
+          background: #000;
+        }
+        .live-sun-label {
+          padding: 8px 10px 10px;
+          font-size: 0.74rem;
+          font-weight: 700;
+          color: ${ASTRO.text1};
+          text-align: center;
+        }
       </style>
       <ha-card class="astro-card">
         <div class="astro-header">
@@ -1199,6 +1240,19 @@ class SolarActivityCard extends HTMLElement {
             `).join("")
             : `<div class="solar-item"><div class="solar-dot" style="background:${ASTRO.info}"></div><div class="solar-copy"><div class="solar-item-title">No recent events</div><div class="solar-item-meta">No solar events recorded in the selected time range.</div></div><div class="solar-item-time">${timeRange}d</div></div>`}
         </div>
+        ${sunFeeds.length ? `
+          <div class="live-sun">
+            <div class="live-sun-title">Live Sun</div>
+            <div class="live-sun-grid">
+              ${sunFeeds.map((feed) => `
+                <div class="live-sun-card">
+                  <img src="/api/camera_proxy/${feed.entityId}?t=${Date.now()}" alt="${esc(feed.title)} live sun image">
+                  <div class="live-sun-label">${esc(feed.title)}</div>
+                </div>
+              `).join("")}
+            </div>
+          </div>
+        ` : ""}
       </ha-card>
     `;
   }
@@ -2173,6 +2227,10 @@ class EarthObservationCardEditor extends AstroEditorBase {
     super.setConfig({
       epic_entity: "camera.nasa_astronomy_suite_epic_earth",
       goes_entity: "camera.nasa_astronomy_suite_goes_16_earth",
+      goes18_entity: "camera.nasa_astronomy_suite_goes_18_earth",
+      himawari_entity: "camera.nasa_astronomy_suite_himawari8_earth",
+      sdo_entity: "camera.nasa_astronomy_suite_sdo_sun",
+      soho_entity: "camera.nasa_astronomy_suite_soho_sun",
       title: "Earth Observation",
       show_epic: true,
       show_goes: true,
@@ -2184,16 +2242,20 @@ class EarthObservationCardEditor extends AstroEditorBase {
   _editorTemplate() {
     return `
       <ha-entity-picker id="epic_entity" label="EPIC camera entity"></ha-entity-picker>
-      <ha-entity-picker id="goes_entity" label="GOES camera entity"></ha-entity-picker>
+      <ha-entity-picker id="goes_entity" label="GOES-16 camera entity"></ha-entity-picker>
+      <ha-entity-picker id="goes18_entity" label="GOES-18 camera entity"></ha-entity-picker>
+      <ha-entity-picker id="himawari_entity" label="Himawari-8 camera entity"></ha-entity-picker>
+      <ha-entity-picker id="sdo_entity" label="SDO sun camera entity"></ha-entity-picker>
+      <ha-entity-picker id="soho_entity" label="SOHO sun camera entity"></ha-entity-picker>
       <ha-textfield id="title" label="Card title"></ha-textfield>
       <ha-textfield id="refresh_interval" label="Refresh interval (minutes)" type="number"></ha-textfield>
       <label class="switch-row"><span>Show EPIC</span><ha-switch id="show_epic"></ha-switch></label>
-      <label class="switch-row"><span>Show GOES</span><ha-switch id="show_goes"></ha-switch></label>
+      <label class="switch-row"><span>Show GOES-16</span><ha-switch id="show_goes"></ha-switch></label>
     `;
   }
 
   _setupListeners() {
-    ["epic_entity", "goes_entity"].forEach((key) => this._bindPicker(key, key));
+    ["epic_entity", "goes_entity", "goes18_entity", "himawari_entity", "sdo_entity", "soho_entity"].forEach((key) => this._bindPicker(key, key));
     this._bindText("title", "title", (value) => value.trim() || "Earth Observation");
     this._bindText("refresh_interval", "refresh_interval", (value) => clamp(parseInt(value, 10) || 5, 1, 60));
     ["show_epic", "show_goes"].forEach((key) => this._bindSwitch(key, key));
@@ -2202,6 +2264,10 @@ class EarthObservationCardEditor extends AstroEditorBase {
   _syncValues() {
     setPickerValue(this.shadowRoot, "epic_entity", this._hass, this._config.epic_entity || "camera.nasa_astronomy_suite_epic_earth");
     setPickerValue(this.shadowRoot, "goes_entity", this._hass, this._config.goes_entity || "camera.nasa_astronomy_suite_goes_16_earth");
+    setPickerValue(this.shadowRoot, "goes18_entity", this._hass, this._config.goes18_entity || "camera.nasa_astronomy_suite_goes_18_earth");
+    setPickerValue(this.shadowRoot, "himawari_entity", this._hass, this._config.himawari_entity || "camera.nasa_astronomy_suite_himawari8_earth");
+    setPickerValue(this.shadowRoot, "sdo_entity", this._hass, this._config.sdo_entity || "camera.nasa_astronomy_suite_sdo_sun");
+    setPickerValue(this.shadowRoot, "soho_entity", this._hass, this._config.soho_entity || "camera.nasa_astronomy_suite_soho_sun");
     setTextValue(this.shadowRoot, "title", this._config.title || "Earth Observation");
     setTextValue(this.shadowRoot, "refresh_interval", this._config.refresh_interval || 5);
     setSwitchValue(this.shadowRoot, "show_epic", this._config.show_epic !== false);
@@ -2224,6 +2290,10 @@ class EarthObservationCard extends HTMLElement {
     return {
       epic_entity: "camera.nasa_astronomy_suite_epic_earth",
       goes_entity: "camera.nasa_astronomy_suite_goes_16_earth",
+      goes18_entity: "camera.nasa_astronomy_suite_goes_18_earth",
+      himawari_entity: "camera.nasa_astronomy_suite_himawari8_earth",
+      sdo_entity: "camera.nasa_astronomy_suite_sdo_sun",
+      soho_entity: "camera.nasa_astronomy_suite_soho_sun",
       title: "Earth Observation",
       show_epic: true,
       show_goes: true,
@@ -2256,9 +2326,13 @@ class EarthObservationCard extends HTMLElement {
 
   _getViews() {
     return [
-      { key: "epic", title: "EPIC", entityId: this._config.epic_entity, enabled: this._config.show_epic !== false },
-      { key: "goes", title: "GOES-16", entityId: this._config.goes_entity, enabled: this._config.show_goes !== false },
-    ].filter((view) => view.enabled);
+      { key: "epic", title: "EPIC", group: "earth", entityId: this._config.epic_entity, enabled: this._config.show_epic !== false, fallbackSource: "NASA EPIC", fallbackDetail: "Daily Earth imagery from NASA EPIC." },
+      { key: "goes", title: "GOES-16", group: "earth", entityId: this._config.goes_entity, enabled: this._config.show_goes !== false, fallbackSource: "NOAA GOES-16", fallbackDetail: "Geostationary Earth observation imagery." },
+      { key: "goes18", title: "GOES-18", group: "earth", entityId: this._config.goes18_entity, enabled: true, fallbackSource: "NOAA GOES-18", fallbackDetail: "Pacific geostationary Earth observation imagery." },
+      { key: "himawari", title: "Himawari", group: "earth", entityId: this._config.himawari_entity, enabled: true, fallbackSource: "Himawari-8", fallbackDetail: "Asia-Pacific Earth observation imagery." },
+      { key: "sdo", title: "SDO", group: "sun", entityId: this._config.sdo_entity, enabled: true, fallbackSource: "NASA SDO", fallbackDetail: "Solar Dynamics Observatory imagery." },
+      { key: "soho", title: "SOHO", group: "sun", entityId: this._config.soho_entity, enabled: true, fallbackSource: "ESA/NASA SOHO", fallbackDetail: "Solar coronagraph imagery." },
+    ].filter((view) => view.enabled && view.entityId && (!this._hass || getState(this._hass, view.entityId)));
   }
 
   _selectDefaultView() {
@@ -2291,23 +2365,13 @@ class EarthObservationCard extends HTMLElement {
     const stateObj = getState(this._hass, view.entityId);
     if (!stateObj) return null;
     const attrs = stateObj.attributes || {};
-    if (view.key === "epic") {
-      return {
-        ...view,
-        stateObj,
-        imageUrl: this._getImageUrl(view.entityId, stateObj),
-        source: attrs.source || attrs.attribution || "NASA EPIC",
-        headline: formatDateTime(attrs.date || attrs.timestamp || stateObj.last_updated || stateObj.last_changed),
-        detail: attrs.caption || attrs.description || attrs.summary || "Daily Earth imagery from NASA EPIC.",
-      };
-    }
     return {
       ...view,
       stateObj,
       imageUrl: this._getImageUrl(view.entityId, stateObj),
-      source: attrs.source_info || attrs.source || attrs.attribution || "NOAA GOES-16",
+      source: attrs.source_info || attrs.source || attrs.attribution || view.fallbackSource,
       headline: formatDateTime(attrs.date || attrs.timestamp || stateObj.last_updated || stateObj.last_changed),
-      detail: attrs.caption || attrs.sector || attrs.view || "Geostationary Earth observation imagery.",
+      detail: attrs.caption || attrs.description || attrs.summary || attrs.sector || attrs.view || view.fallbackDetail,
     };
   }
 
@@ -2315,15 +2379,17 @@ class EarthObservationCard extends HTMLElement {
     if (!this._hass) return;
     const views = this._getViews();
     if (!views.length) {
-      this.shadowRoot.innerHTML = renderErrorCard("Enable EPIC or GOES imagery in the card editor.", "mdi:earth");
+      this.shadowRoot.innerHTML = renderErrorCard("Enable at least one configured Earth or Sun camera in the card editor.", "mdi:earth");
       return;
     }
 
     this._selectDefaultView();
     const dataOptions = views.map((view) => this._getViewData(view)).filter(Boolean);
+    const earthViews = dataOptions.filter((view) => view.group === "earth");
+    const sunViews = dataOptions.filter((view) => view.group === "sun");
     const active = dataOptions.find((view) => view.key === this._activeView) || dataOptions[0];
     if (!active) {
-      this.shadowRoot.innerHTML = renderErrorCard("No Earth observation cameras are currently available.", "mdi:earth");
+      this.shadowRoot.innerHTML = renderErrorCard("No configured Earth or Sun cameras are currently available.", "mdi:earth");
       return;
     }
     this._activeView = active.key;
@@ -2332,7 +2398,28 @@ class EarthObservationCard extends HTMLElement {
       <style>
         ${BASE_STYLES}
         .earth-body { padding: 0 12px 14px; }
-        .earth-tabs { display: flex; gap: 8px; padding-bottom: 12px; }
+        .earth-tabs {
+          display: flex;
+          gap: 10px;
+          padding-bottom: 12px;
+          overflow-x: auto;
+          scrollbar-width: thin;
+        }
+        .earth-tab-section { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
+        .earth-tab-label {
+          font-size: 0.7rem;
+          font-weight: 700;
+          color: ${ASTRO.text2};
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          white-space: nowrap;
+        }
+        .earth-tab-row { display: flex; gap: 8px; }
+        .earth-tab-divider {
+          width: 1px;
+          align-self: stretch;
+          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.08);
+        }
         .earth-tab {
           border: none;
           cursor: pointer;
@@ -2343,6 +2430,7 @@ class EarthObservationCard extends HTMLElement {
           font: inherit;
           font-size: 0.78rem;
           font-weight: 700;
+          white-space: nowrap;
         }
         .earth-tab.active { background: rgba(var(--rgb-accent-color, 124,77,255), 0.14); color: ${ASTRO.accent}; }
         .earth-frame {
@@ -2352,6 +2440,7 @@ class EarthObservationCard extends HTMLElement {
           box-shadow: inset 0 0 0 1px rgba(var(--rgb-primary-text-color, 0,0,0), 0.06);
         }
         .earth-frame img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+        .earth-frame.sun img { object-fit: contain; background: #000; }
         .earth-meta { padding: 12px 2px 0; display: flex; flex-direction: column; gap: 8px; }
         .earth-headline { font-size: 0.84rem; font-weight: 700; color: ${ASTRO.text1}; }
         .earth-detail { font-size: 0.78rem; line-height: 1.45; color: ${ASTRO.text2}; }
@@ -2366,10 +2455,26 @@ class EarthObservationCard extends HTMLElement {
         <div class="earth-body">
           ${dataOptions.length > 1 ? `
             <div class="earth-tabs">
-              ${dataOptions.map((view) => `<button type="button" class="earth-tab ${view.key === active.key ? "active" : ""}" data-view="${view.key}">${esc(view.title)}</button>`).join("")}
+              ${earthViews.length ? `
+                <div class="earth-tab-section">
+                  <div class="earth-tab-label">🌍 Earth</div>
+                  <div class="earth-tab-row">
+                    ${earthViews.map((view) => `<button type="button" class="earth-tab ${view.key === active.key ? "active" : ""}" data-view="${view.key}">${esc(view.title)}</button>`).join("")}
+                  </div>
+                </div>
+              ` : ""}
+              ${earthViews.length && sunViews.length ? `<div class="earth-tab-divider"></div>` : ""}
+              ${sunViews.length ? `
+                <div class="earth-tab-section">
+                  <div class="earth-tab-label">☀️ Sun</div>
+                  <div class="earth-tab-row">
+                    ${sunViews.map((view) => `<button type="button" class="earth-tab ${view.key === active.key ? "active" : ""}" data-view="${view.key}">${esc(view.title)}</button>`).join("")}
+                  </div>
+                </div>
+              ` : ""}
             </div>
           ` : ""}
-          <div class="earth-frame"><img src="${esc(active.imageUrl)}" alt="${esc(active.title)} Earth observation"></div>
+          <div class="earth-frame ${active.group === "sun" ? "sun" : "earth"}"><img src="${esc(active.imageUrl)}" alt="${esc(active.title)} ${active.group === "sun" ? "Sun" : "Earth"} observation"></div>
           <div class="earth-meta">
             <div class="earth-headline">${esc(active.headline)}</div>
             <div class="earth-detail">${esc(active.detail)}</div>
@@ -2421,18 +2526,18 @@ defineElement("rocket-launch-card", RocketLaunchCard);
 defineElement("iss-tracker-card", IssTrackerCard);
 defineElement("earth-observation-card", EarthObservationCard);
 
-registerCustomCard("apod-card", "APOD Card", "NASA Astronomy Picture of the Day card with editor");
-registerCustomCard("neo-threat-card", "NEO Threat Card", "Near-Earth object tracker with editor");
-registerCustomCard("solar-activity-card", "Solar Activity Card", "Solar activity monitor with editor");
-registerCustomCard("astro-horizon-card", "Astro Horizon Card", "Sun arc horizon visualization with editor");
-registerCustomCard("astro-lunar-card", "Astro Lunar Card", "Moon phase visualization with editor");
-registerCustomCard("solar-system-card", "Solar System Card", "Client-side heliocentric orrery with editor");
-registerCustomCard("rocket-launch-card", "Rocket Launch Card", "Upcoming rocket launches list with editor");
-registerCustomCard("iss-tracker-card", "ISS Tracker Card", "International Space Station position tracker with editor");
-registerCustomCard("earth-observation-card", "Earth Observation Card", "NASA EPIC and NOAA GOES Earth imagery viewer with editor");
+registerCustomCard("apod-card", "ASS APOD Card", "NASA Astronomy Picture of the Day card with editor");
+registerCustomCard("neo-threat-card", "ASS NEO Threat Card", "Near-Earth object tracker with editor");
+registerCustomCard("solar-activity-card", "ASS Solar Activity Card", "Solar activity monitor with editor");
+registerCustomCard("astro-horizon-card", "ASS Horizon Card", "Sun arc horizon visualization with editor");
+registerCustomCard("astro-lunar-card", "ASS Lunar Card", "Moon phase visualization with editor");
+registerCustomCard("solar-system-card", "ASS Solar System Card", "Client-side heliocentric orrery with editor");
+registerCustomCard("rocket-launch-card", "ASS Rocket Launch Card", "Upcoming rocket launches list with editor");
+registerCustomCard("iss-tracker-card", "ASS ISS Tracker Card", "International Space Station position tracker with editor");
+registerCustomCard("earth-observation-card", "ASS Earth Observation Card", "NASA EPIC and NOAA GOES Earth imagery viewer with editor");
 
 console.info(
-  "%c NASA Astronomy Cards v1.6.0 %c",
+  "%c NASA Astronomy Cards v1.7.0 %c",
   "color:white;background:#1a237e;font-weight:bold;padding:2px 8px;border-radius:4px 0 0 4px;",
   "color:#1a237e;background:#e8eaf6;font-weight:bold;padding:2px 8px;border-radius:0 4px 4px 0;",
 );

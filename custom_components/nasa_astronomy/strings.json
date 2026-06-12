@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "NASA Astronomy Suite",
+        "title": "Astronomy Space Suite",
         "description": "Enter your API keys to set up the integration.\n\n**NASA API Key** (required): Get yours free at [api.nasa.gov]({nasa_url})\n\n**Rocket Launch Live API Key** (optional): Get yours at [rocketlaunch.live]({rocket_url}) — leave blank for free tier (no media links)",
         "data": {
           "api_key": "NASA API Key",

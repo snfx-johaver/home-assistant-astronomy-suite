@@ -1,4 +1,4 @@
-"""NASA Astronomy Suite - Custom Integration for Home Assistant."""
+"""Astronomy Space Suite - Custom Integration for Home Assistant."""
 from __future__ import annotations
 
 import logging
@@ -23,7 +23,7 @@ CARDS_LOCAL_URL = "/local/community/astronomy-cards/astronomy-cards.js"
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Set up the NASA Astronomy Suite component."""
+    """Set up the Astronomy Space Suite component."""
     # Copy JS cards to www/ so they're served at /local/community/astronomy-cards/
     await hass.async_add_executor_job(_deploy_cards_to_www, hass)
     return True

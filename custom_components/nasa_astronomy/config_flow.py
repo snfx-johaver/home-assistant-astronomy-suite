@@ -1,4 +1,4 @@
-"""Config flow for NASA Astronomy Suite."""
+"""Config flow for Astronomy Space Suite."""
 from __future__ import annotations
 
 from typing import Any
@@ -21,7 +21,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 
 
 class NasaAstronomyConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for NASA Astronomy Suite."""
+    """Handle a config flow for Astronomy Space Suite."""
 
     VERSION = 2
 
@@ -43,7 +43,7 @@ class NasaAstronomyConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_auth"
             else:
                 return self.async_create_entry(
-                    title="NASA Astronomy Suite",
+                    title="Astronomy Space Suite",
                     data={
                         CONF_API_KEY: nasa_key,
                         CONF_ROCKET_API_KEY: rocket_key,

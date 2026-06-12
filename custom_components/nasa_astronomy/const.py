@@ -23,7 +23,11 @@ ISS_POSITION_URL = "http://api.open-notify.org/iss-now.json"
 ISS_STREAM_URL = "https://www.youtube.com/watch?v=86YLFOog4GM"
 EPIC_EARTH_URL = "https://epic.gsfc.nasa.gov/api/natural"
 EPIC_IMAGE_BASE_URL = "https://epic.gsfc.nasa.gov/archive/natural"
-GOES_EARTH_URL = "https://cdn.star.nesdis.noaa.gov/GOES16/ABI/FD/GEOCOLOR/latest.jpg"
+GOES16_EARTH_URL = "https://cdn.star.nesdis.noaa.gov/GOES16/ABI/FD/GEOCOLOR/latest.jpg"
+GOES18_EARTH_URL = "https://cdn.star.nesdis.noaa.gov/GOES18/ABI/FD/GEOCOLOR/latest.jpg"
+HIMAWARI8_EARTH_URL = "https://himawari8.nict.go.jp/img/D531106/latest.jpg"
+SDO_SUN_URL = "https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_0171.jpg"
+SOHO_SUN_URL = "https://soho.nascom.nasa.gov/data/realtime/c3/1024/latest.jpg"
 SWPC_KP_INDEX_URL = "https://services.swpc.noaa.gov/json/planetary_k_index_1m.json"
 
 SENSOR_TYPES = {
