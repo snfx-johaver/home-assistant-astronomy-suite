@@ -2335,14 +2335,14 @@ class IssTrackerCard extends HTMLElement {
               ${trailDots}
               <div class="iss-marker" style="left:${projected.x.toFixed(2)}%;top:${projected.y.toFixed(2)}%;">
                 <svg class="iss-icon-svg" width="28" height="28" viewBox="0 0 24 24">
-                  <path fill="#ff5252" d="M11.38 2l-1.75 5.25h4.75L12.62 2h-1.24m1.24 22l1.76-5.25H9.62L11.38 24h1.24M2 11.38v1.24l5.25 1.76V9.62L2 11.38m20 1.24v-1.24l-5.25-1.76v4.76L22 12.62M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 1.5a2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 1-2.5 2.5A2.5 2.5 0 0 1 9.5 12 2.5 2.5 0 0 1 12 9.5Z"/>
+                  <path fill="#000000" d="M11.38 2l-1.75 5.25h4.75L12.62 2h-1.24m1.24 22l1.76-5.25H9.62L11.38 24h1.24M2 11.38v1.24l5.25 1.76V9.62L2 11.38m20 1.24v-1.24l-5.25-1.76v4.76L22 12.62M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 1.5a2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 1-2.5 2.5A2.5 2.5 0 0 1 9.5 12 2.5 2.5 0 0 1 12 9.5Z"/>
                 </svg>
               </div>
             </div>
           ` : ""}
           <div class="iss-grid">
-            <div class="iss-stat"><div class="iss-stat-label">Latitude</div><div class="iss-stat-value">${position.latitude.toFixed(2)}°</div></div>
-            <div class="iss-stat"><div class="iss-stat-label">Longitude</div><div class="iss-stat-value">${position.longitude.toFixed(2)}°</div></div>
+            <div class="iss-stat"><div class="iss-stat-label">Latitude</div><div class="iss-stat-value">${position.latitude}°</div></div>
+            <div class="iss-stat"><div class="iss-stat-label">Longitude</div><div class="iss-stat-value">${position.longitude}°</div></div>
           </div>
           <div class="iss-footer">
             <div class="iss-time">Updated ${esc(formatDateTime(position.timestamp))}</div>
