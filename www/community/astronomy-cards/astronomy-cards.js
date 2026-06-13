@@ -676,8 +676,18 @@ class ApodCard extends HTMLElement {
   _render() {
     if (!this._hass) return;
     const stateObj = getState(this._hass, this._config.entity);
-    if (!stateObj || ["unknown", "unavailable"].includes(String(stateObj.state).toLowerCase())) {
-      // Try to use cached data
+    if (!stateObj) {
+      const cached = this._getCachedApod();
+      if (cached) {
+        this._renderApod(cached);
+        return;
+      }
+      this.shadowRoot.innerHTML = renderErrorCard(`Entity not found: ${this._config.entity}`);
+      return;
+    }
+
+    // If state is unavailable/unknown, try cache first, then show loading
+    if (["unknown", "unavailable"].includes(String(stateObj.state).toLowerCase())) {
       const cached = this._getCachedApod();
       if (cached) {
         this._renderApod(cached);
