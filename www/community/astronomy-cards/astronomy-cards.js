@@ -611,6 +611,7 @@ class ApodCard extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this._config = {};
     this._hass = null;
+    this._lastStateHash = "";
   }
 
   static getConfigElement() { return document.createElement("apod-card-editor"); }
@@ -629,11 +630,17 @@ class ApodCard extends HTMLElement {
   setConfig(config) {
     if (!config.entity) throw new Error("You must define an entity");
     this._config = { ...ApodCard.getStubConfig(), ...config };
+    this._lastStateHash = "";
   }
 
   set hass(hass) {
     this._hass = hass;
-    this._render();
+    const stateObj = hass.states[this._config.entity];
+    const hash = stateObj ? `${stateObj.state}|${stateObj.last_updated}` : "";
+    if (hash !== this._lastStateHash) {
+      this._lastStateHash = hash;
+      this._render();
+    }
   }
 
   _render() {
@@ -761,6 +768,7 @@ class NeoThreatCardEditor extends AstroEditorBase {
   setConfig(config) {
     super.setConfig({
       entity: "sensor.nasa_astronomy_suite_neo_count_today",
+      largest_entity: "sensor.nasa_astronomy_suite_largest_neo",
       max_items: 5,
       show_hazardous_only: false,
       show_stats: true,
@@ -774,8 +782,9 @@ class NeoThreatCardEditor extends AstroEditorBase {
   _editorTemplate() {
     return `
       <ha-entity-picker id="entity" label="NEO count entity"></ha-entity-picker>
-      <ha-textfield id="title" label="Card title (optional)"></ha-textfield>
-      <ha-textfield id="max_items" label="Max items" type="number"></ha-textfield>
+      <ha-entity-picker id="largest_entity" label="Largest NEO entity"></ha-entity-picker>
+      <ha-textfield id="title" label="Card title"></ha-textfield>
+      <ha-textfield id="max_items" label="Max items shown" type="number"></ha-textfield>
       <label class="switch-row"><span>Show hazardous only</span><ha-switch id="show_hazardous_only"></ha-switch></label>
       <label class="switch-row"><span>Show statistics</span><ha-switch id="show_stats"></ha-switch></label>
       <label class="switch-row"><span>Show velocity</span><ha-switch id="show_velocity"></ha-switch></label>
@@ -785,6 +794,7 @@ class NeoThreatCardEditor extends AstroEditorBase {
 
   _setupListeners() {
     this._bindPicker("entity", "entity");
+    this._bindPicker("largest_entity", "largest_entity");
     this._bindText("title", "title", (value) => value.trim());
     this._bindText("max_items", "max_items", (value) => clamp(parseInt(value, 10) || 5, 1, 20));
     ["show_hazardous_only", "show_stats", "show_velocity", "show_diameter"].forEach((key) => this._bindSwitch(key, key));
@@ -792,6 +802,7 @@ class NeoThreatCardEditor extends AstroEditorBase {
 
   _syncValues() {
     setPickerValue(this.shadowRoot, "entity", this._hass, this._config.entity);
+    setPickerValue(this.shadowRoot, "largest_entity", this._hass, this._config.largest_entity || "");
     setTextValue(this.shadowRoot, "title", this._config.title || "");
     setTextValue(this.shadowRoot, "max_items", this._config.max_items || 5);
     setSwitchValue(this.shadowRoot, "show_hazardous_only", this._config.show_hazardous_only === true);
@@ -812,6 +823,7 @@ class NeoThreatCard extends HTMLElement {
   static getStubConfig() {
     return {
       entity: "sensor.nasa_astronomy_suite_neo_count_today",
+      largest_entity: "sensor.nasa_astronomy_suite_largest_neo",
       max_items: 5,
       show_hazardous_only: false,
       show_stats: true,
@@ -850,6 +862,10 @@ class NeoThreatCard extends HTMLElement {
     const closest = sorted[0];
     const fastest = [...sorted].sort((a, b) => toNumber(b.velocity_kmh, 0) - toNumber(a.velocity_kmh, 0))[0];
     const title = this._config.title || "Near-Earth Objects";
+
+    // Largest NEO
+    const largestState = this._config.largest_entity ? getState(this._hass, this._config.largest_entity) : null;
+    const largestName = largestState ? (largestState.state || largestState.attributes?.name || "—") : "—";
 
     const listHtml = displayed.length
       ? displayed.map((neo) => {
@@ -910,6 +926,7 @@ class NeoThreatCard extends HTMLElement {
           color: ${ASTRO.text2};
           font-size: 0.84rem;
         }
+        .neo-stat-icon { margin-bottom: 4px; }
       </style>
       <ha-card class="astro-card">
         <div class="astro-header">
@@ -918,10 +935,11 @@ class NeoThreatCard extends HTMLElement {
           <span class="astro-badge ${hazardousCount > 0 ? "danger" : ""}">${hazardousCount > 0 ? `${hazardousCount} hazardous` : `${totalCount} tracked`}</span>
         </div>
         ${this._config.show_stats !== false ? `
-          <div class="astro-stat-grid cols-3">
-            <div class="astro-stat"><div class="astro-stat-value">${totalCount}</div><div class="astro-stat-label">Objects</div></div>
-            <div class="astro-stat"><div class="astro-stat-value">${closest ? formatDistanceKm(closest.miss_distance_km) : "—"}</div><div class="astro-stat-label">Closest</div></div>
-            <div class="astro-stat"><div class="astro-stat-value">${fastest ? formatSpeedKmh(fastest.velocity_kmh) : "—"}</div><div class="astro-stat-label">Fastest</div></div>
+          <div class="astro-stat-grid cols-4">
+            <div class="astro-stat"><div class="neo-stat-icon"><ha-icon icon="mdi:counter" style="color:#9e9e9e;--mdc-icon-size:20px;"></ha-icon></div><div class="astro-stat-value">${totalCount}</div><div class="astro-stat-label">Number</div></div>
+            <div class="astro-stat"><div class="neo-stat-icon"><ha-icon icon="mdi:resize" style="color:#42a5f5;--mdc-icon-size:20px;"></ha-icon></div><div class="astro-stat-value">${esc(largestName)}</div><div class="astro-stat-label">Largest</div></div>
+            <div class="astro-stat"><div class="neo-stat-icon"><ha-icon icon="mdi:speedometer" style="color:#ff9800;--mdc-icon-size:20px;"></ha-icon></div><div class="astro-stat-value">${fastest ? formatSpeedKmh(fastest.velocity_kmh) : "—"}</div><div class="astro-stat-label">Fastest</div></div>
+            <div class="astro-stat"><div class="neo-stat-icon"><ha-icon icon="mdi:bullseye-arrow" style="color:#ef5350;--mdc-icon-size:20px;"></ha-icon></div><div class="astro-stat-value">${closest ? formatDistanceKm(closest.miss_distance_km) : "—"}</div><div class="astro-stat-label">Closest</div></div>
           </div>
         ` : ""}
         <div class="neo-list">${listHtml}</div>
@@ -1006,6 +1024,7 @@ class SolarActivityCard extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._config = {};
+    this._lastStateHash = "";
   }
 
   static getConfigElement() { return document.createElement("solar-activity-card-editor"); }
@@ -1034,11 +1053,25 @@ class SolarActivityCard extends HTMLElement {
       throw new Error("You must define cme_entity, flare_entity, and storm_entity");
     }
     this._config = { ...SolarActivityCard.getStubConfig(), ...config };
+    this._lastStateHash = "";
   }
 
   set hass(hass) {
     this._hass = hass;
-    this._render();
+    const hash = this._computeStateHash();
+    if (hash !== this._lastStateHash) {
+      this._lastStateHash = hash;
+      this._render();
+    }
+  }
+
+  _computeStateHash() {
+    if (!this._hass) return "";
+    const entities = [this._config.cme_entity, this._config.flare_entity, this._config.storm_entity, this._config.kp_entity];
+    return entities.map((e) => {
+      const s = e ? this._hass.states[e] : null;
+      return s ? `${s.state}|${s.last_updated}` : "";
+    }).join(";");
   }
 
   _collectEvents(stateObj, kind, timeRange) {
@@ -1267,12 +1300,15 @@ class SolarActivityCard extends HTMLElement {
           <div class="live-sun">
             <div class="live-sun-title">Live Sun</div>
             <div class="live-sun-grid">
-              ${sunFeeds.map((feed) => `
+              ${sunFeeds.map((feed) => {
+                const token = feed.stateObj.attributes?.access_token || "";
+                const imgUrl = `/api/camera_proxy/${feed.entityId}${token ? `?token=${token}` : ""}`;
+                return `
                 <div class="live-sun-card">
-                  <img src="/api/camera_proxy/${feed.entityId}" alt="${esc(feed.title)} live sun image" onerror="this.style.opacity='0.3'">
+                  <img src="${imgUrl}" alt="${esc(feed.title)} live sun image" loading="lazy" onerror="this.style.opacity='0.3'">
                   <div class="live-sun-label">${esc(feed.title)}</div>
                 </div>
-              `).join("")}
+              `;}).join("")}
             </div>
           </div>
         ` : ""}
