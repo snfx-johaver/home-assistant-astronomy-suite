@@ -18,8 +18,9 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.CAMERA]
 
+VERSION = "1.7.6"
 CARDS_FILENAME = "astronomy-cards.js"
-CARDS_LOCAL_URL = "/local/community/astronomy-cards/astronomy-cards.js"
+CARDS_LOCAL_URL = f"/local/community/astronomy-cards/astronomy-cards.js?v={VERSION}"
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -92,7 +93,7 @@ def _deploy_cards_to_www(hass: HomeAssistant) -> None:
 
 
 async def _async_register_cards_resource(hass: HomeAssistant) -> None:
-    """Register astronomy-cards.js as a Lovelace resource if not already present."""
+    """Register or update astronomy-cards.js as a Lovelace resource with cache-bust version."""
     # First try the HA API approach
     try:
         lovelace_data = hass.data.get("lovelace")
@@ -102,6 +103,13 @@ async def _async_register_cards_resource(hass: HomeAssistant) -> None:
                 for resource in resources.async_items():
                     url = resource.get("url", "")
                     if "astronomy-cards" in url:
+                        if url != CARDS_LOCAL_URL:
+                            # Update URL with new version cache-bust
+                            await resources.async_update_item(
+                                resource["id"],
+                                {"url": CARDS_LOCAL_URL, "res_type": "module"},
+                            )
+                            _LOGGER.info("Updated Lovelace resource URL to: %s", CARDS_LOCAL_URL)
                         return
                 await resources.async_create_item(
                     {"res_type": "module", "url": CARDS_LOCAL_URL}
@@ -116,7 +124,7 @@ async def _async_register_cards_resource(hass: HomeAssistant) -> None:
 
 
 def _register_resource_via_storage(hass: HomeAssistant) -> None:
-    """Fallback: register resource by editing .storage/lovelace_resources."""
+    """Fallback: register or update resource by editing .storage/lovelace_resources."""
     import json
 
     storage_path = Path(hass.config.path(".storage")) / "lovelace_resources"
@@ -144,9 +152,13 @@ def _register_resource_via_storage(hass: HomeAssistant) -> None:
     content = json.loads(storage_path.read_text())
     items = content.get("data", {}).get("items", [])
 
-    # Check if already registered
+    # Check if already registered — update URL if version changed
     for item in items:
         if "astronomy-cards" in item.get("url", ""):
+            if item["url"] != CARDS_LOCAL_URL:
+                item["url"] = CARDS_LOCAL_URL
+                storage_path.write_text(json.dumps(content, indent=2))
+                _LOGGER.info("Updated Lovelace resource URL in storage: %s", CARDS_LOCAL_URL)
             return
 
     # Add our resource
