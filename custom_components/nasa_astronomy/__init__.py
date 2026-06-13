@@ -18,7 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.CAMERA]
 
-VERSION = "1.7.7"
+VERSION = "1.8.0"
 CARDS_FILENAME = "astronomy-cards.js"
 CARDS_LOCAL_URL = f"/local/community/astronomy-cards/astronomy-cards.js?v={VERSION}"
 
@@ -57,7 +57,48 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Set up ephemeris sensors if enabled (opt-in)
+    ephemeris_config = entry.options.get("ephemeris", entry.data.get("ephemeris", {}))
+    if ephemeris_config.get("enabled", False):
+        from .sensor_ephemeris import async_setup_ephemeris_sensors
+
+        async def _setup_ephemeris(async_add_entities):
+            await async_setup_ephemeris_sensors(hass, entry, async_add_entities)
+
+        # Use platform setup callback
+        hass.async_create_task(
+            _async_setup_ephemeris_platform(hass, entry)
+        )
+
+    # Listen for options updates to reload ephemeris
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+
     return True
+
+
+async def _async_setup_ephemeris_platform(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Set up ephemeris sensor platform dynamically."""
+    from .sensor_ephemeris import async_setup_ephemeris_sensors
+
+    platform = hass.data.get("entity_platform", {}).get(f"{DOMAIN}.sensor")
+    if platform:
+        for p in platform:
+            await async_setup_ephemeris_sensors(hass, entry, p.async_add_entities)
+            return
+
+    # Fallback: forward setup via entity_platform helper
+    from homeassistant.helpers.entity_platform import async_get_platforms
+    platforms = async_get_platforms(hass, DOMAIN)
+    for p in platforms:
+        if p.domain == "sensor":
+            await async_setup_ephemeris_sensors(hass, entry, p.async_add_entities)
+            return
+
+
+async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle options update — reload integration to apply ephemeris changes."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

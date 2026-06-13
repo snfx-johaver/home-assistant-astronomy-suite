@@ -2716,6 +2716,237 @@ defineElement("solar-system-card-editor", SolarSystemCardEditor);
 defineElement("rocket-launch-card-editor", RocketLaunchCardEditor);
 defineElement("iss-tracker-card-editor", IssTrackerCardEditor);
 defineElement("earth-observation-card-editor", EarthObservationCardEditor);
+defineElement("night-sky-highlights-card-editor", NightSkyHighlightsEditor);
+
+// ─── Night Sky Highlights Card ───────────────────────────────────────────────
+class NightSkyHighlightsEditor extends AstroEditorBase {
+  static get properties() { return { _config: {} }; }
+  setConfig(config) { this._config = { ...config }; }
+  get _title() { return this._config.title || "Night Sky Highlights"; }
+  get _telescope_mode() { return this._config.telescope_mode || false; }
+  render() {
+    if (!this._hass) return html``;
+    return html`
+      <style>${EDITOR_STYLES}</style>
+      <div class="astro-editor">
+        <div class="astro-input-wrap">
+          <label>Card Title</label>
+          <input type="text" .value="${this._title}" @input="${(e) => this._valueChanged('title', e.target.value)}" @change="${(e) => this._valueChanged('title', e.target.value)}">
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin:8px 0;">
+          <ha-switch .checked="${this._telescope_mode}" @change="${(e) => this._valueChanged('telescope_mode', e.target.checked)}"></ha-switch>
+          <span>Telescope Mode (alt &gt; 30°)</span>
+        </div>
+      </div>
+    `;
+  }
+  _valueChanged(key, value) {
+    this._config = { ...this._config, [key]: value };
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config } }));
+  }
+}
+
+class NightSkyHighlightsCard extends HTMLElement {
+  static getConfigElement() { return document.createElement("night-sky-highlights-card-editor"); }
+  static getStubConfig() { return { title: "Night Sky Highlights", telescope_mode: false }; }
+
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._lastStateHash = "";
+  }
+
+  setConfig(config) {
+    this._config = { title: "Night Sky Highlights", telescope_mode: false, ...config };
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    const hash = this._computeHash();
+    if (hash !== this._lastStateHash) {
+      this._lastStateHash = hash;
+      this._render();
+    }
+  }
+
+  _computeHash() {
+    const bodies = ["sun", "moon", "mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune"];
+    let h = "";
+    for (const b of bodies) {
+      const alt = this._hass.states[`sensor.nasa_astronomy_ephemeris_${b}_altitude`];
+      if (alt) h += alt.state + ";";
+    }
+    const tw = this._hass.states["sensor.nasa_astronomy_ephemeris_sky_twilight_phase"];
+    if (tw) h += tw.state;
+    return h;
+  }
+
+  _getBodyData() {
+    const bodies = ["mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune"];
+    const minAlt = this._config.telescope_mode ? 30 : 20;
+    const visible = [];
+    for (const b of bodies) {
+      const altEntity = this._hass.states[`sensor.nasa_astronomy_ephemeris_${b}_altitude`];
+      const illEntity = this._hass.states[`sensor.nasa_astronomy_ephemeris_${b}_illumination_pct`];
+      const visStart = this._hass.states[`sensor.nasa_astronomy_ephemeris_${b}_visibility_start`];
+      const visEnd = this._hass.states[`sensor.nasa_astronomy_ephemeris_${b}_visibility_end`];
+      if (!altEntity) continue;
+      const alt = parseFloat(altEntity.state);
+      if (isNaN(alt)) continue;
+      visible.push({
+        name: b.charAt(0).toUpperCase() + b.slice(1),
+        altitude: alt,
+        illumination: illEntity ? parseFloat(illEntity.state) : null,
+        visStart: visStart ? visStart.state : null,
+        visEnd: visEnd ? visEnd.state : null,
+        aboveMin: alt >= minAlt,
+      });
+    }
+    visible.sort((a, b) => b.altitude - a.altitude);
+    return visible;
+  }
+
+  _getMoonData() {
+    const alt = this._hass.states["sensor.nasa_astronomy_ephemeris_moon_altitude"];
+    const ill = this._hass.states["sensor.nasa_astronomy_ephemeris_moon_illumination_pct"];
+    const phase = this._hass.states["sensor.nasa_astronomy_ephemeris_moon_phase_angle"];
+    return {
+      altitude: alt ? parseFloat(alt.state) : null,
+      illumination: ill ? parseFloat(ill.state) : null,
+      phase: phase ? parseFloat(phase.state) : null,
+      visible: alt ? parseFloat(alt.state) > 0 : false,
+    };
+  }
+
+  _getTwilightPhase() {
+    const tw = this._hass.states["sensor.nasa_astronomy_ephemeris_sky_twilight_phase"];
+    return tw ? tw.state : "unknown";
+  }
+
+  _getSunAlt() {
+    const s = this._hass.states["sensor.nasa_astronomy_ephemeris_sun_altitude"];
+    return s ? parseFloat(s.state) : null;
+  }
+
+  _getBodyIcon(name) {
+    const icons = { Mercury: "☿", Venus: "♀", Mars: "♂", Jupiter: "♃", Saturn: "♄", Uranus: "⛢", Neptune: "♆" };
+    return icons[name] || "●";
+  }
+
+  _render() {
+    const sunAlt = this._getSunAlt();
+    const isDark = sunAlt !== null && sunAlt < -12;
+    const twilight = this._getTwilightPhase();
+    const moon = this._getMoonData();
+    const planets = this._getBodyData();
+    const minAlt = this._config.telescope_mode ? 30 : 20;
+    const top3 = planets.filter(p => p.aboveMin).slice(0, 3);
+    const hasSensors = planets.length > 0 || moon.altitude !== null;
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host { display:block; }
+        .nsh-card { background:var(--ha-card-background,var(--card-background-color,#1a1a2e)); border-radius:var(--ha-card-border-radius,12px); padding:16px; color:var(--primary-text-color,#fff); overflow:hidden; position:relative; }
+        .nsh-bg { position:absolute; top:0; left:0; right:0; bottom:0; background:linear-gradient(180deg,#0d1b2a 0%,#1b2838 50%,#162447 100%); border-radius:inherit; z-index:0; opacity:0.6; }
+        .nsh-content { position:relative; z-index:1; }
+        .nsh-title { font-size:1.2em; font-weight:600; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+        .nsh-title-icon { font-size:1.4em; }
+        .nsh-section { margin-bottom:14px; }
+        .nsh-section-title { font-size:0.85em; text-transform:uppercase; letter-spacing:0.5px; color:var(--secondary-text-color,#aaa); margin-bottom:6px; }
+        .nsh-twilight { display:flex; gap:8px; align-items:center; font-size:0.95em; padding:8px 12px; background:rgba(255,255,255,0.05); border-radius:8px; }
+        .nsh-twilight-dot { width:10px; height:10px; border-radius:50%; }
+        .nsh-moon { display:flex; gap:12px; align-items:center; padding:8px 12px; background:rgba(255,255,255,0.05); border-radius:8px; }
+        .nsh-moon-icon { font-size:1.8em; }
+        .nsh-moon-info { display:flex; flex-direction:column; gap:2px; }
+        .nsh-moon-label { font-size:0.85em; color:var(--secondary-text-color,#aaa); }
+        .nsh-planet-row { display:flex; align-items:center; gap:10px; padding:6px 12px; background:rgba(255,255,255,0.04); border-radius:8px; margin-bottom:4px; }
+        .nsh-planet-icon { font-size:1.3em; width:28px; text-align:center; }
+        .nsh-planet-name { flex:1; font-weight:500; }
+        .nsh-planet-alt { font-size:0.85em; color:var(--secondary-text-color,#aaa); min-width:50px; text-align:right; }
+        .nsh-planet-vis { font-size:0.75em; color:var(--secondary-text-color,#bbb); }
+        .nsh-top3 { display:flex; gap:8px; flex-wrap:wrap; }
+        .nsh-top3-item { flex:1; min-width:80px; padding:10px; background:rgba(100,200,255,0.08); border-radius:8px; text-align:center; border:1px solid rgba(100,200,255,0.15); }
+        .nsh-top3-icon { font-size:1.6em; margin-bottom:4px; }
+        .nsh-top3-name { font-size:0.85em; font-weight:500; }
+        .nsh-top3-alt { font-size:0.75em; color:var(--secondary-text-color,#aaa); }
+        .nsh-no-data { padding:20px; text-align:center; color:var(--secondary-text-color,#888); font-style:italic; }
+        .nsh-badge { display:inline-block; padding:2px 6px; border-radius:4px; font-size:0.7em; font-weight:600; margin-left:8px; }
+        .nsh-badge-dark { background:#1b5e20; color:#a5d6a7; }
+        .nsh-badge-light { background:#e65100; color:#ffcc80; }
+      </style>
+      <ha-card>
+        <div class="nsh-card">
+          <div class="nsh-bg"></div>
+          <div class="nsh-content">
+            <div class="nsh-title">
+              <span class="nsh-title-icon">🔭</span>
+              ${this._config.title}
+              ${isDark ? '<span class="nsh-badge nsh-badge-dark">Dark Sky</span>' : sunAlt !== null ? '<span class="nsh-badge nsh-badge-light">Daylight</span>' : ''}
+            </div>
+
+            ${!hasSensors ? '<div class="nsh-no-data">Enable ephemeris sensors in integration options to see night sky data.</div>' : `
+              <div class="nsh-section">
+                <div class="nsh-section-title">Twilight Phase</div>
+                <div class="nsh-twilight">
+                  <span class="nsh-twilight-dot" style="background:${this._twilightColor(twilight)}"></span>
+                  <span>${twilight}</span>
+                  ${sunAlt !== null ? `<span style="margin-left:auto;font-size:0.85em;color:var(--secondary-text-color)">Sun: ${sunAlt.toFixed(1)}°</span>` : ''}
+                </div>
+              </div>
+
+              ${moon.altitude !== null ? `
+              <div class="nsh-section">
+                <div class="nsh-section-title">Moon</div>
+                <div class="nsh-moon">
+                  <span class="nsh-moon-icon">🌙</span>
+                  <div class="nsh-moon-info">
+                    <span>${moon.visible ? 'Above Horizon' : 'Below Horizon'} — ${moon.altitude !== null ? moon.altitude.toFixed(1) + '°' : ''}</span>
+                    <span class="nsh-moon-label">Illumination: ${moon.illumination !== null ? moon.illumination.toFixed(0) + '%' : 'N/A'}</span>
+                  </div>
+                </div>
+              </div>` : ''}
+
+              ${top3.length > 0 ? `
+              <div class="nsh-section">
+                <div class="nsh-section-title">Top Objects Tonight</div>
+                <div class="nsh-top3">
+                  ${top3.map(p => `
+                    <div class="nsh-top3-item">
+                      <div class="nsh-top3-icon">${this._getBodyIcon(p.name)}</div>
+                      <div class="nsh-top3-name">${p.name}</div>
+                      <div class="nsh-top3-alt">${p.altitude.toFixed(1)}° alt</div>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>` : ''}
+
+              <div class="nsh-section">
+                <div class="nsh-section-title">All Planets ${this._config.telescope_mode ? '(Telescope: &gt;30°)' : '(&gt;' + minAlt + '° altitude)'}</div>
+                ${planets.length > 0 ? planets.map(p => `
+                  <div class="nsh-planet-row" style="opacity:${p.aboveMin ? 1 : 0.5}">
+                    <span class="nsh-planet-icon">${this._getBodyIcon(p.name)}</span>
+                    <span class="nsh-planet-name">${p.name}</span>
+                    ${p.visStart && p.visEnd ? `<span class="nsh-planet-vis">${p.visStart}–${p.visEnd}</span>` : ''}
+                    <span class="nsh-planet-alt">${p.altitude.toFixed(1)}°</span>
+                  </div>
+                `).join('') : '<div style="padding:8px;color:var(--secondary-text-color)">No planet sensors available</div>'}
+              </div>
+            `}
+          </div>
+        </div>
+      </ha-card>
+    `;
+  }
+
+  _twilightColor(phase) {
+    const colors = { "Day": "#fdd835", "Civil Twilight": "#ff8f00", "Nautical Twilight": "#5c6bc0", "Astronomical Twilight": "#283593", "Night": "#0d1b2a" };
+    return colors[phase] || "#666";
+  }
+
+  getCardSize() { return 5; }
+}
+
+// ─── End Night Sky Highlights Card ──────────────────────────────────────────
 
 defineElement("apod-card", ApodCard);
 defineElement("neo-threat-card", NeoThreatCard);
@@ -2726,6 +2957,7 @@ defineElement("solar-system-card", SolarSystemCard);
 defineElement("rocket-launch-card", RocketLaunchCard);
 defineElement("iss-tracker-card", IssTrackerCard);
 defineElement("earth-observation-card", EarthObservationCard);
+defineElement("night-sky-highlights-card", NightSkyHighlightsCard);
 
 registerCustomCard("apod-card", "ASS APOD Card", "Astronomy Picture of the Day card with editor");
 registerCustomCard("neo-threat-card", "ASS NEO Threat Card", "Near-Earth object tracker with editor");
@@ -2736,9 +2968,10 @@ registerCustomCard("solar-system-card", "ASS Solar System Card", "Client-side he
 registerCustomCard("rocket-launch-card", "ASS Rocket Launch Card", "Upcoming rocket launches list with editor");
 registerCustomCard("iss-tracker-card", "ASS ISS Tracker Card", "International Space Station position tracker with editor");
 registerCustomCard("earth-observation-card", "ASS Earth Observation Card", "NASA EPIC and NOAA GOES Earth imagery viewer with editor");
+registerCustomCard("night-sky-highlights-card", "ASS Night Sky Highlights Card", "Best visible objects tonight based on ephemeris with editor");
 
 console.info(
-  "%c Astronomy Space Suite Cards v1.7.2 %c",
+  "%c Astronomy Space Suite Cards v1.8.0 %c",
   "color:white;background:#1a237e;font-weight:bold;padding:2px 8px;border-radius:4px 0 0 4px;",
   "color:#1a237e;background:#e8eaf6;font-weight:bold;padding:2px 8px;border-radius:0 4px 4px 0;",
 );

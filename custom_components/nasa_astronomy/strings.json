@@ -21,5 +21,34 @@
     "abort": {
       "already_configured": "This API key is already configured"
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "menu_options": {
+          "ephemeris": "Ephemeris Provider (Planetary Positions)"
+        }
+      },
+      "ephemeris": {
+        "title": "OpenAstronomy Ephemeris",
+        "description": "Configure local ephemeris calculations for planetary positions. All calculations are done locally — no external API required.",
+        "data": {
+          "enabled": "Enable Ephemeris Provider",
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "elevation": "Elevation (meters)",
+          "update_interval": "Update Interval (seconds)",
+          "body_sun": "Sun (Ephemeris)",
+          "body_moon": "Moon (Ephemeris)",
+          "body_mercury": "Mercury",
+          "body_venus": "Venus",
+          "body_mars": "Mars",
+          "body_jupiter": "Jupiter",
+          "body_saturn": "Saturn",
+          "body_uranus": "Uranus",
+          "body_neptune": "Neptune"
+        }
+      }
+    }
   }
 }
