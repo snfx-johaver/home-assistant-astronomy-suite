@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   contents: write
 
@@ -15,6 +18,11 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -84,10 +92,7 @@ jobs:
       - name: Commit and push version bump
         if: steps.bump.outputs.skip != 'true'
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          # Amend the commit made by bump_version.py to add skip-ci
           git commit --amend -m "release: v${{ steps.version.outputs.version }} [skip ci]"
           git tag -f "v${{ steps.version.outputs.version }}"
           git push --force-with-lease
