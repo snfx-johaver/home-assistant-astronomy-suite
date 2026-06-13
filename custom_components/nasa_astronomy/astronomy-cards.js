@@ -535,8 +535,14 @@ class AstroEditorBase extends HTMLElement {
   _bindText(id, key, transform = (value) => value) {
     const field = this.shadowRoot.getElementById(id);
     if (!field) return;
-    field.addEventListener("change", (event) => {
-      this._setValue(key, transform(event.target.value));
+    const handler = (event) => {
+      const val = event.detail?.value ?? event.target?.value ?? "";
+      this._setValue(key, transform(val));
+    };
+    field.addEventListener("change", handler);
+    field.addEventListener("input", handler);
+    field.addEventListener("value-changed", (event) => {
+      this._setValue(key, transform(event.detail.value || ""));
     });
   }
 
@@ -2166,7 +2172,7 @@ class IssTrackerCardEditor extends AstroEditorBase {
 
   _setupListeners() {
     this._bindPicker("entity", "entity");
-    this._bindText("title", "title", (value) => value.trim() || "ISS Tracker");
+    this._bindText("title", "title", (value) => value.trim());
     this._bindText("stream_url", "stream_url", (value) => value.trim());
     ["show_map", "show_trail", "show_stream_button"].forEach((key) => this._bindSwitch(key, key));
   }
