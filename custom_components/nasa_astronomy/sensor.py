@@ -108,6 +108,14 @@ async def async_setup_entry(
 
     async_add_entities(entities, True)
 
+    # Set up ephemeris sensors if enabled (won't break existing sensors on failure)
+    try:
+        from .sensor_ephemeris import async_setup_ephemeris_sensors
+        await async_setup_ephemeris_sensors(hass, entry, async_add_entities)
+    except Exception as err:
+        import logging
+        logging.getLogger(__name__).warning("Ephemeris sensor setup failed: %s", err)
+
 
 class NasaAstronomySensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
     """Representation of a Astronomy Space Suite sensor."""

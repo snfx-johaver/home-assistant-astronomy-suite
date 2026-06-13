@@ -10,7 +10,7 @@ Fully isolated — does not modify any existing dashboards, integrations, or res
 
 ## ✨ Features
 
-### 🛰️ Sensors (17+)
+### 🛰️ Sensors (17+ NASA + 120+ Ephemeris)
 | Sensor | Source | Auth |
 |--------|--------|------|
 | Astronomy Picture of the Day (APOD) | NASA | API key |
@@ -23,6 +23,10 @@ Fully isolated — does not modify any existing dashboards, integrations, or res
 | Rocket Launch 1–5 | RocketLaunch.Live | Optional |
 | ISS Position (lat/lon) | Open Notify | None |
 | Planetary KP Index (aurora) | NOAA SWPC | None |
+| **Ephemeris: Sun** (alt, az, RA, dec, twilight times) | Local calc | None |
+| **Ephemeris: Moon** (alt, az, phase, illumination) | Local calc | None |
+| **Ephemeris: Planets** (Mercury–Neptune positions) | Local calc | None |
+| **Sky Conditions** (twilight phase, sidereal time, day length) | Local calc | None |
 
 ### 📷 Cameras (7)
 | Camera | Source | Auth |
@@ -35,7 +39,7 @@ Fully isolated — does not modify any existing dashboards, integrations, or res
 | SDO Sun (171Å corona, extreme UV) | NASA | None |
 | SOHO Sun (LASCO C3 coronagraph) | ESA/NASA | None |
 
-### 🃏 Custom Lovelace Cards (9)
+### 🃏 Custom Lovelace Cards (10)
 All cards are prefixed **"ASS"** in the card picker for easy discovery.
 
 | Card | Description |
@@ -47,8 +51,9 @@ All cards are prefixed **"ASS"** in the card picker for easy discovery.
 | `astro-lunar-card` | Moon phase visualization |
 | `solar-system-card` | Real-time heliocentric orrery (orbital mechanics) |
 | `rocket-launch-card` | Next 5 launches with countdown timers |
-| `iss-tracker-card` | SVG world map with ISS position + live stream button |
+| `iss-tracker-card` | SVG world map with ISS position, orbital path + live stream button |
 | `earth-observation-card` | Multi-source satellite imagery (EPIC, GOES, Himawari, SDO, SOHO) |
+| `night-sky-highlights-card` | Best visible planets tonight with ephemeris data |
 
 ### 🛡️ Isolation Guarantees
 - ✅ All entity IDs namespaced under `nasa_astronomy_suite_`
@@ -252,3 +257,44 @@ These are standard HA integrations — just enable them in Settings → Devices 
 ## 📜 License
 
 MIT
+
+---
+
+## 📋 Changelog
+
+### v1.8.1
+- **ISS Card**: Fixed "last updated" showing 1970 date (Unix timestamp conversion)
+- **ISS Card**: Added orbital path line connecting trail points on the map
+- **Night Sky Highlights Card**: Removed dark background — matches other cards' style
+- **Night Sky Highlights Card**: Removed twilight phase section (cleaner UI)
+- **Night Sky Highlights Card**: Card title now editable via UI editor
+- **Ephemeris**: Fixed Neptune sensors showing unavailable (throttle was too low)
+- **Ephemeris**: All sensors now grouped under "Astronomy Space Suite" device
+- **Ephemeris**: Fixed time sensors causing ValueError (removed numeric units from time fields)
+- **Ephemeris**: Fixed entity_id property error preventing sensor registration
+
+### v1.8.0
+- **NEW: OpenAstronomy Ephemeris Provider** — local planetary position calculations (VSOP87/Meeus)
+- **NEW: Night Sky Highlights Card** — shows best visible objects tonight
+- **NEW: 120+ ephemeris sensors** — Sun, Moon, Mercury through Neptune (altitude, azimuth, RA, dec, rise/set, visibility)
+- **NEW: Sky condition sensors** — twilight phase, day/night length, sidereal time, Julian date
+- Options flow with API Keys + Ephemeris configuration
+- All new features enabled by default on fresh install
+- Fully backward-compatible — no existing sensors affected
+
+### v1.7.7
+- All cards: title editable through UI editor
+- Horizon card: full-width SVG, improved time label layout
+- APOD card: localStorage caching, never shows empty
+
+### v1.7.6
+- Fixed aggressive browser caching with `?v=VERSION` cache-bust on resource URL
+
+### v1.7.5
+- NEO card: 4th stat "Largest" with colored icons
+- Solar Activity card: fixed SDO/SOHO image flickering
+- APOD card: state hash check to prevent unnecessary re-renders
+
+### v1.7.4
+- Solar System card: per-planet toggles, zoom button, all planet stats
+- Horizon card: visible Dawn/Noon/Dusk labels, configurable title

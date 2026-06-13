@@ -11,16 +11,11 @@ from datetime import timedelta
 from typing import Any
 
 from homeassistant.components.sensor import (
-    SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    DEGREE,
-    UnitOfLength,
-    UnitOfTime,
-)
+from homeassistant.const import DEGREE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
@@ -29,10 +24,6 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .const import DOMAIN
-from .providers.openastronomy_ephemeris import (
-    BODY_LIST,
-    OpenAstronomyEphemerisProvider,
-)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,13 +37,13 @@ SUN_SENSORS = [
     {"key": "declination", "name": "Declination", "unit": DEGREE, "icon": "mdi:axis-y-arrow", "state_class": SensorStateClass.MEASUREMENT},
     {"key": "distance_au", "name": "Distance", "unit": "AU", "icon": "mdi:map-marker-distance", "state_class": SensorStateClass.MEASUREMENT},
     {"key": "angular_diameter_arcmin", "name": "Angular Diameter", "unit": "arcmin", "icon": "mdi:circle-outline", "state_class": SensorStateClass.MEASUREMENT},
-    {"key": "solar_noon", "name": "Solar Noon", "unit": "h UTC", "icon": "mdi:weather-sunny", "state_class": None},
-    {"key": "civil_dawn", "name": "Civil Dawn", "unit": "h UTC", "icon": "mdi:weather-sunset-up", "state_class": None},
-    {"key": "civil_dusk", "name": "Civil Dusk", "unit": "h UTC", "icon": "mdi:weather-sunset-down", "state_class": None},
-    {"key": "nautical_dawn", "name": "Nautical Dawn", "unit": "h UTC", "icon": "mdi:weather-night", "state_class": None},
-    {"key": "nautical_dusk", "name": "Nautical Dusk", "unit": "h UTC", "icon": "mdi:weather-night", "state_class": None},
-    {"key": "astronomical_dawn", "name": "Astronomical Dawn", "unit": "h UTC", "icon": "mdi:star", "state_class": None},
-    {"key": "astronomical_dusk", "name": "Astronomical Dusk", "unit": "h UTC", "icon": "mdi:star", "state_class": None},
+    {"key": "solar_noon", "name": "Solar Noon", "unit": None, "icon": "mdi:weather-sunny", "state_class": None},
+    {"key": "civil_dawn", "name": "Civil Dawn", "unit": None, "icon": "mdi:weather-sunset-up", "state_class": None},
+    {"key": "civil_dusk", "name": "Civil Dusk", "unit": None, "icon": "mdi:weather-sunset-down", "state_class": None},
+    {"key": "nautical_dawn", "name": "Nautical Dawn", "unit": None, "icon": "mdi:weather-night", "state_class": None},
+    {"key": "nautical_dusk", "name": "Nautical Dusk", "unit": None, "icon": "mdi:weather-night", "state_class": None},
+    {"key": "astronomical_dawn", "name": "Astronomical Dawn", "unit": None, "icon": "mdi:star", "state_class": None},
+    {"key": "astronomical_dusk", "name": "Astronomical Dusk", "unit": None, "icon": "mdi:star", "state_class": None},
 ]
 
 MOON_SENSORS = [
@@ -77,11 +68,11 @@ PLANET_SENSORS = [
     {"key": "illumination_pct", "name": "Illumination", "unit": "%", "icon": "mdi:brightness-percent", "state_class": SensorStateClass.MEASUREMENT},
     {"key": "phase_angle", "name": "Phase Angle", "unit": DEGREE, "icon": "mdi:circle-half-full", "state_class": SensorStateClass.MEASUREMENT},
     {"key": "angular_diameter_arcsec", "name": "Angular Diameter", "unit": "arcsec", "icon": "mdi:circle-outline", "state_class": SensorStateClass.MEASUREMENT},
-    {"key": "rise", "name": "Rise", "unit": "h UTC", "icon": "mdi:arrow-up-circle", "state_class": None},
-    {"key": "transit", "name": "Transit", "unit": "h UTC", "icon": "mdi:arrow-up-bold", "state_class": None},
-    {"key": "set", "name": "Set", "unit": "h UTC", "icon": "mdi:arrow-down-circle", "state_class": None},
-    {"key": "visibility_start", "name": "Visibility Start", "unit": "h UTC", "icon": "mdi:eye", "state_class": None},
-    {"key": "visibility_end", "name": "Visibility End", "unit": "h UTC", "icon": "mdi:eye-off", "state_class": None},
+    {"key": "rise", "name": "Rise", "unit": None, "icon": "mdi:arrow-up-circle", "state_class": None},
+    {"key": "transit", "name": "Transit", "unit": None, "icon": "mdi:arrow-up-bold", "state_class": None},
+    {"key": "set", "name": "Set", "unit": None, "icon": "mdi:arrow-down-circle", "state_class": None},
+    {"key": "visibility_start", "name": "Visibility Start", "unit": None, "icon": "mdi:eye", "state_class": None},
+    {"key": "visibility_end", "name": "Visibility End", "unit": None, "icon": "mdi:eye-off", "state_class": None},
 ]
 
 SKY_SENSORS = [
@@ -144,8 +135,17 @@ async def async_setup_ephemeris_sensors(
 ) -> None:
     """Set up ephemeris sensors from config entry."""
     ephemeris_config = entry.options.get("ephemeris", entry.data.get("ephemeris", {}))
-    if not ephemeris_config.get("enabled", False):
+    # Default to enabled if no config exists (new installs get all bodies on)
+    if not ephemeris_config:
+        ephemeris_config = {
+            "enabled": True,
+            "bodies": {b: True for b in ["sun", "moon", "mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune"]},
+        }
+    if not ephemeris_config.get("enabled", True):
         return
+
+    # Lazy import to avoid breaking existing sensors if provider has issues
+    from .providers.openastronomy_ephemeris import OpenAstronomyEphemerisProvider
 
     lat = ephemeris_config.get("latitude", hass.config.latitude)
     lon = ephemeris_config.get("longitude", hass.config.longitude)
@@ -233,10 +233,22 @@ class EphemerisSensor(CoordinatorEntity, SensorEntity):
         self._attr_native_unit_of_measurement = unit
         self._attr_state_class = state_class
         self._attr_has_entity_name = False
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, entry_id)},
+            "name": "Astronomy Space Suite",
+            "manufacturer": "NASA",
+            "model": "Open APIs",
+            "sw_version": "1.8.0",
+        }
+        # Set entity_id suggestion
+        self.entity_id = f"sensor.nasa_astronomy_ephemeris_{body}_{sensor_key}"
 
-    @property
-    def entity_id(self) -> str:
-        return f"sensor.nasa_astronomy_ephemeris_{self._body}_{self._sensor_key}"
+    # Keys that represent time values (HH:MM format)
+    _TIME_KEYS = {
+        "solar_noon", "civil_dawn", "civil_dusk", "nautical_dawn", "nautical_dusk",
+        "astronomical_dawn", "astronomical_dusk", "rise", "transit", "set",
+        "visibility_start", "visibility_end",
+    }
 
     @property
     def native_value(self) -> Any:
@@ -246,13 +258,15 @@ class EphemerisSensor(CoordinatorEntity, SensorEntity):
         value = body_data.get(self._sensor_key)
         if value is None:
             return None
-        # Format time values
-        if isinstance(value, float) and self._attr_native_unit_of_measurement == "h UTC":
+        # Format time values as HH:MM strings
+        if self._sensor_key in self._TIME_KEYS and isinstance(value, (int, float)):
             hours = int(value)
             minutes = int((value - hours) * 60)
             return f"{hours:02d}:{minutes:02d}"
         if isinstance(value, bool):
             return "on" if value else "off"
+        if isinstance(value, float) and self._attr_state_class is not None:
+            return round(value, 4)
         return value
 
     @property

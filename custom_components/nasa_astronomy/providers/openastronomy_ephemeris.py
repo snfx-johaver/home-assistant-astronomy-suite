@@ -64,7 +64,7 @@ class EphemerisCache:
 class EphemerisThrottle:
     """Rate limiter — max N calls per hour."""
 
-    def __init__(self, max_per_hour: int = 8):
+    def __init__(self, max_per_hour: int = 120):
         self._max = max_per_hour
         self._calls: list[datetime] = []
 
