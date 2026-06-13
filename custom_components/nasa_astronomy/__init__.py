@@ -18,7 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.CAMERA]
 
-VERSION = "1.7.6"
+VERSION = "1.7.7"
 CARDS_FILENAME = "astronomy-cards.js"
 CARDS_LOCAL_URL = f"/local/community/astronomy-cards/astronomy-cards.js?v={VERSION}"
 

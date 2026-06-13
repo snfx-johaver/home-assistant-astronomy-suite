@@ -646,20 +646,46 @@ class ApodCard extends HTMLElement {
   _render() {
     if (!this._hass) return;
     const stateObj = getState(this._hass, this._config.entity);
-    if (!stateObj) {
-      this.shadowRoot.innerHTML = renderErrorCard(`Entity not found: ${this._config.entity}`);
+    if (!stateObj || ["unknown", "unavailable"].includes(String(stateObj.state).toLowerCase())) {
+      // Try to use cached data
+      const cached = this._getCachedApod();
+      if (cached) {
+        this._renderApod(cached);
+        return;
+      }
+      this.shadowRoot.innerHTML = renderErrorCard(`APOD data loading... (${this._config.entity})`);
       return;
     }
 
     const attrs = stateObj.attributes || {};
-    const cardTitle = this._config.title || "Astronomy Picture of the Day";
-    const mediaTitle = attrs.title || stateObj.state || "APOD";
-    const explanation = attrs.explanation || "";
-    const url = attrs.url || "";
-    const hdurl = attrs.hdurl || "";
-    const date = attrs.date || "";
-    const mediaType = attrs.media_type || "image";
-    const copyright = attrs.copyright || "";
+    const data = {
+      cardTitle: this._config.title || "Astronomy Picture of the Day",
+      mediaTitle: attrs.title || stateObj.state || "APOD",
+      explanation: attrs.explanation || "",
+      url: attrs.url || "",
+      hdurl: attrs.hdurl || "",
+      date: attrs.date || "",
+      mediaType: attrs.media_type || "image",
+      copyright: attrs.copyright || "",
+    };
+
+    // Cache successful data
+    if (data.url) {
+      try { localStorage.setItem("astro_apod_cache", JSON.stringify(data)); } catch (e) { /* ignore */ }
+    }
+
+    this._renderApod(data);
+  }
+
+  _getCachedApod() {
+    try {
+      const raw = localStorage.getItem("astro_apod_cache");
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
+
+  _renderApod(data) {
+    const { cardTitle, mediaTitle, explanation, url, hdurl, date, mediaType, copyright } = data;
     const imageHeight = clamp(parseInt(this._config.image_height, 10) || 400, 160, 1200);
 
     const mediaHtml = mediaType === "video"
@@ -1456,8 +1482,9 @@ class AstroHorizonCard extends HTMLElement {
           font-size: 0.72rem;
           backdrop-filter: blur(4px);
         }
-        .hz-time strong { display: block; font-size: 0.8rem; margin-top: 2px; }
-        .hz-time-label { display: block; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.75; margin-bottom: 2px; }
+        .hz-time-top { display: flex; align-items: center; justify-content: center; gap: 4px; }
+        .hz-time-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.85; font-weight: 600; }
+        .hz-time strong { display: block; font-size: 0.85rem; margin-top: 3px; }
         .hz-meta {
           display: flex;
           flex-wrap: wrap;
@@ -1480,7 +1507,7 @@ class AstroHorizonCard extends HTMLElement {
           <span class="astro-badge">${elevation >= 0 ? "Above horizon" : "Below horizon"}</span>
         </div>
         <div class="hz-scene">
-          <svg class="hz-svg" viewBox="0 0 400 220" preserveAspectRatio="xMidYMid meet">
+          <svg class="hz-svg" viewBox="0 0 400 220" preserveAspectRatio="none">
             <path class="hz-arc" d="M 40,180 A 160,160 0 0,1 360,180"></path>
             <line class="hz-line" x1="20" y1="180" x2="380" y2="180"></line>
             <line class="hz-line" x1="200" y1="20" x2="200" y2="180"></line>
@@ -1493,9 +1520,9 @@ class AstroHorizonCard extends HTMLElement {
           <div class="hz-state">${elevation >= 0 ? (rising ? "Rising" : "Setting") : "Night arc"}</div>
           ${this._config.show_times !== false ? `
             <div class="hz-times">
-              <div class="hz-time"><span class="hz-time-label">Dawn</span>🌅<strong>${formatTime(nextRise)}</strong></div>
-              <div class="hz-time"><span class="hz-time-label">Noon</span>☀️<strong>${formatTime(nextNoon)}</strong></div>
-              <div class="hz-time"><span class="hz-time-label">Dusk</span>🌇<strong>${formatTime(nextSet)}</strong></div>
+              <div class="hz-time"><div class="hz-time-top"><span class="hz-time-label">Dawn</span> 🌅</div><strong>${formatTime(nextRise)}</strong></div>
+              <div class="hz-time"><div class="hz-time-top"><span class="hz-time-label">Noon</span> ☀️</div><strong>${formatTime(nextNoon)}</strong></div>
+              <div class="hz-time"><div class="hz-time-top"><span class="hz-time-label">Dusk</span> 🌇</div><strong>${formatTime(nextSet)}</strong></div>
             </div>
           ` : ""}
         </div>
@@ -2390,7 +2417,7 @@ class EarthObservationCardEditor extends AstroEditorBase {
 
   _setupListeners() {
     ["epic_entity", "goes_entity", "goes18_entity", "himawari_entity", "sdo_entity", "soho_entity"].forEach((key) => this._bindPicker(key, key));
-    this._bindText("title", "title", (value) => value.trim() || "Earth Observation");
+    this._bindText("title", "title", (value) => value.trim());
     this._bindText("refresh_interval", "refresh_interval", (value) => clamp(parseInt(value, 10) || 5, 1, 60));
     ["show_epic", "show_goes"].forEach((key) => this._bindSwitch(key, key));
   }
