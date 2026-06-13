@@ -1421,6 +1421,7 @@ class AstroHorizonCard extends HTMLElement {
           backdrop-filter: blur(4px);
         }
         .hz-time strong { display: block; font-size: 0.8rem; margin-top: 2px; }
+        .hz-time-label { display: block; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.75; margin-bottom: 2px; }
         .hz-meta {
           display: flex;
           flex-wrap: wrap;
@@ -1456,9 +1457,9 @@ class AstroHorizonCard extends HTMLElement {
           <div class="hz-state">${elevation >= 0 ? (rising ? "Rising" : "Setting") : "Night arc"}</div>
           ${this._config.show_times !== false ? `
             <div class="hz-times">
-              <div class="hz-time">🌅<strong>${formatTime(nextRise)}</strong></div>
-              <div class="hz-time">☀️<strong>${formatTime(nextNoon)}</strong></div>
-              <div class="hz-time">🌇<strong>${formatTime(nextSet)}</strong></div>
+              <div class="hz-time"><span class="hz-time-label">Dawn</span>🌅<strong>${formatTime(nextRise)}</strong></div>
+              <div class="hz-time"><span class="hz-time-label">Noon</span>☀️<strong>${formatTime(nextNoon)}</strong></div>
+              <div class="hz-time"><span class="hz-time-label">Dusk</span>🌇<strong>${formatTime(nextSet)}</strong></div>
             </div>
           ` : ""}
         </div>
@@ -1640,6 +1641,10 @@ class SolarSystemCardEditor extends AstroEditorBase {
       title: "",
       show_labels: true,
       show_orbits: true,
+      show_mercury: true,
+      show_venus: true,
+      show_earth: true,
+      show_mars: true,
       show_jupiter: false,
       show_saturn: false,
       show_stats: true,
@@ -1653,8 +1658,12 @@ class SolarSystemCardEditor extends AstroEditorBase {
       <ha-textfield id="title" label="Card title (optional)"></ha-textfield>
       <label class="switch-row"><span>Show labels</span><ha-switch id="show_labels"></ha-switch></label>
       <label class="switch-row"><span>Show orbits</span><ha-switch id="show_orbits"></ha-switch></label>
-      <label class="switch-row"><span>Show Jupiter orbit</span><ha-switch id="show_jupiter"></ha-switch></label>
-      <label class="switch-row"><span>Show Saturn orbit</span><ha-switch id="show_saturn"></ha-switch></label>
+      <label class="switch-row"><span>Show Mercury</span><ha-switch id="show_mercury"></ha-switch></label>
+      <label class="switch-row"><span>Show Venus</span><ha-switch id="show_venus"></ha-switch></label>
+      <label class="switch-row"><span>Show Earth</span><ha-switch id="show_earth"></ha-switch></label>
+      <label class="switch-row"><span>Show Mars</span><ha-switch id="show_mars"></ha-switch></label>
+      <label class="switch-row"><span>Show Jupiter</span><ha-switch id="show_jupiter"></ha-switch></label>
+      <label class="switch-row"><span>Show Saturn</span><ha-switch id="show_saturn"></ha-switch></label>
       <label class="switch-row"><span>Show stats</span><ha-switch id="show_stats"></ha-switch></label>
       <label class="switch-row"><span>Show date</span><ha-switch id="show_date"></ha-switch></label>
     `;
@@ -1662,12 +1671,12 @@ class SolarSystemCardEditor extends AstroEditorBase {
 
   _setupListeners() {
     this._bindText("title", "title", (value) => value.trim());
-    ["show_labels", "show_orbits", "show_jupiter", "show_saturn", "show_stats", "show_date"].forEach((key) => this._bindSwitch(key, key));
+    ["show_labels", "show_orbits", "show_mercury", "show_venus", "show_earth", "show_mars", "show_jupiter", "show_saturn", "show_stats", "show_date"].forEach((key) => this._bindSwitch(key, key));
   }
 
   _syncValues() {
     setTextValue(this.shadowRoot, "title", this._config.title || "");
-    ["show_labels", "show_orbits", "show_stats", "show_date"].forEach((key) => setSwitchValue(this.shadowRoot, key, this._config[key] !== false));
+    ["show_labels", "show_orbits", "show_mercury", "show_venus", "show_earth", "show_mars", "show_stats", "show_date"].forEach((key) => setSwitchValue(this.shadowRoot, key, this._config[key] !== false));
     setSwitchValue(this.shadowRoot, "show_jupiter", this._config.show_jupiter === true);
     setSwitchValue(this.shadowRoot, "show_saturn", this._config.show_saturn === true);
   }
@@ -1678,6 +1687,7 @@ class SolarSystemCard extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._config = {};
+    this._zoom = 1.0;
   }
 
   static getConfigElement() { return document.createElement("solar-system-card-editor"); }
@@ -1686,6 +1696,10 @@ class SolarSystemCard extends HTMLElement {
       title: "",
       show_labels: true,
       show_orbits: true,
+      show_mercury: true,
+      show_venus: true,
+      show_earth: true,
+      show_mars: true,
       show_jupiter: false,
       show_saturn: false,
       show_stats: true,
@@ -1702,30 +1716,71 @@ class SolarSystemCard extends HTMLElement {
     this._render();
   }
 
+  _zoomIn() {
+    this._zoom = Math.min(this._zoom * 1.4, 5);
+    this._render();
+  }
+
+  _zoomOut() {
+    this._zoom = Math.max(this._zoom / 1.4, 0.5);
+    this._render();
+  }
+
   _render() {
     const date = new Date();
     const center = 200;
-    const radius = 165;
-    const names = ["Mercury", "Venus", "Earth", "Mars"];
-    if (this._config.show_jupiter) names.push("Jupiter");
-    if (this._config.show_saturn) names.push("Saturn");
+    const baseRadius = 165;
+    const radius = baseRadius * this._zoom;
+    const names = [];
+    if (this._config.show_mercury !== false) names.push("Mercury");
+    if (this._config.show_venus !== false) names.push("Venus");
+    if (this._config.show_earth !== false) names.push("Earth");
+    if (this._config.show_mars !== false) names.push("Mars");
+    if (this._config.show_jupiter === true) names.push("Jupiter");
+    if (this._config.show_saturn === true) names.push("Saturn");
 
     const positions = names.map((name) => calculatePlanetPosition(name, date));
-    const maxOrbit = Math.max(...names.map((name) => PLANET_ELEMENTS[name].a)) * 1.06;
+    const maxOrbit = names.length > 0 ? Math.max(...names.map((name) => PLANET_ELEMENTS[name].a)) * 1.06 : 1;
     const scale = radius / maxOrbit;
     const stars = buildStarFieldSvg(400, 400, 70, 84);
 
     this.shadowRoot.innerHTML = `
       <style>
         ${BASE_STYLES}
+        .orrery-wrap { position: relative; margin: 0 12px 12px; }
         .orrery {
-          margin: 0 12px 12px;
           border-radius: 18px;
           overflow: hidden;
           background: radial-gradient(circle at center, rgba(255,213,79,0.08) 0%, rgba(4,7,16,0.98) 48%, #03050c 100%);
           box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
         }
         .orrery-svg { width: 100%; display: block; }
+        .orrery-zoom {
+          position: absolute;
+          top: 8px;
+          right: 8px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          z-index: 2;
+        }
+        .orrery-zoom button {
+          width: 30px;
+          height: 30px;
+          border: none;
+          border-radius: 8px;
+          background: rgba(255,255,255,0.15);
+          color: white;
+          font-size: 1.1rem;
+          font-weight: bold;
+          cursor: pointer;
+          backdrop-filter: blur(4px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: background 0.2s;
+        }
+        .orrery-zoom button:hover { background: rgba(255,255,255,0.28); }
         .orrery-footer { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 12px 14px; }
         .orrery-pill {
           padding: 8px 12px;
@@ -1739,43 +1794,50 @@ class SolarSystemCard extends HTMLElement {
       <ha-card class="astro-card">
         <div class="astro-header">
           <ha-icon icon="mdi:orbit"></ha-icon>
-          <span class="astro-title">${esc(this._config.title || "Inner Solar System Orrery")}</span>
+          <span class="astro-title">${esc(this._config.title || "Solar System Orrery")}</span>
           ${this._config.show_date !== false ? `<span class="astro-badge">${esc(formatDate(date))}</span>` : ""}
         </div>
-        <div class="orrery">
-          <svg class="orrery-svg" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Solar system orrery">
-            ${stars}
-            ${this._config.show_orbits !== false ? names.map((name) => `<path d="${buildOrbitPath(name, scale, center)}" fill="none" stroke="${PLANET_ELEMENTS[name].color}" stroke-width="1.4" stroke-opacity="0.55"></path>`).join("") : ""}
-            <circle cx="${center}" cy="${center}" r="22" fill="rgba(255,202,40,0.14)"></circle>
-            <circle cx="${center}" cy="${center}" r="12" fill="#ffd54f"></circle>
-            <circle cx="${center}" cy="${center}" r="5" fill="#fff9c4"></circle>
-            ${positions.map((planet) => {
-              const px = center + planet.x * scale;
-              const py = center + planet.y * scale;
-              const pr = planet.name === "Mercury" ? 3.2 : planet.name === "Earth" ? 4.3 : planet.name === "Saturn" ? 5.2 : 4;
-              const label = this._config.show_labels !== false
-                ? `<text x="${(px + 8).toFixed(2)}" y="${(py - 8).toFixed(2)}" fill="${planet.color}" font-size="10" font-weight="600">${planet.name}</text>`
-                : "";
-              return `
-                <g>
-                  <circle cx="${px.toFixed(2)}" cy="${py.toFixed(2)}" r="${pr}" fill="${planet.color}"></circle>
-                  <circle cx="${px.toFixed(2)}" cy="${py.toFixed(2)}" r="${(pr + 2).toFixed(1)}" fill="none" stroke="${planet.color}" stroke-opacity="0.35"></circle>
-                  ${label}
-                </g>
-              `;
-            }).join("")}
-          </svg>
+        <div class="orrery-wrap">
+          <div class="orrery-zoom">
+            <button id="zoom-in">+</button>
+            <button id="zoom-out">−</button>
+          </div>
+          <div class="orrery">
+            <svg class="orrery-svg" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Solar system orrery">
+              ${stars}
+              ${this._config.show_orbits !== false ? names.map((name) => `<path d="${buildOrbitPath(name, scale, center)}" fill="none" stroke="${PLANET_ELEMENTS[name].color}" stroke-width="1.4" stroke-opacity="0.55"></path>`).join("") : ""}
+              <circle cx="${center}" cy="${center}" r="22" fill="rgba(255,202,40,0.14)"></circle>
+              <circle cx="${center}" cy="${center}" r="12" fill="#ffd54f"></circle>
+              <circle cx="${center}" cy="${center}" r="5" fill="#fff9c4"></circle>
+              ${positions.map((planet) => {
+                const px = center + planet.x * scale;
+                const py = center + planet.y * scale;
+                const pr = planet.name === "Mercury" ? 3.2 : planet.name === "Earth" ? 4.3 : planet.name === "Saturn" ? 5.2 : 4;
+                const label = this._config.show_labels !== false
+                  ? `<text x="${(px + 8).toFixed(2)}" y="${(py - 8).toFixed(2)}" fill="${planet.color}" font-size="10" font-weight="600">${planet.name}</text>`
+                  : "";
+                return `
+                  <g>
+                    <circle cx="${px.toFixed(2)}" cy="${py.toFixed(2)}" r="${pr}" fill="${planet.color}"></circle>
+                    <circle cx="${px.toFixed(2)}" cy="${py.toFixed(2)}" r="${(pr + 2).toFixed(1)}" fill="none" stroke="${planet.color}" stroke-opacity="0.35"></circle>
+                    ${label}
+                  </g>
+                `;
+              }).join("")}
+            </svg>
+          </div>
         </div>
         ${this._config.show_stats !== false ? `
           <div class="orrery-footer">
-            <span class="orrery-pill"><strong>Earth</strong>${positions.find((planet) => planet.name === "Earth").r.toFixed(3)} AU</span>
-            <span class="orrery-pill"><strong>Mercury</strong>${positions.find((planet) => planet.name === "Mercury").r.toFixed(3)} AU</span>
+            ${positions.map((p) => `<span class="orrery-pill"><strong>${p.name}</strong>${p.r.toFixed(3)} AU</span>`).join("")}
             <span class="orrery-pill"><strong>Scale</strong>Heliocentric</span>
-            <span class="orrery-pill"><strong>Planets</strong>${names.length}</span>
           </div>
         ` : ""}
       </ha-card>
     `;
+
+    this.shadowRoot.getElementById("zoom-in")?.addEventListener("click", () => this._zoomIn());
+    this.shadowRoot.getElementById("zoom-out")?.addEventListener("click", () => this._zoomOut());
   }
 
   getCardSize() { return 6; }
