@@ -5,9 +5,7 @@
     "@snfx-johaver"
   ],
   "config_flow": true,
-  "dependencies": [
-    "lovelace"
-  ],
+  "dependencies": [],
   "documentation": "https://github.com/snfx-johaver/home-assistant-astronomy-suite",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
