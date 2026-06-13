@@ -9,6 +9,7 @@ from pathlib import Path
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import DOMAIN, CONF_UPDATE_INTERVAL, CONF_ROCKET_API_KEY
@@ -21,6 +22,8 @@ PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.CAMERA]
 VERSION = "1.8.1"
 CARDS_FILENAME = "astronomy-cards.js"
 CARDS_LOCAL_URL = f"/local/community/astronomy-cards/astronomy-cards.js?v={VERSION}"
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:

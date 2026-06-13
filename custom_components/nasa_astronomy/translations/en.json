@@ -10,7 +10,7 @@
         },
         "data_description": {
           "api_key": "Enter your NASA API key (get one free at api.nasa.gov).",
-          "rocket_api_key": "Optionally enter your www.RocketLaunch.Live API key (or leave blank for free tier)."
+          "rocket_api_key": "Optional key for RocketLaunch.Live (leave blank for free tier)."
         }
       },
       "ephemeris": {
