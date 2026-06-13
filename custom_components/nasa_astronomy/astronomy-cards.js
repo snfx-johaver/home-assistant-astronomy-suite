@@ -140,7 +140,8 @@ const EDITOR_STYLES = `
   }
   .editor ha-entity-picker,
   .editor ha-textfield,
-  .editor .native-select {
+  .editor .native-select,
+  .editor .astro-input-wrap {
     display: block;
     width: 100%;
   }
@@ -170,6 +171,32 @@ const EDITOR_STYLES = `
     color: var(--primary-text-color);
     font: inherit;
     outline: none;
+  }
+  .astro-input-wrap {
+    position: relative;
+  }
+  .astro-input-wrap label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--secondary-text-color);
+    margin-bottom: 4px;
+  }
+  .astro-input-wrap input {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid var(--divider-color);
+    background: var(--card-background-color, var(--secondary-background-color));
+    color: var(--primary-text-color);
+    font: inherit;
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .astro-input-wrap input:focus {
+    border-color: var(--primary-color);
   }
 `;
 
@@ -535,14 +562,11 @@ class AstroEditorBase extends HTMLElement {
   _bindText(id, key, transform = (value) => value) {
     const field = this.shadowRoot.getElementById(id);
     if (!field) return;
-    const handler = (event) => {
-      const val = event.detail?.value ?? event.target?.value ?? "";
-      this._setValue(key, transform(val));
-    };
-    field.addEventListener("change", handler);
-    field.addEventListener("input", handler);
-    field.addEventListener("value-changed", (event) => {
-      this._setValue(key, transform(event.detail.value || ""));
+    field.addEventListener("input", (event) => {
+      this._setValue(key, transform(event.target.value));
+    });
+    field.addEventListener("change", (event) => {
+      this._setValue(key, transform(event.target.value));
     });
   }
 
@@ -584,8 +608,8 @@ class ApodCardEditor extends AstroEditorBase {
   _editorTemplate() {
     return `
       <ha-entity-picker id="entity" label="APOD entity"></ha-entity-picker>
-      <ha-textfield id="title" label="Card title (optional)"></ha-textfield>
-      <ha-textfield id="image_height" label="Image height" type="number"></ha-textfield>
+      <div class="astro-input-wrap"><label for="title">Card title</label><input type="text" id="title" placeholder="Leave empty for default" /></div>
+      <div class="astro-input-wrap"><label for="image_height">Image height (px)</label><input type="number" id="image_height" min="160" max="1200" /></div>
       <label class="switch-row"><span>Show explanation</span><ha-switch id="show_explanation"></ha-switch></label>
       <label class="switch-row"><span>Show copyright</span><ha-switch id="show_copyright"></ha-switch></label>
       <label class="switch-row"><span>Show HD link</span><ha-switch id="show_hd_link"></ha-switch></label>
@@ -815,8 +839,8 @@ class NeoThreatCardEditor extends AstroEditorBase {
     return `
       <ha-entity-picker id="entity" label="NEO count entity"></ha-entity-picker>
       <ha-entity-picker id="largest_entity" label="Largest NEO entity"></ha-entity-picker>
-      <ha-textfield id="title" label="Card title"></ha-textfield>
-      <ha-textfield id="max_items" label="Max items shown" type="number"></ha-textfield>
+      <div class="astro-input-wrap"><label for="title">Card title</label><input type="text" id="title" placeholder="Leave empty for default" /></div>
+      <div class="astro-input-wrap"><label for="max_items">Max items shown</label><input type="number" id="max_items" min="1" max="20" /></div>
       <label class="switch-row"><span>Show hazardous only</span><ha-switch id="show_hazardous_only"></ha-switch></label>
       <label class="switch-row"><span>Show statistics</span><ha-switch id="show_stats"></ha-switch></label>
       <label class="switch-row"><span>Show velocity</span><ha-switch id="show_velocity"></ha-switch></label>
@@ -1006,13 +1030,13 @@ class SolarActivityCardEditor extends AstroEditorBase {
 
   _editorTemplate() {
     return `
+      <div class="astro-input-wrap"><label for="title">Card title</label><input type="text" id="title" placeholder="Leave empty for default" /></div>
       <ha-entity-picker id="cme_entity" label="CME entity"></ha-entity-picker>
       <ha-entity-picker id="flare_entity" label="Solar flare entity"></ha-entity-picker>
       <ha-entity-picker id="storm_entity" label="Geomagnetic storm entity"></ha-entity-picker>
       <ha-entity-picker id="kp_entity" label="Planetary KP entity"></ha-entity-picker>
       <ha-entity-picker id="sdo_entity" label="SDO sun camera entity"></ha-entity-picker>
       <ha-entity-picker id="soho_entity" label="SOHO sun camera entity"></ha-entity-picker>
-      <ha-textfield id="title" label="Card title (optional)"></ha-textfield>
       <label class="switch-row"><span>Show CMEs</span><ha-switch id="show_cme"></ha-switch></label>
       <label class="switch-row"><span>Show flares</span><ha-switch id="show_flares"></ha-switch></label>
       <label class="switch-row"><span>Show storms</span><ha-switch id="show_storms"></ha-switch></label>
@@ -1366,7 +1390,7 @@ class AstroHorizonCardEditor extends AstroEditorBase {
   _editorTemplate() {
     return `
       <ha-entity-picker id="sun_entity" label="Sun entity"></ha-entity-picker>
-      <ha-textfield id="title" label="Card title (optional)"></ha-textfield>
+      <div class="astro-input-wrap"><label for="title">Card title</label><input type="text" id="title" placeholder="Leave empty for default" /></div>
       <label class="switch-row"><span>Show elevation</span><ha-switch id="show_elevation"></ha-switch></label>
       <label class="switch-row"><span>Show azimuth</span><ha-switch id="show_azimuth"></ha-switch></label>
       <label class="switch-row"><span>Show times</span><ha-switch id="show_times"></ha-switch></label>
@@ -1558,7 +1582,7 @@ class AstroLunarCardEditor extends AstroEditorBase {
   _editorTemplate() {
     return `
       <ha-entity-picker id="moon_entity" label="Moon phase entity"></ha-entity-picker>
-      <ha-textfield id="title" label="Card title (optional)"></ha-textfield>
+      <div class="astro-input-wrap"><label for="title">Card title</label><input type="text" id="title" placeholder="Leave empty for default" /></div>
       <label class="switch-row"><span>Show next phases</span><ha-switch id="show_next_phases"></ha-switch></label>
       <label class="switch-row"><span>Show illumination</span><ha-switch id="show_illumination"></ha-switch></label>
     `;
@@ -1724,7 +1748,7 @@ class SolarSystemCardEditor extends AstroEditorBase {
 
   _editorTemplate() {
     return `
-      <ha-textfield id="title" label="Card title (optional)"></ha-textfield>
+      <div class="astro-input-wrap"><label for="title">Card title</label><input type="text" id="title" placeholder="Leave empty for default" /></div>
       <label class="switch-row"><span>Show labels</span><ha-switch id="show_labels"></ha-switch></label>
       <label class="switch-row"><span>Show orbits</span><ha-switch id="show_orbits"></ha-switch></label>
       <label class="switch-row"><span>Show Mercury</span><ha-switch id="show_mercury"></ha-switch></label>
@@ -1927,9 +1951,9 @@ class RocketLaunchCardEditor extends AstroEditorBase {
 
   _editorTemplate() {
     return `
-      <ha-textfield id="entity_prefix" label="Entity prefix"></ha-textfield>
-      <ha-textfield id="title" label="Card title (optional)"></ha-textfield>
-      <ha-textfield id="max_launches" label="Max launches (1-5)" type="number"></ha-textfield>
+      <div class="astro-input-wrap"><label for="entity_prefix">Entity prefix</label><input type="text" id="entity_prefix" /></div>
+      <div class="astro-input-wrap"><label for="title">Card title</label><input type="text" id="title" placeholder="Leave empty for default" /></div>
+      <div class="astro-input-wrap"><label for="max_launches">Max launches (1-5)</label><input type="number" id="max_launches" min="1" max="5" /></div>
       <label class="switch-row"><span>Show countdown</span><ha-switch id="show_countdown"></ha-switch></label>
       <label class="switch-row"><span>Show weather</span><ha-switch id="show_weather"></ha-switch></label>
       <label class="switch-row"><span>Show tags</span><ha-switch id="show_tags"></ha-switch></label>
@@ -2162,8 +2186,8 @@ class IssTrackerCardEditor extends AstroEditorBase {
   _editorTemplate() {
     return `
       <ha-entity-picker id="entity" label="ISS position entity"></ha-entity-picker>
-      <ha-textfield id="title" label="Card title"></ha-textfield>
-      <ha-textfield id="stream_url" label="ISS livestream URL"></ha-textfield>
+      <div class="astro-input-wrap"><label for="title">Card title</label><input type="text" id="title" placeholder="Leave empty for default" /></div>
+      <div class="astro-input-wrap"><label for="stream_url">ISS livestream URL</label><input type="text" id="stream_url" /></div>
       <label class="switch-row"><span>Show map</span><ha-switch id="show_map"></ha-switch></label>
       <label class="switch-row"><span>Show trail</span><ha-switch id="show_trail"></ha-switch></label>
       <label class="switch-row"><span>Show stream button</span><ha-switch id="show_stream_button"></ha-switch></label>
@@ -2414,8 +2438,8 @@ class EarthObservationCardEditor extends AstroEditorBase {
       <ha-entity-picker id="himawari_entity" label="Himawari-8 camera entity"></ha-entity-picker>
       <ha-entity-picker id="sdo_entity" label="SDO sun camera entity"></ha-entity-picker>
       <ha-entity-picker id="soho_entity" label="SOHO sun camera entity"></ha-entity-picker>
-      <ha-textfield id="title" label="Card title"></ha-textfield>
-      <ha-textfield id="refresh_interval" label="Refresh interval (minutes)" type="number"></ha-textfield>
+      <div class="astro-input-wrap"><label for="title">Card title</label><input type="text" id="title" placeholder="Leave empty for default" /></div>
+      <div class="astro-input-wrap"><label for="refresh_interval">Refresh interval (minutes)</label><input type="number" id="refresh_interval" min="1" max="60" /></div>
       <label class="switch-row"><span>Show EPIC</span><ha-switch id="show_epic"></ha-switch></label>
       <label class="switch-row"><span>Show GOES-16</span><ha-switch id="show_goes"></ha-switch></label>
     `;
