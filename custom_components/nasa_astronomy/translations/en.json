@@ -48,6 +48,20 @@
           "body_uranus": "Creates sensors for Uranus's position and visibility.",
           "body_neptune": "Creates sensors for Neptune's position and visibility."
         }
+      },
+      "deepsky": {
+        "title": "Deep-Sky Objects",
+        "description": "Configure deep-sky object catalog. Computes live positions for Messier/NGC targets using your location. No API needed.",
+        "data": {
+          "enabled": "Enable Deep-Sky Objects",
+          "min_altitude": "Minimum Altitude (° above horizon to count as visible)",
+          "max_objects": "Max Objects (number of catalog entries to track)"
+        },
+        "data_description": {
+          "enabled": "Creates sensors for deep-sky telescope targets (galaxies, nebulae, clusters).",
+          "min_altitude": "Objects below this altitude are marked as not visible (default 15°).",
+          "max_objects": "How many catalog objects to create sensors for (5–30, default 30)."
+        }
       }
     },
     "error": {
@@ -63,7 +77,8 @@
       "init": {
         "menu_options": {
           "api_keys": "API Keys (NASA & RocketLaunch.Live)",
-          "ephemeris": "Ephemeris Provider (Planetary Positions)"
+          "ephemeris": "Ephemeris Provider (Planetary Positions)",
+          "deepsky": "Deep-Sky Objects (Telescope Targets)"
         }
       },
       "api_keys": {
@@ -112,6 +127,20 @@
           "body_saturn": "Creates sensors for Saturn's position and visibility.",
           "body_uranus": "Creates sensors for Uranus's position and visibility.",
           "body_neptune": "Creates sensors for Neptune's position and visibility."
+        }
+      },
+      "deepsky": {
+        "title": "Deep-Sky Objects",
+        "description": "Configure deep-sky object catalog. Computes live positions for Messier/NGC targets. Pure local calculation — no API needed.",
+        "data": {
+          "enabled": "Enable Deep-Sky Objects",
+          "min_altitude": "Minimum Altitude (°)",
+          "max_objects": "Max Objects"
+        },
+        "data_description": {
+          "enabled": "Creates sensors for deep-sky telescope targets (galaxies, nebulae, clusters).",
+          "min_altitude": "Objects below this altitude are marked as not visible (default 15°).",
+          "max_objects": "How many catalog objects to create sensors for (5–30, default 30)."
         }
       }
     }

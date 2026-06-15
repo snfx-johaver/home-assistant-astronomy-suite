@@ -21,7 +21,9 @@ PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.CAMERA]
 
 VERSION = "1.8.1"
 CARDS_FILENAME = "astronomy-cards.js"
+DEEPSKY_CARDS_FILENAME = "deepsky-cards.js"
 CARDS_LOCAL_URL = f"/local/community/astronomy-cards/astronomy-cards.js?v={VERSION}"
+DEEPSKY_CARDS_LOCAL_URL = f"/local/community/astronomy-cards/deepsky-cards.js?v={VERSION}"
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -40,6 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Deploy cards to www/ and register as Lovelace resource
     await hass.async_add_executor_job(_deploy_cards_to_www, hass)
     await _async_register_cards_resource(hass)
+    await _async_register_deepsky_cards_resource(hass)
 
     session = async_get_clientsession(hass)
     api_key = entry.data[CONF_API_KEY]
@@ -104,6 +107,15 @@ def _deploy_cards_to_www(hass: HomeAssistant) -> None:
         _LOGGER.info("Deployed world-map.png to %s", map_dest)
     else:
         _LOGGER.warning("world-map.png not found: %s", map_source)
+
+    # Deploy deepsky-cards.js
+    deepsky_source = Path(__file__).parent / DEEPSKY_CARDS_FILENAME
+    if deepsky_source.is_file():
+        deepsky_dest = www_dir / DEEPSKY_CARDS_FILENAME
+        shutil.copy2(str(deepsky_source), str(deepsky_dest))
+        _LOGGER.info("Deployed %s to %s", DEEPSKY_CARDS_FILENAME, deepsky_dest)
+    else:
+        _LOGGER.warning("Deepsky cards JS not found: %s", deepsky_source)
 
 
 async def _async_register_cards_resource(hass: HomeAssistant) -> None:
@@ -184,3 +196,61 @@ def _register_resource_via_storage(hass: HomeAssistant) -> None:
     content["data"]["items"] = items
     storage_path.write_text(json.dumps(content, indent=2))
     _LOGGER.info("Registered Lovelace resource via storage: %s", CARDS_LOCAL_URL)
+
+
+async def _async_register_deepsky_cards_resource(hass: HomeAssistant) -> None:
+    """Register deepsky-cards.js as a Lovelace resource."""
+    try:
+        lovelace_data = hass.data.get("lovelace")
+        if lovelace_data is not None:
+            resources = lovelace_data.get("resources")
+            if resources is not None:
+                for resource in resources.async_items():
+                    url = resource.get("url", "")
+                    if "deepsky-cards" in url:
+                        if url != DEEPSKY_CARDS_LOCAL_URL:
+                            await resources.async_update_item(
+                                resource["id"],
+                                {"url": DEEPSKY_CARDS_LOCAL_URL, "res_type": "module"},
+                            )
+                            _LOGGER.info("Updated deepsky-cards resource URL to: %s", DEEPSKY_CARDS_LOCAL_URL)
+                        return
+                await resources.async_create_item(
+                    {"res_type": "module", "url": DEEPSKY_CARDS_LOCAL_URL}
+                )
+                _LOGGER.info("Registered deepsky-cards Lovelace resource: %s", DEEPSKY_CARDS_LOCAL_URL)
+                return
+    except Exception as err:
+        _LOGGER.debug("API deepsky-cards resource registration failed: %s", err)
+
+    # Fallback: storage file
+    await hass.async_add_executor_job(_register_deepsky_resource_via_storage, hass)
+
+
+def _register_deepsky_resource_via_storage(hass: HomeAssistant) -> None:
+    """Fallback: register deepsky-cards.js resource via .storage/lovelace_resources."""
+    import json
+
+    storage_path = Path(hass.config.path(".storage")) / "lovelace_resources"
+    if not storage_path.is_file():
+        return  # Main resource registration creates the file
+
+    content = json.loads(storage_path.read_text())
+    items = content.get("data", {}).get("items", [])
+
+    for item in items:
+        if "deepsky-cards" in item.get("url", ""):
+            if item["url"] != DEEPSKY_CARDS_LOCAL_URL:
+                item["url"] = DEEPSKY_CARDS_LOCAL_URL
+                storage_path.write_text(json.dumps(content, indent=2))
+                _LOGGER.info("Updated deepsky-cards URL in storage: %s", DEEPSKY_CARDS_LOCAL_URL)
+            return
+
+    items.append({
+        "url": DEEPSKY_CARDS_LOCAL_URL,
+        "type": "module",
+        "id": "astronomy_space_suite_deepsky_cards",
+    })
+    content["data"]["items"] = items
+    storage_path.write_text(json.dumps(content, indent=2))
+    _LOGGER.info("Registered deepsky-cards via storage: %s", DEEPSKY_CARDS_LOCAL_URL)
