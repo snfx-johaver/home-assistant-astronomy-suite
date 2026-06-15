@@ -1,4 +1,4 @@
-/**
+console.info('deepsky-cards.js loading...'); /**
  * Deep Sky Cards Bundle
  * Version: 1.0.0
  *
@@ -83,9 +83,9 @@ class NightSkyHighlights2Card extends HTMLElement {
   static getConfigElement() { return document.createElement("night-sky-highlights-2-card-editor"); }
   static getStubConfig() {
     return { title: "Night Sky Highlights 2", entities: {
-      best_planet: "sensor.best_planet_tonight", best_dso: "sensor.best_dso_tonight",
-      meteor_shower: "sensor.meteor_shower_activity", iss: "sensor.iss_next_pass",
-      comet: "sensor.brightest_comet", events: "sensor.astronomy_special_events",
+      best_planet: "sensor.nasa_astronomy_deepsky_best_tonight", best_dso: "sensor.nasa_astronomy_deepsky_best_tonight",
+      meteor_shower: "sensor.astronomy_space_suite_neo_count_today", iss: "sensor.astronomy_space_suite_iss_position",
+      comet: "sensor.astronomy_space_suite_planetary_kp_index", events: "sensor.astronomy_space_suite_solar_flares",
     }};
   }
   setConfig(config) {

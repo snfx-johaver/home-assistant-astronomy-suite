@@ -594,7 +594,7 @@ class AstroEditorBase extends HTMLElement {
 class ApodCardEditor extends AstroEditorBase {
   setConfig(config) {
     super.setConfig({
-      entity: "sensor.nasa_astronomy_suite_apod",
+      entity: "sensor.astronomy_space_suite_apod",
       show_explanation: true,
       show_copyright: true,
       show_hd_link: false,
@@ -647,7 +647,7 @@ class ApodCard extends HTMLElement {
   static getConfigElement() { return document.createElement("apod-card-editor"); }
   static getStubConfig() {
     return {
-      entity: "sensor.nasa_astronomy_suite_apod",
+      entity: "sensor.astronomy_space_suite_apod",
       show_explanation: true,
       show_copyright: true,
       show_hd_link: false,
@@ -833,8 +833,8 @@ class ApodCard extends HTMLElement {
 class NeoThreatCardEditor extends AstroEditorBase {
   setConfig(config) {
     super.setConfig({
-      entity: "sensor.nasa_astronomy_suite_neo_count_today",
-      largest_entity: "sensor.nasa_astronomy_suite_largest_neo",
+      entity: "sensor.astronomy_space_suite_neo_count_today",
+      largest_entity: "sensor.astronomy_space_suite_largest_neo",
       max_items: 5,
       show_hazardous_only: false,
       show_stats: true,
@@ -888,8 +888,8 @@ class NeoThreatCard extends HTMLElement {
   static getConfigElement() { return document.createElement("neo-threat-card-editor"); }
   static getStubConfig() {
     return {
-      entity: "sensor.nasa_astronomy_suite_neo_count_today",
-      largest_entity: "sensor.nasa_astronomy_suite_largest_neo",
+      entity: "sensor.astronomy_space_suite_neo_count_today",
+      largest_entity: "sensor.astronomy_space_suite_largest_neo",
       max_items: 5,
       show_hazardous_only: false,
       show_stats: true,
@@ -1019,10 +1019,10 @@ class NeoThreatCard extends HTMLElement {
 class SolarActivityCardEditor extends AstroEditorBase {
   setConfig(config) {
     super.setConfig({
-      cme_entity: "sensor.nasa_astronomy_suite_coronal_mass_ejections",
-      flare_entity: "sensor.nasa_astronomy_suite_solar_flares",
-      storm_entity: "sensor.nasa_astronomy_suite_geomagnetic_storms",
-      kp_entity: "sensor.nasa_astronomy_suite_planetary_kp_index",
+      cme_entity: "sensor.astronomy_space_suite_coronal_mass_ejections",
+      flare_entity: "sensor.astronomy_space_suite_solar_flares",
+      storm_entity: "sensor.astronomy_space_suite_geomagnetic_storms",
+      kp_entity: "sensor.astronomy_space_suite_planetary_kp_index",
       sdo_entity: "",
       soho_entity: "",
       title: "",
@@ -1096,10 +1096,10 @@ class SolarActivityCard extends HTMLElement {
   static getConfigElement() { return document.createElement("solar-activity-card-editor"); }
   static getStubConfig() {
     return {
-      cme_entity: "sensor.nasa_astronomy_suite_coronal_mass_ejections",
-      flare_entity: "sensor.nasa_astronomy_suite_solar_flares",
-      storm_entity: "sensor.nasa_astronomy_suite_geomagnetic_storms",
-      kp_entity: "sensor.nasa_astronomy_suite_planetary_kp_index",
+      cme_entity: "sensor.astronomy_space_suite_coronal_mass_ejections",
+      flare_entity: "sensor.astronomy_space_suite_solar_flares",
+      storm_entity: "sensor.astronomy_space_suite_geomagnetic_storms",
+      kp_entity: "sensor.astronomy_space_suite_planetary_kp_index",
       sdo_entity: "",
       soho_entity: "",
       title: "",
@@ -1949,7 +1949,7 @@ class SolarSystemCard extends HTMLElement {
 class RocketLaunchCardEditor extends AstroEditorBase {
   setConfig(config) {
     super.setConfig({
-      entity_prefix: "sensor.nasa_astronomy_suite_rocket_launch",
+      entity_prefix: "sensor.astronomy_space_suite_rocket_launch",
       max_launches: 5,
       title: "",
       show_countdown: true,
@@ -1971,14 +1971,14 @@ class RocketLaunchCardEditor extends AstroEditorBase {
   }
 
   _setupListeners() {
-    this._bindText("entity_prefix", "entity_prefix", (value) => value.trim() || "sensor.nasa_astronomy_suite_rocket_launch");
+    this._bindText("entity_prefix", "entity_prefix", (value) => value.trim() || "sensor.astronomy_space_suite_rocket_launch");
     this._bindText("title", "title", (value) => value.trim());
     this._bindText("max_launches", "max_launches", (value) => clamp(parseInt(value, 10) || 5, 1, 5));
     ["show_countdown", "show_weather", "show_tags"].forEach((key) => this._bindSwitch(key, key));
   }
 
   _syncValues() {
-    setTextValue(this.shadowRoot, "entity_prefix", this._config.entity_prefix || "sensor.nasa_astronomy_suite_rocket_launch");
+    setTextValue(this.shadowRoot, "entity_prefix", this._config.entity_prefix || "sensor.astronomy_space_suite_rocket_launch");
     setTextValue(this.shadowRoot, "title", this._config.title || "");
     setTextValue(this.shadowRoot, "max_launches", this._config.max_launches || 5);
     setSwitchValue(this.shadowRoot, "show_countdown", this._config.show_countdown !== false);
@@ -1997,7 +1997,7 @@ class RocketLaunchCard extends HTMLElement {
   static getConfigElement() { return document.createElement("rocket-launch-card-editor"); }
   static getStubConfig() {
     return {
-      entity_prefix: "sensor.nasa_astronomy_suite_rocket_launch",
+      entity_prefix: "sensor.astronomy_space_suite_rocket_launch",
       max_launches: 5,
       title: "",
       show_countdown: true,
@@ -2051,7 +2051,7 @@ class RocketLaunchCard extends HTMLElement {
 
   _render() {
     if (!this._hass) return;
-    const prefix = this._config.entity_prefix || "sensor.nasa_astronomy_suite_rocket_launch";
+    const prefix = this._config.entity_prefix || "sensor.astronomy_space_suite_rocket_launch";
     const maxLaunches = clamp(parseInt(this._config.max_launches, 10) || 5, 1, 5);
     const launches = [];
 
@@ -2183,7 +2183,7 @@ class RocketLaunchCard extends HTMLElement {
 class IssTrackerCardEditor extends AstroEditorBase {
   setConfig(config) {
     super.setConfig({
-      entity: "sensor.nasa_astronomy_suite_iss_position",
+      entity: "sensor.astronomy_space_suite_iss_position",
       title: "ISS Tracker",
       stream_url: "https://www.youtube.com/watch?v=uwXgcTc8oY8",
       show_map: true,
@@ -2212,7 +2212,7 @@ class IssTrackerCardEditor extends AstroEditorBase {
   }
 
   _syncValues() {
-    setPickerValue(this.shadowRoot, "entity", this._hass, this._config.entity || "sensor.nasa_astronomy_suite_iss_position");
+    setPickerValue(this.shadowRoot, "entity", this._hass, this._config.entity || "sensor.astronomy_space_suite_iss_position");
     setTextValue(this.shadowRoot, "title", this._config.title || "ISS Tracker");
     setTextValue(this.shadowRoot, "stream_url", this._config.stream_url || "https://www.youtube.com/watch?v=uwXgcTc8oY8");
     setSwitchValue(this.shadowRoot, "show_map", this._config.show_map !== false);
@@ -2234,7 +2234,7 @@ class IssTrackerCard extends HTMLElement {
   static getConfigElement() { return document.createElement("iss-tracker-card-editor"); }
   static getStubConfig() {
     return {
-      entity: "sensor.nasa_astronomy_suite_iss_position",
+      entity: "sensor.astronomy_space_suite_iss_position",
       title: "ISS Tracker",
       stream_url: "https://www.youtube.com/watch?v=uwXgcTc8oY8",
       show_map: true,
@@ -2273,7 +2273,7 @@ class IssTrackerCard extends HTMLElement {
   }
 
   _getTrailKey() {
-    return `astronomy-cards:iss-trail:${this._config.entity || "sensor.nasa_astronomy_suite_iss_position"}`;
+    return `astronomy-cards:iss-trail:${this._config.entity || "sensor.astronomy_space_suite_iss_position"}`;
   }
 
   _loadTrail() {
@@ -2455,12 +2455,12 @@ class IssTrackerCard extends HTMLElement {
 class EarthObservationCardEditor extends AstroEditorBase {
   setConfig(config) {
     super.setConfig({
-      epic_entity: "camera.nasa_astronomy_suite_epic_earth",
-      goes_entity: "camera.nasa_astronomy_suite_goes_16_earth",
-      goes18_entity: "camera.nasa_astronomy_suite_goes_18_earth",
-      himawari_entity: "camera.nasa_astronomy_suite_himawari8_earth",
-      sdo_entity: "camera.nasa_astronomy_suite_sdo_sun",
-      soho_entity: "camera.nasa_astronomy_suite_soho_sun",
+      epic_entity: "camera.astronomy_space_suite_epic_earth",
+      goes_entity: "camera.astronomy_space_suite_goes_16_earth",
+      goes18_entity: "camera.astronomy_space_suite_goes_18_earth",
+      himawari_entity: "camera.astronomy_space_suite_himawari8_earth",
+      sdo_entity: "camera.astronomy_space_suite_sdo_sun",
+      soho_entity: "camera.astronomy_space_suite_soho_sun",
       title: "Earth Observation",
       show_epic: true,
       show_goes: true,
@@ -2492,12 +2492,12 @@ class EarthObservationCardEditor extends AstroEditorBase {
   }
 
   _syncValues() {
-    setPickerValue(this.shadowRoot, "epic_entity", this._hass, this._config.epic_entity || "camera.nasa_astronomy_suite_epic_earth");
-    setPickerValue(this.shadowRoot, "goes_entity", this._hass, this._config.goes_entity || "camera.nasa_astronomy_suite_goes_16_earth");
-    setPickerValue(this.shadowRoot, "goes18_entity", this._hass, this._config.goes18_entity || "camera.nasa_astronomy_suite_goes_18_earth");
-    setPickerValue(this.shadowRoot, "himawari_entity", this._hass, this._config.himawari_entity || "camera.nasa_astronomy_suite_himawari8_earth");
-    setPickerValue(this.shadowRoot, "sdo_entity", this._hass, this._config.sdo_entity || "camera.nasa_astronomy_suite_sdo_sun");
-    setPickerValue(this.shadowRoot, "soho_entity", this._hass, this._config.soho_entity || "camera.nasa_astronomy_suite_soho_sun");
+    setPickerValue(this.shadowRoot, "epic_entity", this._hass, this._config.epic_entity || "camera.astronomy_space_suite_epic_earth");
+    setPickerValue(this.shadowRoot, "goes_entity", this._hass, this._config.goes_entity || "camera.astronomy_space_suite_goes_16_earth");
+    setPickerValue(this.shadowRoot, "goes18_entity", this._hass, this._config.goes18_entity || "camera.astronomy_space_suite_goes_18_earth");
+    setPickerValue(this.shadowRoot, "himawari_entity", this._hass, this._config.himawari_entity || "camera.astronomy_space_suite_himawari8_earth");
+    setPickerValue(this.shadowRoot, "sdo_entity", this._hass, this._config.sdo_entity || "camera.astronomy_space_suite_sdo_sun");
+    setPickerValue(this.shadowRoot, "soho_entity", this._hass, this._config.soho_entity || "camera.astronomy_space_suite_soho_sun");
     setTextValue(this.shadowRoot, "title", this._config.title || "Earth Observation");
     setTextValue(this.shadowRoot, "refresh_interval", this._config.refresh_interval || 5);
     setSwitchValue(this.shadowRoot, "show_epic", this._config.show_epic !== false);
@@ -2518,12 +2518,12 @@ class EarthObservationCard extends HTMLElement {
   static getConfigElement() { return document.createElement("earth-observation-card-editor"); }
   static getStubConfig() {
     return {
-      epic_entity: "camera.nasa_astronomy_suite_epic_earth",
-      goes_entity: "camera.nasa_astronomy_suite_goes_16_earth",
-      goes18_entity: "camera.nasa_astronomy_suite_goes_18_earth",
-      himawari_entity: "camera.nasa_astronomy_suite_himawari8_earth",
-      sdo_entity: "camera.nasa_astronomy_suite_sdo_sun",
-      soho_entity: "camera.nasa_astronomy_suite_soho_sun",
+      epic_entity: "camera.astronomy_space_suite_epic_earth",
+      goes_entity: "camera.astronomy_space_suite_goes_16_earth",
+      goes18_entity: "camera.astronomy_space_suite_goes_18_earth",
+      himawari_entity: "camera.astronomy_space_suite_himawari8_earth",
+      sdo_entity: "camera.astronomy_space_suite_sdo_sun",
+      soho_entity: "camera.astronomy_space_suite_soho_sun",
       title: "Earth Observation",
       show_epic: true,
       show_goes: true,
