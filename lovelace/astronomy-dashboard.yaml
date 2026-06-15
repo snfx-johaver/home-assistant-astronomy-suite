@@ -1,273 +1,367 @@
-# ================================================================
-# �� Astronomy Space Suite Dashboard
-# ================================================================
-# This dashboard is automatically available after installing the
-# integration. No manual setup required.
+# ═══════════════════════════════════════════════════════════════════════════════
+# Astronomy Space Suite - Example Dashboard
+# ═══════════════════════════════════════════════════════════════════════════════
+# This is the recommended dashboard configuration for the Astronomy Space Suite.
+# Import as a new dashboard in HA: Settings > Dashboards > Add > From YAML
 #
-# Optional: Add as a YAML dashboard in configuration.yaml:
-#   lovelace:
-#     dashboards:
-#       astronomy:
-#         mode: yaml
-#         title: "🔭 Astronomy"
-#         icon: mdi:telescope
-#         show_in_sidebar: true
-#         filename: lovelace/astronomy-dashboard.yaml
-# ================================================================
-
-title: "🔭 Astronomy Space Suite"
-views:
-
-  # ═══════════════════════════════════════════════════════════════
-  # VIEW 1: Overview — The hero view
-  # ═══════════════════════════════════════════════════════════════
+# Prerequisites:
+#   - Astronomy Space Suite integration configured
+#   - Mushroom cards (HACS)
+#   - astronomy-cards.js resource loaded
+#   - deepsky-cards.js resource loaded
+# ═══════════════════════════════════════════════════════════════════════════════
+title: 🔭 Astronomy Space Suite
+views: 
   - title: Overview
-    path: overview
-    icon: mdi:telescope
-    cards:
-      # Row 1: APOD full-width
-      - type: custom:apod-card
-        entity: sensor.nasa_astronomy_suite_apod
-        show_explanation: true
-        show_copyright: true
+    icon: "mdi:telescope"
+    cards: 
 
-      # Row 2: Quick stats
-      - type: horizontal-stack
-        cards:
-          - type: custom:mushroom-entity-card
-            entity: sensor.nasa_astronomy_suite_neo_count_today
-            name: NEOs Today
-            icon: mdi:meteor
-            icon_color: blue
-          - type: custom:mushroom-entity-card
-            entity: sensor.nasa_astronomy_suite_planetary_kp_index
-            name: KP Index
-            icon: mdi:aurora
-            icon_color: green
-          - type: custom:mushroom-entity-card
-            entity: sensor.nasa_astronomy_suite_coronal_mass_ejections
-            name: CMEs (7d)
-            icon: mdi:white-balance-sunny
-            icon_color: orange
-          - type: custom:mushroom-entity-card
-            entity: sensor.nasa_astronomy_suite_solar_flares
-            name: Flares (7d)
-            icon: mdi:flare
-            icon_color: yellow
+    type: sections
+    sections: 
+      - type: grid
+        cards: 
+          - type: horizontal-stack
+            cards: 
+              - type: "custom:mushroom-entity-card"
+                entity: sensor.astronomy_space_suite_neo_count_today
+                name: NEOs Today
+                icon: "mdi:meteor"
+                icon_color: blue
+                layout: vertical
+              - type: "custom:mushroom-entity-card"
+                entity: sensor.astronomy_space_suite_planetary_kp_index
+                name: KP Index
+                icon: "mdi:aurora"
+                icon_color: green
+                layout: vertical
+              - type: "custom:mushroom-entity-card"
+                entity: sensor.astronomy_space_suite_coronal_mass_ejections
+                name: CMEs (7d)
+                icon: "mdi:white-balance-sunny"
+                icon_color: orange
+                layout: vertical
+              - type: "custom:mushroom-entity-card"
+                entity: sensor.astronomy_space_suite_solar_flares
+                name: Flares (7d)
+                icon: "mdi:flare"
+                icon_color: yellow
+                layout: vertical
 
-      # Row 3: Solar System + Rocket Launches side by side
-      - type: horizontal-stack
-        cards:
-          - type: custom:solar-system-card
+          - entity: sensor.astronomy_space_suite_apod
+            show_explanation: true
+            show_copyright: true
+            show_hd_link: true
+            show_date: true
+            title: ""
+            image_height: 400
+            type: "custom:apod-card"
+
+      - type: grid
+        cards: 
+          - type: heading
+            heading: "Solar system & NEO objects"
+            heading_style: subtitle
+          - type: "custom:solar-system-card"
             title: Solar System
             show_jupiter: true
             show_saturn: true
-          - type: custom:rocket-launch-card
-            entity_prefix: sensor.nasa_astronomy_suite_rocket_launch
+            show_orbits: true
+          - entity: sensor.astronomy_space_suite_neo_count_today
+            largest_entity: sensor.astronomy_space_suite_largest_neo
+            max_items: 10
+            show_hazardous_only: false
+            show_stats: true
+            title: Near Earth Objects
+            show_velocity: true
+            show_diameter: true
+            type: "custom:neo-threat-card"
+
+      - type: grid
+        cards: 
+          - type: heading
+            heading: Satellites
+            heading_style: subtitle
+          - entity: sensor.astronomy_space_suite_iss_position
+            title: International Space Station
+            stream_url: "https://www.youtube.com/watch?v=uwXgcTc8oY8"
+            show_map: true
+            show_trail: true
+            show_stream_button: true
+            type: "custom:iss-tracker-card"
+          - entity_prefix: sensor.astronomy_space_suite_rocket_launch
             max_launches: 5
             title: Upcoming Launches
+            show_countdown: true
+            show_weather: true
+            show_tags: true
+            type: "custom:rocket-launch-card"
 
-  # ═══════════════════════════════════════════════════════════════
-  # VIEW 2: Space Weather — Solar activity & aurora
-  # ═══════════════════════════════════════════════════════════════
+      - type: grid
+        cards: 
+          - type: heading
+            heading: Earth
+            heading_style: subtitle
+          - type: "custom:earth-observation-card"
+            title: "Earth & Sun Observation"
+            epic_entity: camera.astronomy_space_suite_epic_earth
+            goes_entity: camera.astronomy_space_suite_goes_16_earth
+            goes18_entity: camera.astronomy_space_suite_goes_18_earth
+            himawari_entity: camera.astronomy_space_suite_himawari_8_earth
+            sdo_entity: camera.astronomy_space_suite_sdo_sun
+            soho_entity: camera.astronomy_space_suite_soho_sun
+            refresh_interval: 5
+          - type: "custom:astro-horizon-card"
+            sun_entity: sun.sun
+            moon_entity: sensor.moon_phase
+            title: Horizon
+            show_moon: true
+            show_sunrise_sunset: true
+            show_moonrise_moonset: true
+            show_elevation: true
+            label_dawn: Dawn
+            label_noon: Noon
+            label_dusk: Dusk
+          - moon_entity: sensor.moon
+            title: Moon Phase
+            show_next_phases: true
+            show_illumination: true
+            type: "custom:astro-lunar-card"
+            entity: sensor.moon_phase
+            show_phase_name: true
+            show_moonrise_moonset: true
+            moon_size: 150
+
+      - type: grid
+        cards: 
+          - cme_entity: sensor.astronomy_space_suite_coronal_mass_ejections
+            flare_entity: sensor.astronomy_space_suite_solar_flares
+            storm_entity: sensor.astronomy_space_suite_geomagnetic_storms
+            kp_entity: sensor.astronomy_space_suite_planetary_kp_index
+            sdo_entity: camera.astronomy_space_suite_sdo_sun
+            soho_entity: camera.astronomy_space_suite_soho_sun
+            title: Solar Activity Monitor
+            show_cme: true
+            show_flares: true
+            show_storms: true
+            show_kp_gauge: true
+            show_live_sun: true
+            show_sdo: true
+            show_soho: true
+            time_range: 30
+            type: "custom:solar-activity-card"
+          - type: "custom:night-sky-highlights-card"
+            title: Night Sky Highlights
+            telescope_mode: true
+
+      - type: grid
+        cards: 
+          - type: heading
+            heading: New section
+          - type: "custom:night-sky-highlights-2-card"
+            title: Night Sky Highlights 2
+            entities: 
+              best_planet: sensor.best_planet_tonight
+              best_dso: sensor.best_dso_tonight
+              meteor_shower: sensor.meteor_shower_activity
+              iss: sensor.iss_next_pass
+              comet: sensor.brightest_comet
+              events: sensor.astronomy_special_events
+
+            show_sparkline: true
+
+
+    max_columns: 45
+    dense_section_placement: true
   - title: Space Weather
     path: space-weather
-    icon: mdi:weather-sunny-alert
-    cards:
-      # Solar Activity Card with KP gauge + Sun cameras
-      - type: custom:solar-activity-card
+    icon: "mdi:weather-sunny-alert"
+    cards: 
+      - cme_entity: sensor.astronomy_space_suite_coronal_mass_ejections
+        flare_entity: sensor.astronomy_space_suite_solar_flares
+        storm_entity: sensor.astronomy_space_suite_geomagnetic_storms
+        kp_entity: sensor.astronomy_space_suite_planetary_kp_index
+        sdo_entity: camera.astronomy_space_suite_sdo_sun
+        soho_entity: camera.astronomy_space_suite_soho_sun
         title: Solar Activity Monitor
-        cme_entity: sensor.nasa_astronomy_suite_coronal_mass_ejections
-        flare_entity: sensor.nasa_astronomy_suite_solar_flares
-        storm_entity: sensor.nasa_astronomy_suite_geomagnetic_storms
-        kp_entity: sensor.nasa_astronomy_suite_planetary_kp_index
-        sdo_entity: camera.nasa_astronomy_suite_sdo_sun
-        soho_entity: camera.nasa_astronomy_suite_soho_sun
-
-      # KP Index detail
+        show_cme: true
+        show_flares: true
+        show_storms: true
+        show_kp_gauge: true
+        show_live_sun: true
+        show_sdo: true
+        show_soho: true
+        time_range: 30
+        type: "custom:solar-activity-card"
       - type: horizontal-stack
-        cards:
-          - type: custom:mushroom-entity-card
-            entity: sensor.nasa_astronomy_suite_planetary_kp_index
-            name: Planetary KP Index
-            icon: mdi:aurora
-            icon_color: green
-            layout: vertical
-          - type: custom:mushroom-entity-card
-            entity: sensor.nasa_astronomy_suite_geomagnetic_storms
-            name: Geomagnetic Storms
-            icon: mdi:weather-lightning
-            icon_color: purple
-            layout: vertical
-
-      # Sun cameras side by side
-      - type: horizontal-stack
-        cards:
+        cards: 
           - type: picture-entity
-            entity: camera.nasa_astronomy_suite_sdo_sun
-            name: "☀️ SDO Corona (171Å)"
+            entity: camera.astronomy_space_suite_sdo_sun
+            name: ☀️ SDO Corona (171Å)
             show_state: false
             show_name: true
             camera_view: live
           - type: picture-entity
-            entity: camera.nasa_astronomy_suite_soho_sun
-            name: "☀️ SOHO Coronagraph"
+            entity: camera.astronomy_space_suite_soho_sun
+            name: ☀️ SOHO Coronagraph
             show_state: false
             show_name: true
             camera_view: live
 
-  # ═══════════════════════════════════════════════════════════════
-  # VIEW 3: NEO Tracker — Near Earth Objects
-  # ═══════════════════════════════════════════════════════════════
+
   - title: NEO Tracker
     path: neo-tracker
-    icon: mdi:meteor
-    cards:
-      - type: custom:neo-threat-card
-        entity: sensor.nasa_astronomy_suite_neo_count_today
+    icon: "mdi:meteor"
+    cards: 
+      - entity: sensor.astronomy_space_suite_neo_count_today
         max_items: 10
+        show_hazardous_only: false
+        show_stats: true
         title: Near Earth Objects
-
+        show_velocity: true
+        show_diameter: true
+        type: "custom:neo-threat-card"
       - type: horizontal-stack
-        cards:
-          - type: custom:mushroom-entity-card
-            entity: sensor.nasa_astronomy_suite_closest_neo
+        cards: 
+          - type: "custom:mushroom-entity-card"
+            entity: sensor.astronomy_space_suite_closest_neo
             name: Closest
-            icon: mdi:bullseye-arrow
+            icon: "mdi:bullseye-arrow"
             icon_color: red
-          - type: custom:mushroom-entity-card
-            entity: sensor.nasa_astronomy_suite_fastest_neo
+          - type: "custom:mushroom-entity-card"
+            entity: sensor.astronomy_space_suite_fastest_neo
             name: Fastest
-            icon: mdi:speedometer
+            icon: "mdi:speedometer"
             icon_color: orange
-          - type: custom:mushroom-entity-card
-            entity: sensor.nasa_astronomy_suite_largest_neo
+          - type: "custom:mushroom-entity-card"
+            entity: sensor.astronomy_space_suite_largest_neo
             name: Largest
-            icon: mdi:resize
+            icon: "mdi:resize"
             icon_color: blue
 
-  # ═══════════════════════════════════════════════════════════════
-  # VIEW 4: ISS — Tracker & Live Stream
-  # ═══════════════════════════════════════════════════════════════
+
   - title: ISS
     path: iss
-    icon: mdi:space-station
-    cards:
-      - type: custom:iss-tracker-card
-        entity: sensor.nasa_astronomy_suite_iss_position
+    icon: "mdi:space-station"
+    cards: 
+      - entity: sensor.astronomy_space_suite_iss_position
         title: International Space Station
         show_map: true
-        show_trail: true
+        show_trail: false
         show_stream_button: true
-
-      - type: custom:mushroom-entity-card
-        entity: sensor.nasa_astronomy_suite_iss_position
+        type: "custom:iss-tracker-card"
+      - type: "custom:mushroom-entity-card"
+        entity: sensor.astronomy_space_suite_iss_position
         name: ISS Position
-        icon: mdi:space-station
+        icon: "mdi:space-station"
         icon_color: red
 
-  # ═══════════════════════════════════════════════════════════════
-  # VIEW 5: Earth — Satellite imagery
-  # ═══════════════════════════════════════════════════════════════
   - title: Earth
     path: earth
-    icon: mdi:earth
-    cards:
-      # Multi-source observation card
-      - type: custom:earth-observation-card
-        title: Earth & Sun Observation
-        epic_entity: camera.nasa_astronomy_suite_epic_earth
-        goes_entity: camera.nasa_astronomy_suite_goes_16_earth
-        goes18_entity: camera.nasa_astronomy_suite_goes_18_earth
-        himawari_entity: camera.nasa_astronomy_suite_himawari_8_earth
-        sdo_entity: camera.nasa_astronomy_suite_sdo_sun
-        soho_entity: camera.nasa_astronomy_suite_soho_sun
-
-      # Individual camera cards
+    icon: "mdi:earth"
+    cards: 
+      - type: "custom:earth-observation-card"
+        title: "Earth & Sun Observation"
+        epic_entity: camera.astronomy_space_suite_epic_earth
+        goes_entity: camera.astronomy_space_suite_goes_16_earth
+        goes18_entity: camera.astronomy_space_suite_goes_18_earth
+        himawari_entity: camera.astronomy_space_suite_himawari_8_earth
+        sdo_entity: camera.astronomy_space_suite_sdo_sun
+        soho_entity: camera.astronomy_space_suite_soho_sun
+        refresh_interval: 5
       - type: horizontal-stack
-        cards:
+        cards: 
           - type: picture-entity
-            entity: camera.nasa_astronomy_suite_epic_earth
-            name: "🌍 NASA EPIC"
+            entity: camera.astronomy_space_suite_epic_earth
+            name: 🌍 NASA EPIC
             show_state: false
-            show_name: true
             camera_view: live
           - type: picture-entity
-            entity: camera.nasa_astronomy_suite_goes_16_earth
-            name: "🌎 GOES-16 (Americas)"
+            entity: camera.astronomy_space_suite_goes_16_earth
+            name: 🌎 GOES-16
             show_state: false
-            show_name: true
             camera_view: live
 
       - type: horizontal-stack
-        cards:
+        cards: 
           - type: picture-entity
-            entity: camera.nasa_astronomy_suite_goes_18_earth
-            name: "🌏 GOES-18 (Pacific)"
+            entity: camera.astronomy_space_suite_goes_18_earth
+            name: 🌏 GOES-18
             show_state: false
-            show_name: true
             camera_view: live
           - type: picture-entity
-            entity: camera.nasa_astronomy_suite_himawari_8_earth
-            name: "🌏 Himawari-8 (Asia)"
+            entity: camera.astronomy_space_suite_himawari_8_earth
+            name: 🌏 Himawari-8
             show_state: false
-            show_name: true
             camera_view: live
 
-      # Earth events
-      - type: custom:mushroom-entity-card
-        entity: sensor.nasa_astronomy_suite_active_earth_events
+      - type: "custom:mushroom-entity-card"
+        entity: sensor.astronomy_space_suite_active_earth_events
         name: Active Earth Events (EONET)
-        icon: mdi:earth-alert
+        icon: "mdi:earth-alert"
         icon_color: red
 
-  # ═══════════════════════════════════════════════════════════════
-  # VIEW 6: Solar System — Orrery & Horizon
-  # ═══════════════════════════════════════════════════════════════
   - title: Solar System
     path: solar-system
-    icon: mdi:orbit
-    cards:
-      - type: custom:solar-system-card
-        title: Solar System Orrery
+    icon: "mdi:orbit"
+    cards: 
+      - type: "custom:astro-horizon-card"
+        sun_entity: sun.sun
+        moon_entity: sensor.moon_phase
+        title: Horizon
+        show_moon: true
+        show_sunrise_sunset: true
+        show_moonrise_moonset: true
+        show_elevation: true
+        label_dawn: Dawn
+        label_noon: Noon
+        label_dusk: Dusk
+      - moon_entity: sensor.moon
+        title: Moon Phase
+        show_next_phases: true
+        show_illumination: true
+        type: "custom:astro-lunar-card"
+        entity: sensor.moon_phase
+        show_phase_name: true
+        show_moonrise_moonset: true
+        moon_size: 150
+      - type: "custom:solar-system-card"
+        title: Inner Solar System
+        show_mercury: true
+        show_venus: true
+        show_earth: true
+        show_mars: true
+        show_jupiter: false
+        show_saturn: false
+        show_orbits: true
+        show_labels: true
+      - type: "custom:solar-system-card"
+        title: Full Solar System
+        show_mercury: true
+        show_venus: true
+        show_earth: true
+        show_mars: true
         show_jupiter: true
         show_saturn: true
+        show_uranus: true
+        show_neptune: true
+        show_orbits: true
+        show_labels: true
 
-      - type: horizontal-stack
-        cards:
-          - type: custom:astro-horizon-card
-            entity: sun.sun
-            title: Sun Arc
-          - type: custom:astro-lunar-card
-            entity: sensor.moon
-            title: Moon Phase
-
-  # ═══════════════════════════════════════════════════════════════
-  # VIEW 7: Launches — Rocket launches
-  # ═══════════════════════════════════════════════════════════════
   - title: Launches
     path: launches
-    icon: mdi:rocket-launch
-    cards:
-      - type: custom:rocket-launch-card
-        entity_prefix: sensor.nasa_astronomy_suite_rocket_launch
+    icon: "mdi:rocket-launch"
+    cards: 
+      - type: "custom:rocket-launch-card"
+        entity_prefix: sensor.astronomy_space_suite_rocket_launch
         max_launches: 5
         title: Upcoming Rocket Launches
+        show_countdown: true
+      - type: "custom:astro-horizon-card"
+        sun_entity: sun.sun
+        title: ""
+        show_elevation: true
+        show_azimuth: true
+        show_times: true
 
-      - type: horizontal-stack
-        cards:
-          - type: custom:mushroom-entity-card
-            entity: sensor.nasa_astronomy_suite_rocket_launch_1
-            name: Next Launch
-            icon: mdi:rocket-launch
-            icon_color: deep-purple
-          - type: custom:mushroom-entity-card
-            entity: sensor.nasa_astronomy_suite_rocket_launch_2
-            name: Launch #2
-            icon: mdi:rocket
-            icon_color: indigo
-          - type: custom:mushroom-entity-card
-            entity: sensor.nasa_astronomy_suite_rocket_launch_3
-            name: Launch #3
-            icon: mdi:rocket
-            icon_color: blue
+
+
