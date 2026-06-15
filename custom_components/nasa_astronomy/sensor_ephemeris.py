@@ -162,7 +162,8 @@ async def async_setup_ephemeris_sensors(
     )
 
     coordinator = EphemerisCoordinator(hass, provider)
-    await coordinator.async_config_entry_first_refresh()
+    # Don't block sensor setup — refresh in background
+    await coordinator.async_refresh()
 
     # Store coordinator for the card to use
     hass.data[DOMAIN][entry.entry_id]["ephemeris_coordinator"] = coordinator

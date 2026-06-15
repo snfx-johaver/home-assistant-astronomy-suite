@@ -53,7 +53,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     # Don't block setup — refresh in background
-    await coordinator.async_refresh()
+    entry.async_create_background_task(
+        hass, coordinator.async_refresh(), "nasa_astronomy_first_refresh"
+    )
 
     hass.data[DOMAIN][entry.entry_id] = {
         "coordinator": coordinator,
