@@ -252,6 +252,32 @@ views:
       - type: custom:rocket-launch-card
         entity_prefix: sensor.nasa_astronomy_suite_rocket_launch
         max_launches: 5
+
+  # ═══════════════════════════════════════════════════════════════
+  # VIEW 8: Deep-Sky — Telescope targets (deep-sky objects feature)
+  # ═══════════════════════════════════════════════════════════════
+  # These cards read the locally computed deep-sky sensors. They are
+  # enabled by default; toggle the feature in the integration options.
+  - title: Deep-Sky
+    path: deep-sky
+    icon: mdi:star-shooting
+    cards:
+      - type: custom:deepsky-tonight-card
+        entity: sensor.nasa_astronomy_deepsky_best_tonight
+        title: "🔭 Tonight's Best Targets"
+
+      - type: custom:deepsky-dome-card
+        entity: sensor.nasa_astronomy_deepsky_best_tonight
+        title: Sky Dome — drag to look around
+        height: 360
+
+      - type: custom:deepsky-yardmap-card
+        entity: sensor.nasa_astronomy_deepsky_best_tonight
+        title: Sky Map
+
+      - type: custom:deepsky-panorama-card
+        entity: sensor.nasa_astronomy_deepsky_best_tonight
+        title: Horizon Panorama
         title: Upcoming Rocket Launches
 
       - type: horizontal-stack

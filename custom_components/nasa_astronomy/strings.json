@@ -48,6 +48,20 @@
           "body_uranus": "Creates sensors for Uranus's position and visibility.",
           "body_neptune": "Creates sensors for Neptune's position and visibility."
         }
+      },
+      "deepsky": {
+        "title": "Deep-Sky Objects — Telescope Targets",
+        "description": "Track a curated catalog of star clusters, nebulae and galaxies with live altitude, best-viewing windows and sky-map cards. All calculated locally — no API key required. You can change these later in Options.",
+        "data": {
+          "enabled": "Enable Deep-Sky Objects",
+          "min_altitude": "Minimum altitude (degrees)",
+          "max_objects": "Max objects in Best-Tonight list (0 = all)"
+        },
+        "data_description": {
+          "enabled": "Creates a sensor per catalog object plus a Best-Tonight summary and the deep-sky dashboard cards.",
+          "min_altitude": "Targets below this altitude count as too low to observe (default 15°).",
+          "max_objects": "Caps how many objects appear in the Best-Tonight ranking (0 shows the whole catalog)."
+        }
       }
     },
     "error": {
@@ -63,7 +77,8 @@
       "init": {
         "menu_options": {
           "api_keys": "API Keys (NASA & RocketLaunch.Live)",
-          "ephemeris": "Ephemeris Provider (Planetary Positions)"
+          "ephemeris": "Ephemeris Provider (Planetary Positions)",
+          "deepsky": "Deep-Sky Objects (Telescope Targets)"
         }
       },
       "api_keys": {
@@ -112,6 +127,20 @@
           "body_saturn": "Creates sensors for Saturn's position and visibility.",
           "body_uranus": "Creates sensors for Uranus's position and visibility.",
           "body_neptune": "Creates sensors for Neptune's position and visibility."
+        }
+      },
+      "deepsky": {
+        "title": "Deep-Sky Objects",
+        "description": "Configure the curated deep-sky telescope catalog. All calculations run locally — no external API required.",
+        "data": {
+          "enabled": "Enable Deep-Sky Objects",
+          "min_altitude": "Minimum altitude (degrees)",
+          "max_objects": "Max objects in Best-Tonight list (0 = all)"
+        },
+        "data_description": {
+          "enabled": "Creates a sensor per catalog object plus a Best-Tonight summary and the deep-sky dashboard cards.",
+          "min_altitude": "Targets below this altitude count as too low to observe (default 15°).",
+          "max_objects": "Caps how many objects appear in the Best-Tonight ranking (0 shows the whole catalog)."
         }
       }
     }

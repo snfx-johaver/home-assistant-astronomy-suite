@@ -51,6 +51,30 @@ def _parse_ephemeris_input(user_input: dict, hass) -> dict:
     }
 
 
+def _deepsky_schema(current: dict) -> vol.Schema:
+    """Build the deep-sky configuration schema."""
+    return vol.Schema(
+        {
+            vol.Optional("enabled", default=current.get("enabled", True)): bool,
+            vol.Optional(
+                "min_altitude", default=current.get("min_altitude", 15)
+            ): vol.All(vol.Coerce(float), vol.Range(min=0, max=60)),
+            vol.Optional(
+                "max_objects", default=current.get("max_objects", 0)
+            ): vol.All(vol.Coerce(int), vol.Range(min=0, max=50)),
+        }
+    )
+
+
+def _parse_deepsky_input(user_input: dict) -> dict:
+    """Parse deep-sky form input into config structure."""
+    return {
+        "enabled": user_input.get("enabled", True),
+        "min_altitude": user_input.get("min_altitude", 15),
+        "max_objects": user_input.get("max_objects", 0),
+    }
+
+
 class NasaAstronomyConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Astronomy Space Suite."""
 
@@ -58,6 +82,7 @@ class NasaAstronomyConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         self._data: dict[str, Any] = {}
+        self._ephemeris_config: dict[str, Any] = {}
 
     @staticmethod
     @callback
@@ -104,15 +129,27 @@ class NasaAstronomyConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_ephemeris(self, user_input: dict[str, Any] | None = None):
         """Step 2: Ephemeris configuration."""
         if user_input is not None:
-            ephemeris_config = _parse_ephemeris_input(user_input, self.hass)
-            return self.async_create_entry(
-                title="Astronomy Space Suite",
-                data=self._data,
-                options={"ephemeris": ephemeris_config},
-            )
+            self._ephemeris_config = _parse_ephemeris_input(user_input, self.hass)
+            return await self.async_step_deepsky()
 
         schema = _ephemeris_schema({}, self.hass)
         return self.async_show_form(step_id="ephemeris", data_schema=schema)
+
+    async def async_step_deepsky(self, user_input: dict[str, Any] | None = None):
+        """Step 3: Deep-sky objects configuration."""
+        if user_input is not None:
+            deepsky_config = _parse_deepsky_input(user_input)
+            return self.async_create_entry(
+                title="Astronomy Space Suite",
+                data=self._data,
+                options={
+                    "ephemeris": self._ephemeris_config,
+                    "deepsky": deepsky_config,
+                },
+            )
+
+        schema = _deepsky_schema({})
+        return self.async_show_form(step_id="deepsky", data_schema=schema)
 
     async def _test_nasa_key(self, api_key: str) -> bool | None:
         """Test if the NASA API key is valid."""
@@ -141,7 +178,7 @@ class AstronomyOptionsFlow(OptionsFlow):
         """Show the main options menu."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["api_keys", "ephemeris"],
+            menu_options=["api_keys", "ephemeris", "deepsky"],
         )
 
     async def async_step_api_keys(self, user_input: dict[str, Any] | None = None):
@@ -181,3 +218,15 @@ class AstronomyOptionsFlow(OptionsFlow):
 
         schema = _ephemeris_schema(current, self.hass)
         return self.async_show_form(step_id="ephemeris", data_schema=schema)
+
+    async def async_step_deepsky(self, user_input: dict[str, Any] | None = None):
+        """Configure deep-sky objects feature."""
+        current = self._config_entry.options.get("deepsky", {})
+
+        if user_input is not None:
+            deepsky_config = _parse_deepsky_input(user_input)
+            new_options = {**self._config_entry.options, "deepsky": deepsky_config}
+            return self.async_create_entry(title="", data=new_options)
+
+        schema = _deepsky_schema(current)
+        return self.async_show_form(step_id="deepsky", data_schema=schema)

@@ -116,6 +116,14 @@ async def async_setup_entry(
         import logging
         logging.getLogger(__name__).warning("Ephemeris sensor setup failed: %s", err)
 
+    # Set up deep-sky object sensors if enabled (won't break existing sensors on failure)
+    try:
+        from .sensor_deepsky import async_setup_deepsky_sensors
+        await async_setup_deepsky_sensors(hass, entry, async_add_entities)
+    except Exception as err:
+        import logging
+        logging.getLogger(__name__).warning("Deep-sky sensor setup failed: %s", err)
+
 
 class NasaAstronomySensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
     """Representation of a Astronomy Space Suite sensor."""
