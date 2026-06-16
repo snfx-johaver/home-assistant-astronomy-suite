@@ -2458,7 +2458,7 @@ class EarthObservationCardEditor extends AstroEditorBase {
       epic_entity: "camera.astronomy_space_suite_epic_earth",
       goes_entity: "camera.astronomy_space_suite_goes_16_earth",
       goes18_entity: "camera.astronomy_space_suite_goes_18_earth",
-      himawari_entity: "camera.astronomy_space_suite_himawari8_earth",
+      himawari_entity: "camera.astronomy_space_suite_himawari_8_earth",
       sdo_entity: "camera.astronomy_space_suite_sdo_sun",
       soho_entity: "camera.astronomy_space_suite_soho_sun",
       title: "Earth Observation",
@@ -2495,7 +2495,7 @@ class EarthObservationCardEditor extends AstroEditorBase {
     setPickerValue(this.shadowRoot, "epic_entity", this._hass, this._config.epic_entity || "camera.astronomy_space_suite_epic_earth");
     setPickerValue(this.shadowRoot, "goes_entity", this._hass, this._config.goes_entity || "camera.astronomy_space_suite_goes_16_earth");
     setPickerValue(this.shadowRoot, "goes18_entity", this._hass, this._config.goes18_entity || "camera.astronomy_space_suite_goes_18_earth");
-    setPickerValue(this.shadowRoot, "himawari_entity", this._hass, this._config.himawari_entity || "camera.astronomy_space_suite_himawari8_earth");
+    setPickerValue(this.shadowRoot, "himawari_entity", this._hass, this._config.himawari_entity || "camera.astronomy_space_suite_himawari_8_earth");
     setPickerValue(this.shadowRoot, "sdo_entity", this._hass, this._config.sdo_entity || "camera.astronomy_space_suite_sdo_sun");
     setPickerValue(this.shadowRoot, "soho_entity", this._hass, this._config.soho_entity || "camera.astronomy_space_suite_soho_sun");
     setTextValue(this.shadowRoot, "title", this._config.title || "Earth Observation");
@@ -2521,7 +2521,7 @@ class EarthObservationCard extends HTMLElement {
       epic_entity: "camera.astronomy_space_suite_epic_earth",
       goes_entity: "camera.astronomy_space_suite_goes_16_earth",
       goes18_entity: "camera.astronomy_space_suite_goes_18_earth",
-      himawari_entity: "camera.astronomy_space_suite_himawari8_earth",
+      himawari_entity: "camera.astronomy_space_suite_himawari_8_earth",
       sdo_entity: "camera.astronomy_space_suite_sdo_sun",
       soho_entity: "camera.astronomy_space_suite_soho_sun",
       title: "Earth Observation",

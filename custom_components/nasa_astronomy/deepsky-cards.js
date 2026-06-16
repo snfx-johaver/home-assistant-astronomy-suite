@@ -82,15 +82,10 @@ class NightSkyHighlights2Card extends HTMLElement {
   constructor() { super(); this.attachShadow({ mode: "open" }); this._config = {}; }
   static getConfigElement() { return document.createElement("night-sky-highlights-2-card-editor"); }
   static getStubConfig() {
-    return { title: "Night Sky Highlights 2", entities: {
-      best_planet: "sensor.nasa_astronomy_deepsky_best_tonight", best_dso: "sensor.nasa_astronomy_deepsky_best_tonight",
-      meteor_shower: "sensor.astronomy_space_suite_neo_count_today", iss: "sensor.astronomy_space_suite_iss_position",
-      comet: "sensor.astronomy_space_suite_planetary_kp_index", events: "sensor.astronomy_space_suite_solar_flares",
-    }};
+    return { title: "Night Sky Highlights 2" };
   }
   setConfig(config) {
-    if (!config.entities) throw new Error("Define entities in card config.");
-    this._config = { title: config.title || "Night Sky Highlights 2", entities: config.entities || {}, ...config };
+    this._config = { title: config.title || "Night Sky Highlights 2", ...config };
   }
   set hass(hass) { this._hass = hass; this._render(); }
 
@@ -100,27 +95,82 @@ class NightSkyHighlights2Card extends HTMLElement {
     return `<div class="nsh2-tile${cls}"><div class="nsh2-tile-header"><span class="nsh2-icon">${icon}</span><span class="nsh2-tile-title">${title}</span>${scoreHtml}</div><div class="nsh2-desc">${desc}</div></div>`;
   }
 
-  _parseTile(entityId, icon, fallbackTitle) {
-    const s = dskGetState(this._hass, entityId);
-    if (!s) return this._buildTile(icon, fallbackTitle, null, "Sensor unavailable", true);
-    const a = s.attributes || {};
-    const title = a.friendly_name || a.name || fallbackTitle;
-    const score = parseFloat(a.visibility_score ?? a.score ?? s.state);
-    const desc = a.description || a.summary || s.state;
-    return this._buildTile(icon, title, isNaN(score) ? null : score, desc, false);
+  _getHighestPlanet() {
+    const planets = ["venus", "jupiter", "saturn", "mars", "mercury"];
+    let best = null, bestAlt = -90;
+    for (const p of planets) {
+      const s = this._hass.states[`sensor.nasa_astronomy_ephemeris_${p}_altitude`];
+      if (s && !isNaN(parseFloat(s.state)) && parseFloat(s.state) > bestAlt) {
+        bestAlt = parseFloat(s.state);
+        best = { name: p.charAt(0).toUpperCase() + p.slice(1), alt: bestAlt };
+      }
+    }
+    return best;
+  }
+
+  _getBestDso() {
+    const s = dskGetState(this._hass, "sensor.nasa_astronomy_deepsky_best_tonight");
+    if (s) return { name: s.attributes?.top_objects?.[0] || s.state, count: s.attributes?.count_visible || 0, score: s.attributes?.score };
+    return null;
   }
 
   _render() {
     if (!this._hass || !this._config) return;
-    const e = this._config.entities;
-    const tiles = [
-      this._parseTile(e.best_planet, "🪐", "Best Planet Tonight"),
-      this._parseTile(e.best_dso, "🌌", "Best DSO Tonight"),
-      this._parseTile(e.meteor_shower, "☄️", "Meteor Shower"),
-      this._parseTile(e.iss, "🛰️", "ISS Next Pass"),
-      this._parseTile(e.comet, "💫", "Brightest Comet"),
-      this._parseTile(e.events, "🔭", "Special Events"),
-    ];
+    const tiles = [];
+
+    // Best planet
+    const planet = this._getHighestPlanet();
+    if (planet && planet.alt > 0) {
+      const score = Math.min(100, Math.round((planet.alt / 60) * 100));
+      tiles.push(this._buildTile("🪐", planet.name, score, `${planet.alt.toFixed(1)}° altitude`, false));
+    } else {
+      tiles.push(this._buildTile("🪐", "Best Planet", null, "No planets above horizon", true));
+    }
+
+    // Best DSO
+    const dso = this._getBestDso();
+    if (dso) {
+      tiles.push(this._buildTile("🌌", "Best DSO Tonight", dso.score || null, `${dso.name} — ${dso.count} objects visible`, false));
+    } else {
+      tiles.push(this._buildTile("🌌", "Best DSO Tonight", null, "Waiting for data...", true));
+    }
+
+    // NEO count
+    const neo = dskGetState(this._hass, "sensor.astronomy_space_suite_neo_count_today");
+    if (neo) {
+      tiles.push(this._buildTile("☄️", "Near Earth Objects", null, `${neo.state} objects tracked today`, false));
+    } else {
+      tiles.push(this._buildTile("☄️", "Near Earth Objects", null, "Waiting for data...", true));
+    }
+
+    // ISS
+    const iss = dskGetState(this._hass, "sensor.astronomy_space_suite_iss_position");
+    if (iss) {
+      const lat = iss.attributes?.latitude || "?";
+      const lon = iss.attributes?.longitude || "?";
+      tiles.push(this._buildTile("🛰️", "ISS Position", null, `Lat ${lat}° Lon ${lon}°`, false));
+    } else {
+      tiles.push(this._buildTile("🛰️", "ISS Position", null, "Waiting for data...", true));
+    }
+
+    // Solar activity (KP index)
+    const kp = dskGetState(this._hass, "sensor.astronomy_space_suite_planetary_kp_index");
+    if (kp) {
+      const kpVal = parseFloat(kp.state);
+      const score = isNaN(kpVal) ? null : Math.min(100, Math.round(kpVal * 12.5));
+      tiles.push(this._buildTile("☀️", "Geomagnetic Activity", score, `Kp Index: ${kp.state}`, false));
+    } else {
+      tiles.push(this._buildTile("☀️", "Geomagnetic Activity", null, "Waiting for data...", true));
+    }
+
+    // Solar flares
+    const flares = dskGetState(this._hass, "sensor.astronomy_space_suite_solar_flares");
+    if (flares) {
+      tiles.push(this._buildTile("🔭", "Solar Flares (7d)", null, `${flares.state} events`, false));
+    } else {
+      tiles.push(this._buildTile("🔭", "Solar Flares", null, "Waiting for data...", true));
+    }
+
     this.shadowRoot.innerHTML = `<style>${NSH2_STYLES}</style><ha-card><div class="dsk-card"><div class="dsk-header"><div><div class="dsk-title">${this._config.title}</div><div class="dsk-subtitle">Updated ${new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</div></div></div><div class="nsh2-grid">${tiles.join("")}</div></div></ha-card>`;
   }
   getCardSize() { return 4; }
@@ -131,12 +181,8 @@ class NightSkyHighlights2CardEditor extends HTMLElement {
   setConfig(config) { this._config = { ...config }; this._render(); }
   set hass(h) { this._hass = h; }
   _render() {
-    const e = this._config.entities || {};
-    this.shadowRoot.innerHTML = `<style>.ed{padding:16px}.f{margin-bottom:10px}.f label{display:block;font-size:0.8em;color:var(--secondary-text-color);margin-bottom:3px}.f input{width:100%;padding:7px;border:1px solid var(--divider-color,#ccc);border-radius:6px;box-sizing:border-box;font-size:0.85em;background:var(--card-background-color);color:var(--primary-text-color)}</style><div class="ed"><div class="f"><label>Title</label><input id="t" value="${this._config.title||"Night Sky Highlights 2"}"/></div><div class="f"><label>Best Planet Entity</label><input id="best_planet" value="${e.best_planet||""}"/></div><div class="f"><label>Best DSO Entity</label><input id="best_dso" value="${e.best_dso||""}"/></div><div class="f"><label>Meteor Shower Entity</label><input id="meteor_shower" value="${e.meteor_shower||""}"/></div><div class="f"><label>ISS Entity</label><input id="iss" value="${e.iss||""}"/></div><div class="f"><label>Comet Entity</label><input id="comet" value="${e.comet||""}"/></div><div class="f"><label>Events Entity</label><input id="events" value="${e.events||""}"/></div></div>`;
+    this.shadowRoot.innerHTML = `<style>.ed{padding:16px}.f{margin-bottom:10px}.f label{display:block;font-size:0.8em;color:var(--secondary-text-color);margin-bottom:3px}.f input{width:100%;padding:7px;border:1px solid var(--divider-color,#ccc);border-radius:6px;box-sizing:border-box;font-size:0.85em;background:var(--card-background-color);color:var(--primary-text-color)}.note{font-size:0.75em;color:var(--secondary-text-color);margin-top:8px}</style><div class="ed"><div class="f"><label>Title</label><input id="t" value="${this._config.title || "Night Sky Highlights 2"}"/></div><div class="note">This card auto-detects sensors from the Astronomy Space Suite integration. No entity configuration needed.</div></div>`;
     this.shadowRoot.getElementById("t").addEventListener("input", ev => { this._config.title = ev.target.value; this._fire(); });
-    ["best_planet","best_dso","meteor_shower","iss","comet","events"].forEach(k => {
-      this.shadowRoot.getElementById(k).addEventListener("input", ev => { if(!this._config.entities) this._config.entities={}; this._config.entities[k]=ev.target.value; this._fire(); });
-    });
   }
   _fire() { this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: {...this._config} }, bubbles: true, composed: true })); }
 }

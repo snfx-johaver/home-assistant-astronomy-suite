@@ -10,7 +10,7 @@ Fully isolated — does not modify any existing dashboards, integrations, or res
 
 ## ✨ Features
 
-### 🛰️ Sensors (17+ NASA + 120+ Ephemeris)
+### 🛰️ Sensors (17+ NASA + 120+ Ephemeris + 121 Deep-Sky)
 | Sensor | Source | Auth |
 |--------|--------|------|
 | Astronomy Picture of the Day (APOD) | NASA | API key |
@@ -27,6 +27,7 @@ Fully isolated — does not modify any existing dashboards, integrations, or res
 | **Ephemeris: Moon** (alt, az, phase, illumination) | Local calc | None |
 | **Ephemeris: Planets** (Mercury–Neptune positions) | Local calc | None |
 | **Sky Conditions** (twilight phase, sidereal time, day length) | Local calc | None |
+| **Deep-Sky Objects** (30 DSOs × 4 sensors each + Best Tonight) | Local calc | None |
 
 ### 📷 Cameras (7)
 | Camera | Source | Auth |
@@ -39,24 +40,29 @@ Fully isolated — does not modify any existing dashboards, integrations, or res
 | SDO Sun (171Å corona, extreme UV) | NASA | None |
 | SOHO Sun (LASCO C3 coronagraph) | ESA/NASA | None |
 
-### 🃏 Custom Lovelace Cards (10)
+### 🃏 Custom Lovelace Cards (15)
 All cards are prefixed **"ASS"** in the card picker for easy discovery.
 
-| Card | Description |
-|------|-------------|
-| `apod-card` | Astronomy Picture of the Day with metadata |
-| `neo-threat-card` | Near Earth Object tracker with threat levels |
-| `solar-activity-card` | CME/Flare/Storm monitor + optional KP gauge + live Sun thumbnails |
-| `astro-horizon-card` | Sun arc horizon visualization |
-| `astro-lunar-card` | Moon phase visualization |
-| `solar-system-card` | Real-time heliocentric orrery (orbital mechanics) |
-| `rocket-launch-card` | Next 5 launches with countdown timers |
-| `iss-tracker-card` | SVG world map with ISS position, orbital path + live stream button |
-| `earth-observation-card` | Multi-source satellite imagery (EPIC, GOES, Himawari, SDO, SOHO) |
-| `night-sky-highlights-card` | Best visible planets tonight with ephemeris data |
+| Card | Bundle | Description |
+|------|--------|-------------|
+| `apod-card` | astronomy-cards.js | Astronomy Picture of the Day with metadata |
+| `neo-threat-card` | astronomy-cards.js | Near Earth Object tracker with threat levels |
+| `solar-activity-card` | astronomy-cards.js | CME/Flare/Storm monitor + KP gauge + live Sun |
+| `astro-horizon-card` | astronomy-cards.js | Sun arc horizon visualization |
+| `astro-lunar-card` | astronomy-cards.js | Moon phase visualization |
+| `solar-system-card` | astronomy-cards.js | Real-time heliocentric orrery (orbital mechanics) |
+| `rocket-launch-card` | astronomy-cards.js | Next 5 launches with countdown timers |
+| `iss-tracker-card` | astronomy-cards.js | SVG world map with ISS + orbital path + live stream |
+| `earth-observation-card` | astronomy-cards.js | Multi-source satellite imagery (EPIC, GOES, SDO, SOHO) |
+| `night-sky-highlights-card` | astronomy-cards.js | Best visible planets tonight with ephemeris data |
+| `night-sky-highlights-2-card` | deepsky-cards.js | Auto-detecting highlights tile grid (planets, DSO, NEO, ISS, KP, flares) |
+| `dso-tonight-table-card` | deepsky-cards.js | Sortable table of visible deep-sky objects |
+| `dso-yard-map-card` | deepsky-cards.js | Polar projection sky map (SVG) |
+| `dso-panorama-card` | deepsky-cards.js | 360° horizon strip panorama |
+| `dso-dome-card` | deepsky-cards.js | Interactive 3D sky dome (drag to rotate) |
 
 ### 🛡️ Isolation Guarantees
-- ✅ All entity IDs namespaced under `nasa_astronomy_suite_`
+- ✅ All entity IDs namespaced under `astronomy_space_suite_` / `nasa_astronomy_`
 - ✅ Custom cards use unique Shadow DOM elements (no global CSS)
 - ✅ Does NOT modify any existing dashboards or resources
 - ✅ Cards JS auto-deployed and auto-registered on setup
@@ -78,11 +84,13 @@ All cards are prefixed **"ASS"** in the card picker for easy discovery.
 6. Search for **Astronomy Space Suite**
 7. Enter your NASA API key (get one free at [api.nasa.gov](https://api.nasa.gov/))
 8. Optionally enter your RocketLaunch.Live API key (or leave blank for free tier)
+9. Configure Ephemeris (enabled by default — uses your HA location)
+10. Configure Deep-Sky Objects (enabled by default — 30 curated DSO targets)
 
 **That's it!** The integration automatically:
-- Deploys the custom cards JS to your `www/` folder
-- Registers the cards as a Lovelace resource
-- Creates all sensors and cameras
+- Deploys both card bundles (`astronomy-cards.js` + `deepsky-cards.js`) to your `www/` folder
+- Registers both bundles as Lovelace resources
+- Creates all sensors, cameras, and deep-sky entities
 
 No manual file copying. No YAML editing. Just install, restart, configure.
 
@@ -105,7 +113,7 @@ All cards are configurable via the visual editor (no YAML needed). Just add a ca
 ### ASS APOD Card
 ```yaml
 type: custom:apod-card
-entity: sensor.nasa_astronomy_suite_apod
+entity: sensor.astronomy_space_suite_apod
 show_explanation: true
 show_copyright: true
 ```
@@ -113,20 +121,21 @@ show_copyright: true
 ### ASS NEO Threat Card
 ```yaml
 type: custom:neo-threat-card
-entity: sensor.nasa_astronomy_suite_neo_count_today
-max_items: 8          # UI configurable: 1-20
+entity: sensor.astronomy_space_suite_neo_count_today
+largest_entity: sensor.astronomy_space_suite_largest_neo
+max_items: 10
 show_hazardous_only: false
 ```
 
 ### ASS Solar Activity Card
 ```yaml
 type: custom:solar-activity-card
-cme_entity: sensor.nasa_astronomy_suite_coronal_mass_ejections
-flare_entity: sensor.nasa_astronomy_suite_solar_flares
-storm_entity: sensor.nasa_astronomy_suite_geomagnetic_storms
-kp_entity: sensor.nasa_astronomy_suite_planetary_kp_index
-sdo_entity: camera.nasa_astronomy_suite_sdo_sun
-soho_entity: camera.nasa_astronomy_suite_soho_sun
+cme_entity: sensor.astronomy_space_suite_coronal_mass_ejections
+flare_entity: sensor.astronomy_space_suite_solar_flares
+storm_entity: sensor.astronomy_space_suite_geomagnetic_storms
+kp_entity: sensor.astronomy_space_suite_planetary_kp_index
+sdo_entity: camera.astronomy_space_suite_sdo_sun
+soho_entity: camera.astronomy_space_suite_soho_sun
 ```
 
 ### ASS Solar System Card
@@ -135,35 +144,67 @@ type: custom:solar-system-card
 title: Solar System
 show_jupiter: true
 show_saturn: true
+show_orbits: true
 ```
 
 ### ASS Rocket Launch Card
 ```yaml
 type: custom:rocket-launch-card
-entity_prefix: sensor.nasa_astronomy_suite_rocket_launch
-max_launches: 5       # UI configurable: 1-5
+entity_prefix: sensor.astronomy_space_suite_rocket_launch
+max_launches: 5
 show_countdown: true
 ```
 
 ### ASS ISS Tracker Card
 ```yaml
 type: custom:iss-tracker-card
-entity: sensor.nasa_astronomy_suite_iss_position
+entity: sensor.astronomy_space_suite_iss_position
 show_map: true
 show_trail: true
 show_stream_button: true
 ```
 
 ### ASS Earth Observation Card
-Earth sources are grouped on the first row; Sun sources on the second row.
 ```yaml
 type: custom:earth-observation-card
-epic_entity: camera.nasa_astronomy_suite_epic_earth
-goes_entity: camera.nasa_astronomy_suite_goes_16_earth
-goes18_entity: camera.nasa_astronomy_suite_goes_18_earth
-himawari_entity: camera.nasa_astronomy_suite_himawari_8_earth
-sdo_entity: camera.nasa_astronomy_suite_sdo_sun
-soho_entity: camera.nasa_astronomy_suite_soho_sun
+epic_entity: camera.astronomy_space_suite_epic_earth
+goes_entity: camera.astronomy_space_suite_goes_16_earth
+goes18_entity: camera.astronomy_space_suite_goes_18_earth
+himawari_entity: camera.astronomy_space_suite_himawari_8_earth
+sdo_entity: camera.astronomy_space_suite_sdo_sun
+soho_entity: camera.astronomy_space_suite_soho_sun
+```
+
+### ASS Night Sky Highlights 2 Card
+```yaml
+type: custom:night-sky-highlights-2-card
+title: Night Sky Highlights 2
+```
+No entity configuration needed — auto-detects all Astronomy Space Suite sensors.
+
+### ASS Deep Sky Tonight Table
+```yaml
+type: custom:dso-tonight-table-card
+title: Deep Sky Tonight
+entity: sensor.nasa_astronomy_deepsky_best_tonight
+```
+
+### ASS Sky Map (Polar Projection)
+```yaml
+type: custom:dso-yard-map-card
+title: Sky Map
+```
+
+### ASS Horizon Panorama
+```yaml
+type: custom:dso-panorama-card
+title: Horizon Panorama
+```
+
+### ASS 3D Sky Dome
+```yaml
+type: custom:dso-dome-card
+title: 3D Sky Dome
 ```
 
 ---
@@ -173,22 +214,27 @@ soho_entity: camera.nasa_astronomy_suite_soho_sun
 ```
 home-assistant-astronomy-suite/
 ├── custom_components/nasa_astronomy/
-│   ├── __init__.py          # Auto-deploys cards, registers resources
-│   ├── manifest.json        # HA integration manifest
-│   ├── config_flow.py       # Config flow (NASA + Rocket API keys)
-│   ├── coordinator.py       # Concurrent data fetching (asyncio.gather)
-│   ├── sensor.py            # 17+ sensor entities
-│   ├── camera.py            # 7 camera entities
-│   ├── const.py             # URLs and constants
-│   ├── strings.json         # UI strings
-│   ├── astronomy-cards.js   # Bundled card JS (auto-deployed to www/)
-│   ├── icon.png             # Integration icon
-│   └── logo.png             # Integration logo
+│   ├── __init__.py            # Auto-deploys cards, registers resources
+│   ├── manifest.json          # HA integration manifest
+│   ├── config_flow.py         # Config flow (API keys + Ephemeris + Deep-Sky)
+│   ├── coordinator.py         # Concurrent data fetching (asyncio.gather)
+│   ├── sensor.py              # 17+ sensor entities
+│   ├── sensor_ephemeris.py    # 120+ local ephemeris sensors
+│   ├── sensor_deepsky.py      # 121 deep-sky object sensors
+│   ├── camera.py              # 7 camera entities
+│   ├── const.py               # URLs and constants
+│   ├── strings.json           # UI strings
+│   ├── astronomy-cards.js     # Main card bundle (auto-deployed to www/)
+│   ├── deepsky-cards.js       # Deep-sky card bundle (auto-deployed to www/)
+│   ├── world-map.png          # ISS tracker base map
+│   ├── providers/             # Ephemeris calculation engine
+│   └── translations/en.json   # English translations
 ├── www/community/astronomy-cards/
-│   └── astronomy-cards.js   # Card source (development copy)
-├── hacs.json                # HACS metadata
-├── icon.png                 # Repository icon
-├── logo.png                 # Repository logo
+│   ├── astronomy-cards.js     # Card source (development copy)
+│   └── deepsky-cards.js       # Deep-sky cards source (development copy)
+├── lovelace/
+│   └── astronomy-dashboard.yaml  # Example dashboard
+├── hacs.json                  # HACS metadata
 └── README.md
 ```
 
@@ -206,11 +252,12 @@ home-assistant-astronomy-suite/
 | RocketLaunch.Live | fdo.rocketlaunch.live | Optional | 10 min |
 | ISS Position | api.open-notify.org/iss-now.json | None | 10 min |
 | NOAA SWPC KP | services.swpc.noaa.gov | None | 10 min |
-| GOES-16 | cdn.star.nesdis.noaa.gov | None | Camera |
-| GOES-18 | cdn.star.nesdis.noaa.gov | None | Camera |
+| GOES-16/18 | cdn.star.nesdis.noaa.gov | None | Camera |
 | Himawari-8 | himawari8.nict.go.jp | None | Camera |
 | NASA SDO | sdo.gsfc.nasa.gov | None | Camera |
 | ESA/NASA SOHO | soho.nascom.nasa.gov | None | Camera |
+| Deep-Sky Objects | Local calculation (no API) | None | 5 min |
+| Ephemeris | Local calculation (no API) | None | Configurable |
 
 ---
 
@@ -244,13 +291,17 @@ These are standard HA integrations — just enable them in Settings → Devices 
 
 ## 🐛 Troubleshooting
 
-**Cards not showing?** → Restart HA after install. The integration auto-registers cards on first setup.
+**Cards not showing in picker?** → Hard refresh browser (Ctrl+Shift+R). Check DevTools console for JS errors. Verify resources at Settings → Dashboards → ⋮ → Resources.
 
-**"Custom element doesn't exist"?** → Go to Settings → Dashboards → ⋮ → Resources and verify `/local/community/astronomy-cards/astronomy-cards.js` is listed as a module.
+**"Custom element doesn't exist"?** → Go to Settings → Dashboards → ⋮ → Resources and verify both are listed:
+- `/local/community/astronomy-cards/astronomy-cards.js` (module)
+- `/local/community/astronomy-cards/deepsky-cards.js` (module)
 
 **Integration not loading?** → Check HA logs. Most common issue is NASA API returning 503 (temporary outage).
 
 **Sensors show "unavailable"?** → Data sources may be temporarily down. The integration retries every 10 minutes.
+
+**Deep-sky sensors unavailable?** → Reconfigure the integration (Settings → Devices & Services → Astronomy Space Suite → Configure) and ensure "Deep-Sky Objects" is enabled.
 
 ---
 
@@ -261,6 +312,20 @@ MIT
 ---
 
 ## 📋 Changelog
+
+### v1.10.1
+- **FIX: Card picker previews** — corrected default entity IDs in all card `getStubConfig()` methods
+- **FIX: Night Sky Highlights 2** — now auto-detects sensors (no manual entity config needed)
+- **FIX: Deepsky cards not loading** — removed duplicate custom element registration conflict
+- **README** — updated to reflect 15 cards, 258+ entities, deep-sky feature
+
+### v1.10.0 / v1.9.1
+- **NEW: Deep-Sky Objects** — 30-object curated DSO catalog (Messier/NGC targets)
+- **NEW: 121 deep-sky sensors** — altitude, azimuth, transit time, visibility per object + Best Tonight summary
+- **NEW: 5 deep-sky cards** — Night Sky Highlights 2, Tonight Table, Sky Map, Panorama, 3D Dome
+- **NEW: Config flow step 3** — Deep-Sky Objects (enable/disable, min altitude, max objects)
+- All calculations done locally — no API key needed
+- Resolves [Issue #2](https://github.com/snfx-johaver/home-assistant-astronomy-suite/issues/2)
 
 ### v1.8.1
 - **ISS Card**: Fixed "last updated" showing 1970 date (Unix timestamp conversion)
