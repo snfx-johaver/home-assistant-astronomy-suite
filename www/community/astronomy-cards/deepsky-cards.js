@@ -55,6 +55,109 @@ function dskGetState(hass, entityId) {
   return s;
 }
 
+const DSK_SENSOR_SUFFIXES = "Altitude|Azimuth|Transit Time|Visible|Score|Magnitude";
+const DSK_NAME_RE = new RegExp(`Deep Sky\\s+(.+?)\\s+(?:${DSK_SENSOR_SUFFIXES})$`, "i");
+
+/**
+ * Resolve the catalogue designation ("M31", "NGC 7000") for a deep-sky sensor.
+ *
+ * Prefers the dedicated `object_name` attribute exposed by sensor_deepsky.py.
+ * Falls back to stripping the "Deep Sky <name> <metric>" pattern out of
+ * friendly_name — the leading `Deep Sky` anchor is deliberately unanchored so a
+ * device-name prefix ("Astronomy Space Suite Deep Sky M31 Altitude") is dropped
+ * too. Last resort is the entity-id derived key.
+ */
+function dskObjectName(stateObj, objKey) {
+  const attrs = stateObj?.attributes || {};
+  if (typeof attrs.object_name === "string" && attrs.object_name.trim()) {
+    return attrs.object_name.trim();
+  }
+  if (typeof attrs.friendly_name === "string") {
+    const match = attrs.friendly_name.match(DSK_NAME_RE);
+    if (match) return match[1].trim();
+  }
+  return String(objKey || "").replace(/_/g, " ").toUpperCase();
+}
+
+function dskEsc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[ch]));
+}
+
+/** Rough advance width for a short uppercase/numeric label in a sans-serif face. */
+function dskTextWidth(text, fontSize) {
+  return String(text ?? "").length * fontSize * 0.6;
+}
+
+/**
+ * Nudge overlapping text labels apart vertically.
+ *
+ * Each label is `{ x, y, width }` where `x` is the LEFT edge of the text box and
+ * `y` its baseline. Labels are placed top-down; each one tries its natural
+ * position first, then alternates above/below in `lineHeight` steps until it no
+ * longer collides with an already-placed label. Candidates outside
+ * `[minY, maxY]` are skipped so labels stay inside the drawing area.
+ *
+ * Returns a copy in the original input order with `y` adjusted and `offset` set
+ * to the applied displacement (0 when the label did not need to move).
+ */
+function dskResolveLabelCollisions(labels, options = {}) {
+  const { lineHeight = 9, padX = 2, maxSteps = 6, minY = -Infinity, maxY = Infinity } = options;
+  const placed = [];
+  const ordered = labels
+    .map((label, index) => ({ ...label, index, offset: 0 }))
+    .sort((a, b) => a.y - b.y || a.x - b.x);
+
+  for (const label of ordered) {
+    let offset = 0;
+    for (let step = 0; step <= maxSteps; step += 1) {
+      offset = step === 0
+        ? 0
+        : (step % 2 === 1 ? -1 : 1) * Math.ceil(step / 2) * lineHeight;
+      const y = label.y + offset;
+      if (y < minY || y > maxY) continue;
+      const clash = placed.some((other) =>
+        Math.abs(other.y - y) < lineHeight
+        && label.x < other.x + other.width + padX
+        && other.x < label.x + label.width + padX);
+      if (!clash) break;
+    }
+    label.y += offset;
+    label.offset = offset;
+    placed.push(label);
+  }
+
+  return ordered.sort((a, b) => a.index - b.index);
+}
+
+/**
+ * Render a set of SVG labels with collision avoidance.
+ *
+ * Input labels are `{ x, y, width, anchorX, anchorY, color, text, textAnchor? }`.
+ * Returns `{ leaders, text }` so the caller can draw the leader lines beneath the
+ * object markers and the text on top.
+ */
+function dskRenderSvgLabels(labels, options = {}) {
+  const { fontSize = 8, opacity = 0.8, ...layoutOptions } = options;
+  const placed = dskResolveLabelCollisions(labels, { lineHeight: fontSize + 2, ...layoutOptions });
+
+  let leaders = "";
+  let text = "";
+  for (const label of placed) {
+    const anchorX = label.anchorX ?? label.x;
+    const anchorY = label.anchorY ?? label.y;
+    const textX = label.textAnchor === "middle" ? anchorX : label.x;
+    if (label.offset) {
+      // Displaced label: tie it back to its marker so the pairing stays obvious.
+      const endY = label.offset < 0 ? label.y + 1 : label.y - fontSize + 1;
+      leaders += `<line x1="${anchorX}" y1="${anchorY}" x2="${textX}" y2="${endY}" stroke="${label.color}" stroke-width="0.5" opacity="0.35"/>`;
+    }
+    text += `<text x="${textX}" y="${label.y}"${label.textAnchor ? ` text-anchor="${label.textAnchor}"` : ""} fill="${label.color}" font-size="${fontSize}" opacity="${opacity}">${dskEsc(label.text)}</text>`;
+  }
+  return { leaders, text };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // CARD 1: NIGHT SKY HIGHLIGHTS 2
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -110,8 +213,17 @@ class NightSkyHighlights2Card extends HTMLElement {
 
   _getBestDso() {
     const s = dskGetState(this._hass, "sensor.nasa_astronomy_deepsky_best_tonight");
-    if (s) return { name: s.attributes?.top_objects?.[0] || s.state, count: s.attributes?.count_visible || 0, score: s.attributes?.score };
-    return null;
+    if (!s) return null;
+    // top_objects is a list of objects: {name, score, altitude, type, constellation}.
+    // Reading the entry itself would stringify to "[object Object]".
+    const top = Array.isArray(s.attributes?.top_objects) ? s.attributes.top_objects[0] : null;
+    const topName = top && typeof top === "object" ? top.name : top;
+    const topScore = top && typeof top === "object" ? Number(top.score) : NaN;
+    return {
+      name: (typeof topName === "string" && topName.trim()) ? topName.trim() : s.state,
+      count: s.attributes?.count_visible || 0,
+      score: Number.isFinite(topScore) ? topScore : null,
+    };
   }
 
   _render() {
@@ -130,7 +242,7 @@ class NightSkyHighlights2Card extends HTMLElement {
     // Best DSO
     const dso = this._getBestDso();
     if (dso) {
-      tiles.push(this._buildTile("🌌", "Best DSO Tonight", dso.score || null, `${dso.name} — ${dso.count} objects visible`, false));
+      tiles.push(this._buildTile("🌌", "Best DSO Tonight", dso.score, `${dso.name} — ${dso.count} objects visible`, false));
     } else {
       tiles.push(this._buildTile("🌌", "Best DSO Tonight", null, "Waiting for data...", true));
     }
@@ -238,7 +350,7 @@ class DsoTonightTableCard extends HTMLElement {
       const transit = transitState ? transitState.state : "";
       const score = s.attributes?.score || 0;
       const type = s.attributes?.type || "";
-      const name = s.attributes?.friendly_name?.replace("Deep Sky ", "").replace(" Altitude", "") || objKey.toUpperCase();
+      const name = dskObjectName(s, objKey);
       const constellation = s.attributes?.constellation || "";
 
       if (visible) {
@@ -314,7 +426,7 @@ class DsoYardMapCard extends HTMLElement {
       const az = azState ? parseFloat(azState.state) : 0;
       const score = s.attributes?.score || 0;
       const type = s.attributes?.type || "Unknown";
-      const name = objKey.replace(/_/g, " ").toUpperCase();
+      const name = dskObjectName(s, objKey);
 
       objects.push({ name, alt, az, score, type });
     }
@@ -339,6 +451,8 @@ class DsoYardMapCard extends HTMLElement {
     const maxR = size / 2 - 20;
 
     let dots = "";
+    const labelFontSize = 8;
+    const labelInputs = [];
     for (const obj of objects) {
       const r = maxR * (1 - obj.alt / 90); // 90° at center, 0° at edge
       const angle = (obj.az - 90) * Math.PI / 180; // 0° = North = top
@@ -346,11 +460,25 @@ class DsoYardMapCard extends HTMLElement {
       const y = cy + r * Math.sin(angle);
       const color = obj.type === "Planet" ? "#ffd700" : obj.type === "Galaxy" ? "#e040fb" : obj.type === "Nebula" ? "#00e5ff" : "#69f0ae";
       const radius = obj.score > 60 ? 5 : 4;
-      dots += `<circle cx="${x}" cy="${y}" r="${radius}" fill="${color}" opacity="0.9"><title>${obj.name} (${obj.alt}° alt, ${obj.az}° az)</title></circle>`;
+      dots += `<circle cx="${x}" cy="${y}" r="${radius}" fill="${color}" opacity="0.9"><title>${dskEsc(obj.name)} (${obj.alt}° alt, ${obj.az}° az)</title></circle>`;
       if (obj.score > 50) {
-        dots += `<text x="${x + 7}" y="${y + 3}" fill="${color}" font-size="8" opacity="0.8">${obj.name}</text>`;
+        labelInputs.push({
+          x: x + 7,
+          y: y + 3,
+          width: dskTextWidth(obj.name, labelFontSize),
+          anchorX: x,
+          anchorY: y,
+          color,
+          text: obj.name,
+        });
       }
     }
+
+    const { leaders, text: labelText } = dskRenderSvgLabels(labelInputs, {
+      fontSize: labelFontSize,
+      minY: labelFontSize,
+      maxY: size - 4,
+    });
 
     // Cardinal directions
     const cardinals = `
@@ -372,7 +500,9 @@ class DsoYardMapCard extends HTMLElement {
       <line x1="${cx}" y1="20" x2="${cx}" y2="${size-20}" stroke="#ffffff10" stroke-width="0.5"/>
       <line x1="20" y1="${cy}" x2="${size-20}" y2="${cy}" stroke="#ffffff10" stroke-width="0.5"/>
       ${cardinals}
+      ${leaders}
       ${dots}
+      ${labelText}
     </svg>`;
 
     const legend = `<div class="yard-legend">
@@ -431,7 +561,7 @@ class DsoPanoramaCard extends HTMLElement {
       const azState = this._hass.states[`sensor.nasa_astronomy_deepsky_${objKey}_azimuth`];
       const az = azState ? parseFloat(azState.state) : 0;
       const type = s.attributes?.type || "Unknown";
-      const name = objKey.replace(/_/g, " ").toUpperCase();
+      const name = dskObjectName(s, objKey);
       objects.push({ name, alt, az, type });
     }
 
@@ -448,19 +578,39 @@ class DsoPanoramaCard extends HTMLElement {
     }
 
     // Map to panorama: x = azimuth (0-360 → 0-width), y = altitude (0-90 → bottom-top)
+    const panoFontSize = 7;
     let dots = "";
+    const labelInputs = [];
     for (const obj of objects) {
       const x = (obj.az / 360) * width;
       const y = height - (obj.alt / 90) * (height - 15) - 10;
       const color = obj.type === "Planet" ? "#ffd700" : obj.type === "Galaxy" ? "#e040fb" : obj.type === "Nebula" ? "#00e5ff" : "#69f0ae";
-      dots += `<circle cx="${x}" cy="${y}" r="4" fill="${color}" opacity="0.85"><title>${obj.name} (${obj.alt}° alt)</title></circle>`;
-      if (obj.alt > 30) dots += `<text x="${x}" y="${y - 7}" text-anchor="middle" fill="${color}" font-size="7" opacity="0.8">${obj.name}</text>`;
+      dots += `<circle cx="${x}" cy="${y}" r="4" fill="${color}" opacity="0.85"><title>${dskEsc(obj.name)} (${obj.alt}° alt)</title></circle>`;
+      if (obj.alt > 30) {
+        const textWidth = dskTextWidth(obj.name, panoFontSize);
+        labelInputs.push({
+          x: x - textWidth / 2,
+          y: y - 7,
+          width: textWidth,
+          anchorX: x,
+          anchorY: y,
+          color,
+          text: obj.name,
+          textAnchor: "middle",
+        });
+      }
     }
+
+    const { leaders, text: labelText } = dskRenderSvgLabels(labelInputs, {
+      fontSize: panoFontSize,
+      minY: panoFontSize,
+      maxY: height - 14,
+    });
 
     // Horizon line
     const horizon = `<line x1="0" y1="${height - 10}" x2="${width}" y2="${height - 10}" stroke="#ffffff20" stroke-width="1"/>`;
 
-    const svg = `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">${horizon}${dots}</svg>`;
+    const svg = `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">${horizon}${leaders}${dots}${labelText}</svg>`;
     const compass = `<div class="pano-compass"><span>N</span><span>NE</span><span>E</span><span>SE</span><span>S</span><span>SW</span><span>W</span><span>NW</span><span>N</span></div>`;
 
     this.shadowRoot.innerHTML = `<style>${PANORAMA_STYLES}</style><ha-card><div class="dsk-card"><div class="dsk-header"><div class="dsk-title">${this._config.title}</div><span class="dsk-badge">${objects.length} above horizon</span></div><div class="pano-strip">${svg}</div>${compass}</div></ha-card>`;
@@ -529,7 +679,7 @@ class DsoDomeCard extends HTMLElement {
       const azState = this._hass.states[`sensor.nasa_astronomy_deepsky_${objKey}_azimuth`];
       const az = azState ? parseFloat(azState.state) : 0;
       const type = s.attributes?.type || "Unknown";
-      const name = objKey.replace(/_/g, " ").toUpperCase();
+      const name = dskObjectName(s, objKey);
       objects.push({ name, alt, az, type });
     }
 
@@ -583,6 +733,10 @@ class DsoDomeCard extends HTMLElement {
     });
 
     // Draw objects
+    const labelFontSize = 8;
+    const labelInputs = [];
+    ctx.font = `${labelFontSize}px sans-serif`;
+    ctx.textAlign = "left";
     for (const obj of objects) {
       const adjustedAz = ((obj.az - this._rotation) % 360 + 360) % 360;
       // Only show front hemisphere (90-270 wrapped)
@@ -603,12 +757,39 @@ class DsoDomeCard extends HTMLElement {
       ctx.globalAlpha = 1;
 
       if (obj.alt > 20) {
-        ctx.font = "8px sans-serif";
-        ctx.fillStyle = color;
-        ctx.globalAlpha = 0.7;
-        ctx.fillText(obj.name, x + 6, yBase + 3);
-        ctx.globalAlpha = 1;
+        labelInputs.push({
+          x: x + 6,
+          y: yBase + 3,
+          width: ctx.measureText(obj.name).width,
+          anchorX: x,
+          anchorY: yBase,
+          color,
+          text: obj.name,
+        });
       }
+    }
+
+    // Labels last, nudged apart so angularly close objects stay readable.
+    const placedLabels = dskResolveLabelCollisions(labelInputs, {
+      lineHeight: labelFontSize + 2,
+      minY: labelFontSize,
+      maxY: cy,
+    });
+    for (const label of placedLabels) {
+      ctx.globalAlpha = 0.7;
+      ctx.strokeStyle = label.color;
+      ctx.fillStyle = label.color;
+      if (label.offset) {
+        ctx.globalAlpha = 0.3;
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(label.anchorX, label.anchorY);
+        ctx.lineTo(label.x, label.y - labelFontSize / 3);
+        ctx.stroke();
+        ctx.globalAlpha = 0.7;
+      }
+      ctx.fillText(label.text, label.x, label.y);
+      ctx.globalAlpha = 1;
     }
 
     // Cardinal labels

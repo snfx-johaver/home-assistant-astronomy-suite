@@ -8,8 +8,9 @@ Usage:
 Updates version in all files:
   - version.json
   - custom_components/nasa_astronomy/manifest.json
+  - custom_components/nasa_astronomy/__init__.py
   - www/community/astronomy-cards/package.json
-  - www/community/astronomy-cards/astronomy-cards.js (console banner)
+  - astronomy-cards.js in BOTH locations (header comment, VERSION, console banner)
 
 Then creates a git tag and commit.
 """
@@ -26,8 +27,15 @@ VERSION_FILES = {
     "version_json": ROOT / "version.json",
     "manifest": ROOT / "custom_components" / "nasa_astronomy" / "manifest.json",
     "package": ROOT / "www" / "community" / "astronomy-cards" / "package.json",
-    "cards_js": ROOT / "www" / "community" / "astronomy-cards" / "astronomy-cards.js",
+    "init_py": ROOT / "custom_components" / "nasa_astronomy" / "__init__.py",
 }
+
+# The card bundle ships from two locations that must stay byte-identical
+# (see README "Architecture"), so the version banner is rewritten in both.
+CARDS_JS_FILES = (
+    ROOT / "custom_components" / "nasa_astronomy" / "astronomy-cards.js",
+    ROOT / "www" / "community" / "astronomy-cards" / "astronomy-cards.js",
+)
 
 
 def get_current_version() -> str:
@@ -82,20 +90,32 @@ def update_package_json(new_version: str) -> None:
 
 
 def update_cards_js(new_version: str) -> None:
-    path = VERSION_FILES["cards_js"]
+    """Rewrite every version string in both copies of the card bundle.
+
+    The patterns below are anchored on the strings that actually appear in the
+    bundle. When the bundle was renamed from "NASA Astronomy Cards" the old
+    patterns stopped matching and the banner silently drifted, so each
+    substitution is now verified and the script fails loudly instead.
+    """
+    patterns = (
+        (r'(Astronomy Space Suite Cards v)\d+\.\d+\.\d+', "header/banner"),
+        (r'(const VERSION = ")\d+\.\d+\.\d+', "VERSION constant"),
+    )
+    for path in CARDS_JS_FILES:
+        content = path.read_text(encoding="utf-8")
+        for pattern, label in patterns:
+            content, count = re.subn(pattern, rf'\g<1>{new_version}', content)
+            if not count:
+                raise SystemExit(f"❌ {path.name}: no {label} version string matched {pattern!r}")
+        path.write_text(content, encoding="utf-8")
+
+
+def update_init_py(new_version: str) -> None:
+    path = VERSION_FILES["init_py"]
     content = path.read_text(encoding="utf-8")
-    # Update the console.info version banner
-    content = re.sub(
-        r'(%c NASA-ASTRONOMY-CARDS %c v)\d+\.\d+\.\d+',
-        rf'\g<1>{new_version}',
-        content
-    )
-    # Update the top comment
-    content = re.sub(
-        r'(NASA Astronomy Cards v)\d+\.\d+\.\d+',
-        rf'\g<1>{new_version}',
-        content
-    )
+    content, count = re.subn(r'(^VERSION = ")\d+\.\d+\.\d+', rf'\g<1>{new_version}', content, flags=re.M)
+    if not count:
+        raise SystemExit("❌ __init__.py: no VERSION constant matched")
     path.write_text(content, encoding="utf-8")
 
 
@@ -137,8 +157,11 @@ def main() -> None:
     update_package_json(new_version)
     print(f"  ✓ package.json")
 
+    update_init_py(new_version)
+    print(f"  ✓ __init__.py")
+
     update_cards_js(new_version)
-    print(f"  ✓ astronomy-cards.js")
+    print(f"  ✓ astronomy-cards.js (both copies)")
 
     if no_git:
         print(f"\n✅ Version bumped to {new_version} (git skipped)")
