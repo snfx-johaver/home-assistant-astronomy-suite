@@ -313,7 +313,7 @@ MIT
 
 ## 📋 Changelog
 
-### v1.10.2
+### v1.10.3
 - **FIX: Night Sky Highlights 2** — Best DSO tile rendered the literal `[object Object]`; it now reads `top_objects[0].name`, and the score badge reads `top_objects[0].score` instead of a non-existent top-level `score` attribute
 - **FIX: Tonight Table** — object names were prefixed with the device name ("Astronomy Space Suite M31"); deep-sky sensors now expose a dedicated `object_name` attribute that the cards read instead of parsing `friendly_name`
 - **FIX: Rocket Launch Card** — showed impossible dates (May 2001, Jan 2035). The card fed the entity state (a mission name such as `EOS-05 (ISRO)`) into `new Date()`, which V8's lenient parser happily turned into a real date. `parseDate()` now rejects free-form text, and the card reads the published `t0`/`win_open` window and falls back to a TBD state
