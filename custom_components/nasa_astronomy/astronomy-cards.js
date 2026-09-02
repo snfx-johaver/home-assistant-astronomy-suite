@@ -1,5 +1,5 @@
 /**
- * Astronomy Space Suite Cards v1.7.2
+ * Astronomy Space Suite Cards v1.10.2
  * Pre-built Astronomy Space Suite bundle for Home Assistant Lovelace.
  *
  * Cards:
@@ -201,7 +201,7 @@ const EDITOR_STYLES = `
 `;
 
 const DOCS_URL = "https://github.com/snfx-johaver/home-assistant-astronomy-suite";
-const VERSION = "1.7.0";
+const VERSION = "1.10.2";
 const DAY_MS = 86400000;
 const J2000 = 2451545.0;
 
@@ -255,9 +255,26 @@ function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+// Accept only strings that actually look like a date. The legacy V8 date parser is
+// extremely permissive and happily turns free-form text into a real Date — e.g.
+// new Date("EOS-05 (ISRO)") === 2001-05-01 and new Date("Progress MS-35 (...)") === 2035-01-01.
+// Requiring date-ish characters plus a 4-digit year keeps mission names out.
+const DATE_LIKE_RE = /^[0-9A-Za-z:\-/+.,\s]+$/;
+const DATE_YEAR_RE = /(^|\D)\d{4}(\D|$)/;
+
 function parseDate(value) {
-  if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
+  if (value === null || value === undefined || value === "") return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value <= 0) return null;
+    // Epoch seconds (e.g. the ISS feed) vs. epoch milliseconds.
+    const numeric = new Date(value < 1e11 ? value * 1000 : value);
+    return Number.isNaN(numeric.getTime()) ? null : numeric;
+  }
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  if (!DATE_LIKE_RE.test(text) || !DATE_YEAR_RE.test(text)) return null;
+  const date = new Date(text);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -2017,36 +2034,74 @@ class RocketLaunchCard extends HTMLElement {
 
   _parseLaunch(stateObj, fallbackName) {
     const attrs = stateObj.attributes || {};
+    // Only ever parse attributes that hold a timestamp. The entity state is the
+    // mission name ("EOS-05 (ISRO)") and must never be fed to a date parser.
     const launchDate = parseDate(
-      attrs.window_start || attrs.net || attrs.target_date || attrs.launch_date || attrs.date || attrs.datetime || stateObj.state,
+      attrs.launch_target || attrs.t0 || attrs.win_open || attrs.window_start
+      || attrs.net || attrs.target_date || attrs.launch_date || attrs.datetime,
     );
     const padLocation = [
+      attrs.launch_pad,
       attrs.pad_name,
       attrs.location_name,
       attrs.pad?.name,
       attrs.pad?.location?.name,
-      attrs.pad,
-      attrs.location,
-    ].find(Boolean) || "Location TBD";
+      typeof attrs.pad === "string" ? attrs.pad : null,
+      attrs.launch_location,
+      typeof attrs.location === "string" ? attrs.location : null,
+    ].map((value) => (typeof value === "string" ? value.trim() : value))
+      .find((value) => value && value !== "()") || "Location TBD";
     const tags = [
-      ...(safeArray(attrs.tags).map((tag) => (typeof tag === "string" ? tag : tag?.name)).filter(Boolean)),
+      ...(safeArray(attrs.tags).map((tag) => (typeof tag === "string" ? tag : tag?.name || tag?.text)).filter(Boolean)),
+      ...(typeof attrs.tags === "string" ? attrs.tags.split("|").map((tag) => tag.trim()).filter(Boolean) : []),
       attrs.mission_type,
       attrs.orbit,
       attrs.status,
     ].filter(Boolean);
+    // Human-readable date that is NOT a parsed timestamp (e.g. "Sep 03"), used
+    // when the provider has not published a T-0 yet.
+    const approximateDate = [attrs.date_str, attrs.window_start, attrs.net]
+      .find((value) => typeof value === "string" && value.trim());
     return {
       mission: attrs.mission_name || attrs.name || attrs.mission || attrs.friendly_name || fallbackName,
       provider: attrs.provider || attrs.launch_service_provider || attrs.agency || attrs.organization || "Provider TBD",
       vehicle: attrs.vehicle || attrs.rocket || attrs.rocket_name || attrs.launcher || "Vehicle TBD",
       padLocation,
       countdown: launchDate ? formatCountdown(launchDate) : "Date TBD",
-      dateLabel: launchDate ? formatDateTime(launchDate) : (attrs.window_start || attrs.net || stateObj.state || "Date TBD"),
-      weather: attrs.weather_summary || attrs.launch_weather || attrs.weather || attrs.weather_condition || "",
+      dateLabel: launchDate ? formatDateTime(launchDate) : (approximateDate ? `${approximateDate} (estimated)` : "Date TBD"),
+      weather: this._formatWeather(attrs),
       tags: [...new Set(tags)].slice(0, 4),
       media: attrs.media_link || attrs.video_url || attrs.stream_url || attrs.webcast || attrs.url || "",
       within24h: launchDate ? isWithinHours(launchDate, 24) : false,
       launchDate,
     };
+  }
+
+  _formatWeather(attrs) {
+    const metric = !String(this._hass?.config?.unit_system?.temperature || "°C").toUpperCase().includes("F");
+    const parts = [];
+    if (attrs.weather_condition) parts.push(String(attrs.weather_condition));
+
+    const tempC = toNumber(attrs.weather_temp_c, NaN);
+    const tempF = toNumber(attrs.weather_temp_f, NaN);
+    if (metric && Number.isFinite(tempC)) parts.push(`${Math.round(tempC)} °C`);
+    else if (Number.isFinite(tempF)) parts.push(`${Math.round(tempF)} °F`);
+    else if (Number.isFinite(tempC)) parts.push(`${Math.round(tempC)} °C`);
+
+    const windKph = toNumber(attrs.weather_wind_kph, NaN);
+    const windMph = toNumber(attrs.weather_wind_mph, NaN);
+    if (metric && Number.isFinite(windKph)) parts.push(`Wind ${Math.round(windKph)} km/h`);
+    else if (Number.isFinite(windMph)) parts.push(`Wind ${Math.round(windMph)} mph`);
+    else if (Number.isFinite(windKph)) parts.push(`Wind ${Math.round(windKph)} km/h`);
+
+    if (parts.length) return parts.join(" · ");
+
+    // Fallback for older integration versions: only show the provider's summary
+    // when it is not a bare unit-less reading such as "Temp: 79".
+    const summary = attrs.weather_summary || attrs.launch_weather || attrs.weather || "";
+    const text = String(summary).replace(/\s*\n\s*/g, " · ").replace(/\s*·\s*$/, "").trim();
+    if (!text || text === "TBD") return "";
+    return /(?:^|[^A-Za-z])Temp:\s*-?\d+(?:\.\d+)?(?![°\dCFcf])/.test(text) ? "" : text;
   }
 
   _render() {
@@ -2666,11 +2721,15 @@ class EarthObservationCard extends HTMLElement {
         .earth-frame {
           border-radius: 18px;
           overflow: hidden;
-          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
+          background: #000;
           box-shadow: inset 0 0 0 1px rgba(var(--rgb-primary-text-color, 0,0,0), 0.06);
+          line-height: 0;
         }
-        .earth-frame img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
-        .earth-frame.sun img { object-fit: contain; background: #000; }
+        /* Size the frame to the image instead of forcing a 16/9 box: the EPIC,
+           GOES, Himawari, SDO and SOHO feeds are all square full-disc frames, so
+           a fixed ratio either cropped the disc (object-fit: cover) or left a
+           tall empty band below it (object-fit: contain). */
+        .earth-frame img { display: block; width: 100%; height: auto; }
         .earth-meta { padding: 12px 2px 0; display: flex; flex-direction: column; gap: 8px; }
         .earth-headline { font-size: 0.84rem; font-weight: 700; color: ${ASTRO.text1}; }
         .earth-detail { font-size: 0.78rem; line-height: 1.45; color: ${ASTRO.text2}; }
@@ -2979,7 +3038,7 @@ registerCustomCard("earth-observation-card", "ASS Earth Observation Card", "NASA
 registerCustomCard("night-sky-highlights-card", "ASS Night Sky Highlights Card", "Best visible objects tonight based on ephemeris with editor");
 
 console.info(
-  "%c Astronomy Space Suite Cards v1.8.1 %c",
+  "%c Astronomy Space Suite Cards v1.10.2 %c",
   "color:white;background:#1a237e;font-weight:bold;padding:2px 8px;border-radius:4px 0 0 4px;",
   "color:#1a237e;background:#e8eaf6;font-weight:bold;padding:2px 8px;border-radius:0 4px 4px 0;",
 );

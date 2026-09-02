@@ -313,6 +313,17 @@ MIT
 
 ## 📋 Changelog
 
+### v1.10.2
+- **FIX: Night Sky Highlights 2** — Best DSO tile rendered the literal `[object Object]`; it now reads `top_objects[0].name`, and the score badge reads `top_objects[0].score` instead of a non-existent top-level `score` attribute
+- **FIX: Tonight Table** — object names were prefixed with the device name ("Astronomy Space Suite M31"); deep-sky sensors now expose a dedicated `object_name` attribute that the cards read instead of parsing `friendly_name`
+- **FIX: Rocket Launch Card** — showed impossible dates (May 2001, Jan 2035). The card fed the entity state (a mission name such as `EOS-05 (ISRO)`) into `new Date()`, which V8's lenient parser happily turned into a real date. `parseDate()` now rejects free-form text, and the card reads the published `t0`/`win_open` window and falls back to a TBD state
+- **FIX: Rocket Launch Card** — "Location TBD" on every entry: the card read `pad_name`/`location_name` but the sensor only published `launch_pad`. The sensor now exposes `pad_name`, `location_name`, `t0`, `win_open` and `win_close`
+- **FIX: Rocket Launch Card** — weather showed a unit-less "Temp: 79"; temperature and wind now carry units and follow the instance's unit system
+- **FIX: Sky Panorama / 3D Dome / Sky Map** — labels of angularly close objects (NGC 869/884, M81/82, NGC 6992/M27) overlapped into unreadable text; labels are now nudged apart with a leader line back to their marker
+- **FIX: Earth Observation Card** — the image frame forced a 16:9 box around square full-disc imagery, cropping the disc and leaving a large empty band; the frame now sizes to its content
+- **FIX: Timestamp parsing** — epoch values in seconds (ISS) are no longer interpreted as milliseconds
+- **Internal** — card bundles in `custom_components/` and `www/` re-synced (the `www/` copy still carried pre-rename entity IDs); `scripts/bump_version.py` patterns repaired after the bundle rename and extended to both copies; added a headless `node --test` suite covering all of the above
+
 ### v1.10.1
 - **FIX: Card picker previews** — corrected default entity IDs in all card `getStubConfig()` methods
 - **FIX: Night Sky Highlights 2** — now auto-detects sensors (no manual entity config needed)

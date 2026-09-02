@@ -314,6 +314,8 @@ async def async_setup_deepsky_sensors(
                     state_class=sdef["state_class"],
                     entry_id=entry.entry_id,
                     extra_attrs={
+                        "object_name": name,
+                        "object_key": obj_key,
                         "magnitude": mag,
                         "type": obj_type,
                         "constellation": constellation,
@@ -384,6 +386,10 @@ class DeepSkySensor(CoordinatorEntity, SensorEntity):
         if self.coordinator.data:
             obj_data = self.coordinator.data.get(self._obj_key, {})
             attrs["score"] = obj_data.get("score", 0)
+            # Canonical designation (e.g. "M31", "NGC 7000"). Cards read this instead
+            # of parsing friendly_name, which may be prefixed with the device name.
+            if obj_data.get("name"):
+                attrs["object_name"] = obj_data["name"]
             best = obj_data.get("best_window", {})
             if best:
                 attrs["peak_altitude"] = best.get("peak_altitude")

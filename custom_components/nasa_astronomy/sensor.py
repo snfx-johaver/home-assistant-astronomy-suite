@@ -83,6 +83,17 @@ SENSOR_DESCRIPTIONS: list[SensorEntityDescription] = [
 ]
 
 
+def _to_float(value: Any) -> float | None:
+    """Best-effort float conversion for loosely typed API payloads."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if result == result else None  # reject NaN
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -424,14 +435,29 @@ class RocketLaunchSensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
         }
 
         # Pad info
-        pad = launch.get("pad", {})
-        location = pad.get("location", {})
-        attrs["launch_pad"] = f"{location.get('name', '')} ({pad.get('name', '')})"
-        attrs["launch_location"] = location.get("country", "")
+        pad = launch.get("pad") or {}
+        location = pad.get("location") or {}
+        pad_name = str(pad.get("name") or "").strip()
+        location_name = str(location.get("name") or "").strip()
+        country = str(location.get("country") or "").strip()
+        if location_name and pad_name:
+            attrs["launch_pad"] = f"{location_name} ({pad_name})"
+        else:
+            attrs["launch_pad"] = location_name or pad_name
+        attrs["pad_name"] = pad_name
+        attrs["location_name"] = location_name
+        attrs["launch_location"] = country
 
-        # Target time
+        # Target time. Absent when the provider has not published a T-0 yet;
+        # cards must fall back to the TBD state instead of parsing something else.
         t0 = launch.get("t0") or launch.get("win_open")
         attrs["launch_target"] = t0 or "TBD"
+        attrs["t0"] = launch.get("t0") or ""
+        attrs["win_open"] = launch.get("win_open") or ""
+        attrs["win_close"] = launch.get("win_close") or ""
+        # Human-readable estimate such as "Sep 03" or "Dec 2026". Not a parseable
+        # timestamp — cards show it as an estimate when there is no T-0.
+        attrs["date_str"] = str(launch.get("date_str") or "").strip()
 
         # Tags
         tags = launch.get("tags", [])
@@ -444,8 +470,36 @@ class RocketLaunchSensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
                 attrs["media_link"] = f"https://www.youtube.com/watch?v={media['youtube_vidid']}"
                 break
 
-        # Weather
-        attrs["weather_summary"] = (launch.get("weather_summary") or "TBD").replace("\n", ", ")
+        # Weather. RocketLaunch.Live reports imperial units and its own
+        # weather_summary carries no unit at all ("Temp: 79"), so publish
+        # explicit values in both systems and build a unit-bearing summary.
+        temp_f = _to_float(launch.get("weather_temp"))
+        wind_mph = _to_float(launch.get("weather_wind_mph"))
+        condition = str(launch.get("weather_condition") or "").strip()
+        temp_c = (temp_f - 32.0) * 5.0 / 9.0 if temp_f is not None else None
+        wind_kph = wind_mph * 1.609344 if wind_mph is not None else None
+
+        attrs["weather_condition"] = condition
+        attrs["weather_temp_f"] = round(temp_f, 1) if temp_f is not None else None
+        attrs["weather_temp_c"] = round(temp_c, 1) if temp_c is not None else None
+        attrs["weather_wind_mph"] = round(wind_mph, 1) if wind_mph is not None else None
+        attrs["weather_wind_kph"] = round(wind_kph, 1) if wind_kph is not None else None
+
+        summary_parts: list[str] = []
+        if condition:
+            summary_parts.append(condition)
+        if temp_c is not None and temp_f is not None:
+            summary_parts.append(f"{temp_c:.0f} °C / {temp_f:.0f} °F")
+        if wind_kph is not None and wind_mph is not None:
+            summary_parts.append(f"Wind {wind_kph:.0f} km/h ({wind_mph:.0f} mph)")
+        if summary_parts:
+            attrs["weather_summary"] = " · ".join(summary_parts)
+        else:
+            raw_summary = str(launch.get("weather_summary") or "").strip()
+            attrs["weather_summary"] = (
+                " · ".join(part.strip() for part in raw_summary.splitlines() if part.strip())
+                or "TBD"
+            )
 
         # Missions
         missions = launch.get("missions", [])

@@ -10,6 +10,17 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  cards:
+    name: Card Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Run card regression tests
+        run: node --test "tests/*.test.mjs"
+
   hassfest:
     name: Hassfest
     runs-on: ubuntu-latest
