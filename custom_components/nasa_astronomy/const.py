@@ -1,6 +1,44 @@
 """Constants for Astronomy Space Suite."""
 
+import json
+from pathlib import Path
+
 DOMAIN = "nasa_astronomy"
+
+_MANIFEST_PATH = Path(__file__).parent / "manifest.json"
+
+
+def _read_manifest_version() -> str:
+    """Read the integration version from ``manifest.json``.
+
+    ``manifest.json`` is the one version a release actually updates, so it is
+    the single source for the ``sw_version`` every platform reports in its
+    ``device_info``. Every platform registers against the same device, so a
+    per-module literal meant one device carrying several conflicting version
+    claims, with the displayed one decided by platform setup order.
+
+    Read with the standard library rather than
+    ``homeassistant.loader.async_get_integration``: ``device_info`` is built in
+    synchronous entity constructors, which cannot await, so the Home Assistant
+    route would force the version to be resolved in ``async_setup_entry`` and
+    threaded through every platform's setup path and constructor signature.
+
+    Falls back to ``"unknown"`` rather than raising: a missing or malformed
+    manifest means Home Assistant would not have loaded the integration at all,
+    and a cosmetic field is not worth failing the import over. The fallback
+    cannot hide drift, because the regression test compares this value against
+    the manifest it reads for itself.
+    """
+    try:
+        with _MANIFEST_PATH.open(encoding="utf-8") as manifest:
+            return str(json.load(manifest)["version"])
+    except (OSError, ValueError, KeyError):
+        return "unknown"
+
+
+# Resolved once at import. Integration modules are imported off the event loop,
+# so the single file read does not block it.
+INTEGRATION_VERSION = _read_manifest_version()
 
 CONF_UPDATE_INTERVAL = "update_interval"
 CONF_ROCKET_API_KEY = "rocket_api_key"

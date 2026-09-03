@@ -47,6 +47,18 @@ def _register(name, **attrs):
     return module
 
 
+class _EntityDescription(_StubBase):
+    """Stand-in for ``SensorEntityDescription``, which is a keyword dataclass.
+
+    The real class stores every keyword as an attribute, and ``sensor.py``
+    reads ``description.key`` back out, so the stub has to keep them.
+    """
+
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+
 def install_homeassistant_stubs():
     """Register the minimal ``homeassistant.*`` surface the modules import."""
     if "homeassistant" in sys.modules:
@@ -54,16 +66,22 @@ def install_homeassistant_stubs():
 
     _register("homeassistant")
     _register("homeassistant.components")
+    _register("homeassistant.components.camera", Camera=type("Camera", (_StubBase,), {}))
     _register(
         "homeassistant.components.sensor",
         SensorEntity=type("SensorEntity", (_StubBase,), {}),
         SensorStateClass=_SensorStateClass,
         SensorDeviceClass=type("SensorDeviceClass", (_StubBase,), {}),
+        SensorEntityDescription=_EntityDescription,
     )
     _register("homeassistant.config_entries", ConfigEntry=_StubBase)
     _register("homeassistant.const", DEGREE="\u00b0")
     _register("homeassistant.core", HomeAssistant=_StubBase, callback=lambda fn: fn)
     _register("homeassistant.helpers")
+    _register(
+        "homeassistant.helpers.aiohttp_client",
+        async_get_clientsession=lambda *args, **kwargs: None,
+    )
     _register("homeassistant.helpers.entity_platform", AddEntitiesCallback=_StubBase)
     _register(
         "homeassistant.helpers.update_coordinator",
@@ -71,6 +89,18 @@ def install_homeassistant_stubs():
         DataUpdateCoordinator=type("DataUpdateCoordinator", (_StubBase,), {}),
         UpdateFailed=type("UpdateFailed", (Exception,), {}),
     )
+
+    # ``aiohttp`` is a third-party import, not a Home Assistant one, but the
+    # same reasoning applies: ``camera.py`` and ``coordinator.py`` import it at
+    # module scope purely to make network calls the tests never reach. Stubbing
+    # it keeps the test run on the standard library, which is what CI installs.
+    if "aiohttp" not in sys.modules:
+        _register(
+            "aiohttp",
+            ClientSession=_StubBase,
+            ClientError=type("ClientError", (Exception,), {}),
+            ClientTimeout=_StubBase,
+        )
 
 
 def _ensure_package_alias():

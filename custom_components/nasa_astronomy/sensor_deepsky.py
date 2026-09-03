@@ -27,7 +27,7 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
 )
 
-from .const import DOMAIN
+from .const import DOMAIN, INTEGRATION_VERSION
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -399,7 +399,7 @@ class DeepSkySensor(CoordinatorEntity, SensorEntity):
             "name": "Astronomy Space Suite",
             "manufacturer": "NASA",
             "model": "Open APIs",
-            "sw_version": "1.8.1",
+            "sw_version": INTEGRATION_VERSION,
         }
         self.entity_id = f"sensor.nasa_astronomy_deepsky_{obj_key}_{sensor_key}"
 
@@ -449,7 +449,7 @@ class DeepSkyBestTonightSensor(CoordinatorEntity, SensorEntity):
             "name": "Astronomy Space Suite",
             "manufacturer": "NASA",
             "model": "Open APIs",
-            "sw_version": "1.8.1",
+            "sw_version": INTEGRATION_VERSION,
         }
         self.entity_id = "sensor.nasa_astronomy_deepsky_best_tonight"
 

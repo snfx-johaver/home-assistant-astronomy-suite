@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, ATTR_NEO_LIST, ISS_STREAM_URL
+from .const import DOMAIN, ATTR_NEO_LIST, INTEGRATION_VERSION, ISS_STREAM_URL
 from .coordinator import NasaDataCoordinator
 
 SENSOR_DESCRIPTIONS: list[SensorEntityDescription] = [
@@ -156,7 +156,7 @@ class NasaAstronomySensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
             "name": "Astronomy Space Suite",
             "manufacturer": "NASA",
             "model": "Open APIs",
-            "sw_version": "1.7.0",
+            "sw_version": INTEGRATION_VERSION,
         }
 
     @property
@@ -407,7 +407,7 @@ class RocketLaunchSensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
             "name": "Astronomy Space Suite",
             "manufacturer": "NASA",
             "model": "Open APIs",
-            "sw_version": "1.7.0",
+            "sw_version": INTEGRATION_VERSION,
         }
 
     @property
@@ -539,7 +539,7 @@ class ISSPositionSensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
             "name": "Astronomy Space Suite",
             "manufacturer": "NASA",
             "model": "Open APIs",
-            "sw_version": "1.7.0",
+            "sw_version": INTEGRATION_VERSION,
         }
 
     @property
@@ -593,7 +593,7 @@ class KPIndexSensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
             "name": "Astronomy Space Suite",
             "manufacturer": "NASA",
             "model": "Open APIs",
-            "sw_version": "1.7.0",
+            "sw_version": INTEGRATION_VERSION,
         }
 
     @property
