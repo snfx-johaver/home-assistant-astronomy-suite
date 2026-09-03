@@ -1,5 +1,5 @@
 /**
- * Astronomy Space Suite Cards v1.11.1
+ * Astronomy Space Suite Cards v1.11.2
  * Pre-built Astronomy Space Suite bundle for Home Assistant Lovelace.
  *
  * Cards:
@@ -201,7 +201,7 @@ const EDITOR_STYLES = `
 `;
 
 const DOCS_URL = "https://github.com/snfx-johaver/home-assistant-astronomy-suite";
-const VERSION = "1.11.1";
+const VERSION = "1.11.2";
 const DAY_MS = 86400000;
 const J2000 = 2451545.0;
 
@@ -3063,7 +3063,7 @@ registerCustomCard("earth-observation-card", "ASS Earth Observation Card", "NASA
 registerCustomCard("night-sky-highlights-card", "ASS Night Sky Highlights Card", "Best visible objects tonight based on ephemeris with editor");
 
 console.info(
-  "%c Astronomy Space Suite Cards v1.11.1 %c",
+  "%c Astronomy Space Suite Cards v1.11.2 %c",
   "color:white;background:#1a237e;font-weight:bold;padding:2px 8px;border-radius:4px 0 0 4px;",
   "color:#1a237e;background:#e8eaf6;font-weight:bold;padding:2px 8px;border-radius:0 4px 4px 0;",
 );
