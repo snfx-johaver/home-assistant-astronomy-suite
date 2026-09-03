@@ -79,7 +79,19 @@ DSO_OBJECT_SENSORS = [
 
 
 def _julian_date(dt: datetime) -> float:
-    """Compute Julian Date from a datetime."""
+    """Compute Julian Date from a datetime.
+
+    The fields below are read as UTC, so a tz-aware input must be converted
+    first. Callers pass local time — `compute_all` uses
+    `datetime.now(timezone.utc).astimezone()` — and without this conversion a
+    UTC+2 wall clock was scored as UTC, putting every Julian Date two hours
+    ahead. That shifted local sidereal time by ~2 sidereal hours and the hour
+    angle by ~30 degrees, moving every object's altitude and azimuth.
+
+    Naive input keeps its previous meaning: the fields are already UTC.
+    """
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc)
     a = (14 - dt.month) // 12
     y = dt.year + 4800 - a
     m = dt.month + 12 * a - 3
@@ -124,15 +136,23 @@ def _compute_alt_az(ra_hours: float, dec_deg: float, lat: float, lon: float, dt:
 
 
 def _compute_transit_time(ra_hours: float, lon: float, dt: datetime) -> str:
-    """Compute approximate transit time (when object is highest) for tonight."""
-    jd = _julian_date(dt.replace(hour=0, minute=0, second=0))
+    """Compute approximate transit time (when object is highest) for tonight.
+
+    Returns a local wall-clock "HH:MM", matching the timezone of `dt`.
+    """
+    local_midnight = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    jd = _julian_date(local_midnight)
     lst_midnight = _local_sidereal_time(jd, lon)
     # Time until RA crosses meridian
     transit_lst = ra_hours
     diff = (transit_lst - lst_midnight) % 24
-    transit_utc = dt.replace(hour=0, minute=0, second=0) + timedelta(hours=diff * 0.9973)  # sidereal correction
-    local_time = transit_utc.astimezone(dt.tzinfo) if dt.tzinfo else transit_utc
-    return local_time.strftime("%H:%M")
+    # Local midnight plus an elapsed solar interval is a LOCAL time, and it
+    # already carries `dt`'s tzinfo. This was previously named `transit_utc`
+    # and passed through `.astimezone(dt.tzinfo)`, which converted a value to
+    # its own timezone and so did nothing; the name asserted a conversion that
+    # never happened.
+    transit_local = local_midnight + timedelta(hours=diff * 0.9973)  # sidereal correction
+    return transit_local.strftime("%H:%M")
 
 
 def _compute_best_window(ra_hours: float, dec_deg: float, lat: float, lon: float, dt: datetime) -> dict:
