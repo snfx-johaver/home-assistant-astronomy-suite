@@ -2382,13 +2382,34 @@ class IssTrackerCard extends HTMLElement {
     if (!this._hass) return;
     const stateObj = getState(this._hass, this._config.entity);
     const position = this._parsePosition(stateObj);
-    if (!stateObj || !Number.isFinite(position.latitude) || !Number.isFinite(position.longitude)) {
+    const posValid = Number.isFinite(position.latitude) && Number.isFinite(position.longitude);
+
+    // Cache last known good position in localStorage
+    const cacheKey = `astronomy-cards:iss-last-pos:${this._config.entity || "default"}`;
+    if (posValid) {
+      try { localStorage.setItem(cacheKey, JSON.stringify({ latitude: position.latitude, longitude: position.longitude, timestamp: position.timestamp })); } catch (_) {}
+    }
+
+    let displayPos = position;
+    let isStale = false;
+    if (!posValid) {
+      // Try cached position
+      try {
+        const cached = JSON.parse(localStorage.getItem(cacheKey) || "null");
+        if (cached && Number.isFinite(cached.latitude) && Number.isFinite(cached.longitude)) {
+          displayPos = { ...position, latitude: cached.latitude, longitude: cached.longitude, timestamp: cached.timestamp };
+          isStale = true;
+        }
+      } catch (_) {}
+    }
+
+    if (!stateObj || (!Number.isFinite(displayPos.latitude) || !Number.isFinite(displayPos.longitude))) {
       this.shadowRoot.innerHTML = renderErrorCard(`No ISS position data available for ${this._config.entity}.`, "mdi:space-station");
       return;
     }
 
-    const trail = this._updateTrail(position);
-    const projected = this._project(position.latitude, position.longitude);
+    const trail = this._updateTrail(displayPos);
+    const projected = this._project(displayPos.latitude, displayPos.longitude);
     const trailDots = this._config.show_trail !== false
       ? trail.slice(0, -1).map((item, index, items) => {
         const point = this._project(item.latitude, item.longitude);
@@ -2480,7 +2501,7 @@ class IssTrackerCard extends HTMLElement {
         <div class="astro-header">
           <ha-icon icon="mdi:space-station"></ha-icon>
           <span class="astro-title">${esc(this._config.title || "ISS Tracker")}</span>
-          <span class="astro-badge">Live orbit</span>
+          <span class="astro-badge">${isStale ? "Last known" : "Live orbit"}</span>
         </div>
         <div class="iss-body">
           ${this._config.show_map !== false ? `
@@ -2496,11 +2517,11 @@ class IssTrackerCard extends HTMLElement {
             </div>
           ` : ""}
           <div class="iss-grid">
-            <div class="iss-stat"><div class="iss-stat-label">Latitude</div><div class="iss-stat-value">${position.latitude}°</div></div>
-            <div class="iss-stat"><div class="iss-stat-label">Longitude</div><div class="iss-stat-value">${position.longitude}°</div></div>
+            <div class="iss-stat"><div class="iss-stat-label">Latitude</div><div class="iss-stat-value">${displayPos.latitude}°</div></div>
+            <div class="iss-stat"><div class="iss-stat-label">Longitude</div><div class="iss-stat-value">${displayPos.longitude}°</div></div>
           </div>
           <div class="iss-footer">
-            <div class="iss-time">Updated ${esc(formatDateTime(position.timestamp))}</div>
+            <div class="iss-time">${isStale ? "⚠ Last known position" : `Updated ${esc(formatDateTime(displayPos.timestamp))}`}</div>
             ${this._config.show_stream_button !== false ? `<a class="iss-button" href="${esc(position.liveStreamUrl)}" target="_blank" rel="noopener">Live Stream ↗</a>` : ""}
           </div>
         </div>

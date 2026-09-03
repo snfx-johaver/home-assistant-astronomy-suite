@@ -410,7 +410,8 @@ class DsoTonightTableCardEditor extends HTMLElement {
 const YARD_MAP_STYLES = `
   ${DSK_BASE_STYLES}
   .yard-svg { width: 100%; aspect-ratio: 1; border-radius: 50%; overflow: hidden; background: radial-gradient(circle, #0d1b2a 0%, #1b2838 70%, #2c3e50 100%); position: relative; }
-  .yard-svg svg { width: 100%; height: 100%; }
+  .yard-svg svg { width: 100%; height: 100%; position: relative; z-index: 2; }
+  .yard-bg-map { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; border-radius: 50%; opacity: 0.35; object-fit: cover; pointer-events: none; }
   .yard-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; justify-content: center; font-size: 0.72em; color: var(--secondary-text-color); }
   .yard-legend-item { display: flex; align-items: center; gap: 4px; }
   .yard-legend-dot { width: 8px; height: 8px; border-radius: 50%; }
@@ -419,8 +420,8 @@ const YARD_MAP_STYLES = `
 class DsoYardMapCard extends HTMLElement {
   constructor() { super(); this.attachShadow({ mode: "open" }); this._config = {}; }
   static getConfigElement() { return document.createElement("dso-yard-map-card-editor"); }
-  static getStubConfig() { return { title: "Sky Map" }; }
-  setConfig(config) { this._config = { title: config.title || "Sky Map", ...config }; }
+  static getStubConfig() { return { title: "Sky Map", show_house_map: false, map_latitude: "", map_longitude: "", map_zoom: 18 }; }
+  setConfig(config) { this._config = { title: config.title || "Sky Map", show_house_map: false, map_zoom: 18, ...config }; }
   set hass(hass) { this._hass = hass; this._render(); }
 
   _render() {
@@ -525,8 +526,21 @@ class DsoYardMapCard extends HTMLElement {
       <div class="yard-legend-item"><span class="yard-legend-dot" style="background:#69f0ae"></span>Cluster</div>
     </div>`;
 
-    this.shadowRoot.innerHTML = `<style>${YARD_MAP_STYLES}</style><ha-card><div class="dsk-card"><div class="dsk-header"><div class="dsk-title">${this._config.title}</div><span class="dsk-badge">${objects.length} objects</span></div><div class="yard-svg">${svg}</div>${legend}</div></ha-card>`;
+    // House map background overlay
+    let houseMapBg = "";
+    if (this._config.show_house_map) {
+      const lat = this._config.map_latitude || this._hass.config?.latitude || 52.37;
+      const lon = this._config.map_longitude || this._hass.config?.longitude || 4.89;
+      const zoom = Math.max(14, Math.min(20, parseInt(this._config.map_zoom) || 18));
+      // Use OpenStreetMap static tile — dark style from CartoDB
+      const tileUrl = `https://basemaps.cartocdn.com/dark_all/${zoom}/${this._lonToTileX(lon, zoom)}/${this._latToTileY(lat, zoom)}.png`;
+      houseMapBg = `<img class="yard-bg-map" src="${tileUrl}" alt="" />`;
+    }
+
+    this.shadowRoot.innerHTML = `<style>${YARD_MAP_STYLES}</style><ha-card><div class="dsk-card"><div class="dsk-header"><div class="dsk-title">${this._config.title}</div><span class="dsk-badge">${objects.length} objects</span></div><div class="yard-svg">${houseMapBg}${svg}</div>${legend}</div></ha-card>`;
   }
+  _lonToTileX(lon, zoom) { return Math.floor((lon + 180) / 360 * Math.pow(2, zoom)); }
+  _latToTileY(lat, zoom) { const r = lat * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * Math.pow(2, zoom)); }
   getCardSize() { return 6; }
 }
 
@@ -535,8 +549,20 @@ class DsoYardMapCardEditor extends HTMLElement {
   setConfig(config) { this._config = { ...config }; this._render(); }
   set hass(h) {}
   _render() {
-    this.shadowRoot.innerHTML = `<style>.ed{padding:16px}.f{margin-bottom:10px}.f label{display:block;font-size:0.8em;margin-bottom:3px;color:var(--secondary-text-color)}.f input{width:100%;padding:7px;border:1px solid var(--divider-color,#ccc);border-radius:6px;box-sizing:border-box;background:var(--card-background-color);color:var(--primary-text-color)}</style><div class="ed"><div class="f"><label>Title</label><input id="t" value="${this._config.title||"Sky Map"}"/></div></div>`;
+    const showMap = this._config.show_house_map ? "checked" : "";
+    this.shadowRoot.innerHTML = `<style>.ed{padding:16px}.f{margin-bottom:10px}.f label{display:block;font-size:0.8em;margin-bottom:3px;color:var(--secondary-text-color)}.f input,.f select{width:100%;padding:7px;border:1px solid var(--divider-color,#ccc);border-radius:6px;box-sizing:border-box;background:var(--card-background-color);color:var(--primary-text-color)}.sw{display:flex;align-items:center;gap:8px;margin-bottom:10px}.sw input[type=checkbox]{width:18px;height:18px}</style>
+    <div class="ed">
+      <div class="f"><label>Title</label><input id="t" value="${this._config.title||"Sky Map"}"/></div>
+      <div class="sw"><input type="checkbox" id="sm" ${showMap}/><label for="sm">Show house map overlay</label></div>
+      <div class="f"><label>Latitude (blank = HA default)</label><input id="lat" type="number" step="any" value="${this._config.map_latitude||""}"/></div>
+      <div class="f"><label>Longitude (blank = HA default)</label><input id="lon" type="number" step="any" value="${this._config.map_longitude||""}"/></div>
+      <div class="f"><label>Zoom (14-20)</label><input id="z" type="number" min="14" max="20" value="${this._config.map_zoom||18}"/></div>
+    </div>`;
     this.shadowRoot.getElementById("t").addEventListener("input", ev => { this._config.title = ev.target.value; this._fire(); });
+    this.shadowRoot.getElementById("sm").addEventListener("change", ev => { this._config.show_house_map = ev.target.checked; this._fire(); });
+    this.shadowRoot.getElementById("lat").addEventListener("input", ev => { this._config.map_latitude = ev.target.value; this._fire(); });
+    this.shadowRoot.getElementById("lon").addEventListener("input", ev => { this._config.map_longitude = ev.target.value; this._fire(); });
+    this.shadowRoot.getElementById("z").addEventListener("input", ev => { this._config.map_zoom = parseInt(ev.target.value) || 18; this._fire(); });
   }
   _fire() { this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: {...this._config} }, bubbles: true, composed: true })); }
 }
