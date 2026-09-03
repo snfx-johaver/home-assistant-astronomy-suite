@@ -34,7 +34,12 @@ remembering to extend this file.
 """
 
 import json
+import os
 import re
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -42,10 +47,19 @@ from harness import COMPONENT_DIR, load_component_module
 
 package_init = load_component_module("__init__")
 
+REPO_ROOT = COMPONENT_DIR.parent.parent
 MANIFEST_PATH = COMPONENT_DIR / "manifest.json"
+
+# The script prints "→" in its progress output, which explodes on a cp1252
+# console. Force UTF-8 so these tests measure the script's logic rather than
+# the terminal it happens to be running under.
+CHILD_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8"}
 
 # Matches the ``?v=1.2.3`` cache-bust these URLs are built with.
 CACHE_BUST = re.compile(r"\?v=(?P<version>[^&]+)$")
+
+# The version constant inside a card bundle.
+BUNDLE_VERSION = re.compile(r'const VERSION = "(?P<version>[^"]+)"')
 
 
 def manifest_version():
@@ -94,6 +108,49 @@ class CardResourceVersionTests(unittest.TestCase):
         self.assertEqual(wrong, {}, f"manifest.json says {expected!r}")
 
 
+# Both card bundles, in the order bump_version.py processes them.
+BUNDLES = (
+    Path("custom_components") / "nasa_astronomy" / "astronomy-cards.js",
+    Path("www") / "community" / "astronomy-cards" / "astronomy-cards.js",
+)
+VERSIONED_FILES = (
+    Path("version.json"),
+    Path("custom_components") / "nasa_astronomy" / "manifest.json",
+    Path("www") / "community" / "astronomy-cards" / "package.json",
+) + BUNDLES
+
+
+def copy_of_the_repo(scratch):
+    copy = Path(scratch) / "repo"
+    shutil.copytree(
+        REPO_ROOT,
+        copy,
+        ignore=shutil.ignore_patterns(".git", "node_modules", "*.png"),
+    )
+    return copy
+
+
+def run_bumper(copy):
+    return subprocess.run(
+        [sys.executable, str(copy / "scripts" / "bump_version.py"), "patch", "--no-git"],
+        cwd=copy,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=CHILD_ENV,
+    )
+
+
+def rename_the_product_in(bundle_path):
+    """Break the header pattern the way a real product rename would."""
+    bundle_path.write_text(
+        bundle_path.read_text(encoding="utf-8").replace(
+            "Astronomy Space Suite Cards v", "Stellar Suite Cards v"
+        ),
+        encoding="utf-8",
+    )
+
+
 class ReleaseScriptTests(unittest.TestCase):
     """The release path must survive the constant becoming derived.
 
@@ -106,32 +163,9 @@ class ReleaseScriptTests(unittest.TestCase):
     """
 
     def test_a_release_bump_keeps_every_version_in_step(self):
-        import os
-        import shutil
-        import subprocess
-        import sys
-        import tempfile
-
-        repo = COMPONENT_DIR.parent.parent
-        # The script prints "→" in its progress output, which explodes on a
-        # cp1252 console. Force UTF-8 so this tests the script's logic rather
-        # than the terminal it happens to be running under.
-        env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
         with tempfile.TemporaryDirectory() as scratch:
-            copy = Path(scratch) / "repo"
-            shutil.copytree(
-                repo,
-                copy,
-                ignore=shutil.ignore_patterns(".git", "node_modules", "*.png"),
-            )
-            result = subprocess.run(
-                [sys.executable, str(copy / "scripts" / "bump_version.py"), "patch", "--no-git"],
-                cwd=copy,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                env=env,
-            )
+            copy = copy_of_the_repo(scratch)
+            result = run_bumper(copy)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
             manifest = json.loads(
@@ -160,7 +194,7 @@ class ReleaseScriptTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
-                env=env,
+                env=CHILD_ENV,
             )
             self.assertEqual(probed.returncode, 0, probed.stdout + probed.stderr)
             resolved = json.loads(probed.stdout.strip().splitlines()[-1])
@@ -173,6 +207,90 @@ class ReleaseScriptTests(unittest.TestCase):
                     bumped,
                     resolved[key],
                 )
+
+
+class AbortedReleaseTests(unittest.TestCase):
+    """A release that cannot complete must not half-happen.
+
+    ``bump_version.py`` validates each substitution and raises ``SystemExit``
+    when a pattern stops matching. That guard is right -- it exists because the
+    bundle was once renamed and the banner drifted silently -- but it fires
+    *after* earlier files have already been written, so a failed release leaves
+    ``version.json``, ``manifest.json``, ``package.json`` and the first card
+    bundle bumped while the second still carries the old version.
+
+    That is worse than it sounds, because the two bundles are required to stay
+    byte-identical (see README "Architecture"). The guard protects an invariant
+    from a position where tripping it violates that invariant.
+
+    The perturbation below breaks the *product-name* pattern rather than the
+    ``const VERSION`` one deliberately. ``Astronomy Space Suite Cards v`` is
+    marketing text, and it is the pattern that broke last time: whoever renames
+    the product next will correctly believe they are not touching code.
+
+    It is broken in the **second** bundle only, so the first is already written
+    by the time the script gives up -- which is precisely the state this test
+    exists to forbid.
+    """
+
+    BUNDLES = BUNDLES
+    VERSIONED_FILES = VERSIONED_FILES
+
+    def test_an_aborted_bump_leaves_every_file_unmodified(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            copy = copy_of_the_repo(scratch)
+
+            # Rename the product in the second bundle so its header pattern
+            # stops matching, exactly as a real rename would.
+            rename_the_product_in(copy / self.BUNDLES[1])
+
+            before = {
+                str(rel): (copy / rel).read_bytes() for rel in self.VERSIONED_FILES
+            }
+
+            result = run_bumper(copy)
+
+            # Non-vacuity: these hold both before and after the fix. The point
+            # is not that the script stops -- it already does -- but what it
+            # leaves behind when it does.
+            self.assertNotEqual(result.returncode, 0, "the bump should have aborted")
+            self.assertIn("header/banner", result.stdout + result.stderr)
+
+            changed = sorted(
+                name for name, original in before.items()
+                if (copy / name).read_bytes() != original
+            )
+            self.assertEqual(
+                changed,
+                [],
+                "an aborted release left a half-bumped tree; these were written "
+                f"before the script gave up: {changed}",
+            )
+
+    def test_an_aborted_bump_does_not_diverge_the_two_bundles(self):
+        """The invariant the guard is supposed to protect.
+
+        Stated in version terms rather than byte terms, because the
+        perturbation above necessarily makes the two files differ textually.
+        """
+        with tempfile.TemporaryDirectory() as scratch:
+            copy = copy_of_the_repo(scratch)
+            rename_the_product_in(copy / self.BUNDLES[1])
+
+            result = run_bumper(copy)
+            self.assertNotEqual(result.returncode, 0, "the bump should have aborted")
+
+            versions = {
+                str(rel): BUNDLE_VERSION.search(
+                    (copy / rel).read_text(encoding="utf-8")
+                ).group("version")
+                for rel in self.BUNDLES
+            }
+            self.assertEqual(
+                len(set(versions.values())),
+                1,
+                f"the two card bundles must never disagree on version: {versions}",
+            )
 
 
 if __name__ == "__main__":

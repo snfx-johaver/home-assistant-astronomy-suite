@@ -15,6 +15,15 @@ __init__.py is deliberately absent: its VERSION now derives from manifest.json
 via const.INTEGRATION_VERSION, so there is no literal left to rewrite and a
 rewrite step here would abort every release on its own no-match guard.
 
+The bump runs in two phases. Every step computes its replacements and verifies
+each pattern matched, returning the writes it wants rather than performing
+them; only once all of them have succeeded is anything written to disk. The
+substitution guards exist because a bundle rename once made the patterns stop
+matching and the banner drifted silently -- but a guard that fires midway
+through writing leaves a half-bumped tree, and the two card bundles are
+required to stay byte-identical. Validate-then-write means a release either
+happens or doesn't, with no third state.
+
 Then creates a git tag and commit.
 """
 
@@ -57,59 +66,60 @@ def bump(version: str, part: str) -> str:
         raise ValueError(f"Invalid part: {part}. Use major, minor, or patch.")
 
 
-def update_version_json(new_version: str) -> None:
+def plan_version_json(new_version: str) -> list[tuple[Path, str]]:
     path = VERSION_FILES["version_json"]
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         data = json.load(f)
     data["version"] = new_version
     data["integration"] = new_version
     data["cards"] = new_version
     from datetime import date
     data["date"] = date.today().isoformat()
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
-        f.write("\n")
+    return [(path, json.dumps(data, indent=2) + "\n")]
 
 
-def update_manifest(new_version: str) -> None:
+def plan_manifest(new_version: str) -> list[tuple[Path, str]]:
     path = VERSION_FILES["manifest"]
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         data = json.load(f)
     data["version"] = new_version
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
-        f.write("\n")
+    return [(path, json.dumps(data, indent=2) + "\n")]
 
 
-def update_package_json(new_version: str) -> None:
+def plan_package_json(new_version: str) -> list[tuple[Path, str]]:
     path = VERSION_FILES["package"]
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         data = json.load(f)
     data["version"] = new_version
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
-        f.write("\n")
+    return [(path, json.dumps(data, indent=2) + "\n")]
 
 
-def update_cards_js(new_version: str) -> None:
+def plan_cards_js(new_version: str) -> list[tuple[Path, str]]:
     """Rewrite every version string in both copies of the card bundle.
 
     The patterns below are anchored on the strings that actually appear in the
     bundle. When the bundle was renamed from "NASA Astronomy Cards" the old
     patterns stopped matching and the banner silently drifted, so each
-    substitution is now verified and the script fails loudly instead.
+    substitution is verified and the script fails loudly instead.
+
+    Note that ``Astronomy Space Suite Cards v`` is a *product name*, not a code
+    identifier: the next rename will be done by someone who correctly believes
+    they are not touching code, and this will stop matching again. That is the
+    case this returns-rather-than-writes shape exists to make survivable.
     """
     patterns = (
         (r'(Astronomy Space Suite Cards v)\d+\.\d+\.\d+', "header/banner"),
         (r'(const VERSION = ")\d+\.\d+\.\d+', "VERSION constant"),
     )
+    planned = []
     for path in CARDS_JS_FILES:
         content = path.read_text(encoding="utf-8")
         for pattern, label in patterns:
             content, count = re.subn(pattern, rf'\g<1>{new_version}', content)
             if not count:
                 raise SystemExit(f"❌ {path.name}: no {label} version string matched {pattern!r}")
-        path.write_text(content, encoding="utf-8")
+        planned.append((path, content))
+    return planned
 
 
 def git_tag_and_commit(new_version: str) -> None:
@@ -128,6 +138,18 @@ def git_tag_and_commit(new_version: str) -> None:
     print(f"\n   Push with: git push && git push --tags")
 
 
+# Each step returns the writes it wants rather than performing them, so that a
+# step which cannot do its job aborts the release before anything is touched.
+# Adding a step here is abort-safe by construction; adding one that writes for
+# itself reintroduces the half-bumped tree.
+PLAN_STEPS = (
+    ("version.json", plan_version_json),
+    ("manifest.json", plan_manifest),
+    ("package.json", plan_package_json),
+    ("astronomy-cards.js (both copies)", plan_cards_js),
+)
+
+
 def main() -> None:
     if len(sys.argv) < 2 or sys.argv[1] not in ("major", "minor", "patch"):
         print("Usage: python scripts/bump_version.py [major|minor|patch] [--no-git]")
@@ -140,18 +162,19 @@ def main() -> None:
 
     print(f"Bumping version: {current} → {new_version} ({part})")
     print()
+    print("Validating:")
 
-    update_version_json(new_version)
-    print(f"  ✓ version.json")
+    # Phase 1: work out every replacement and verify each one matched. Any
+    # SystemExit raised here leaves the working tree exactly as it was found.
+    planned: list[tuple[Path, str]] = []
+    for label, planner in PLAN_STEPS:
+        planned.extend(planner(new_version))
+        print(f"  ✓ {label}")
 
-    update_manifest(new_version)
-    print(f"  ✓ manifest.json")
-
-    update_package_json(new_version)
-    print(f"  ✓ package.json")
-
-    update_cards_js(new_version)
-    print(f"  ✓ astronomy-cards.js (both copies)")
+    # Phase 2: nothing above can fail on a pattern any more, so commit.
+    for path, content in planned:
+        path.write_text(content, encoding="utf-8")
+    print(f"\n  {len(planned)} files written")
 
     if no_git:
         print(f"\n✅ Version bumped to {new_version} (git skipped)")
