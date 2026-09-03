@@ -21,6 +21,19 @@ jobs:
       - name: Run card regression tests
         run: node --test "tests/*.test.mjs"
 
+  sensors:
+    name: Sensor Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # Stdlib unittest only — the modules under test are pure stdlib and the
+      # harness stubs Home Assistant, so there is nothing to install.
+      - name: Run sensor regression tests
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+
   hassfest:
     name: Hassfest
     runs-on: ubuntu-latest

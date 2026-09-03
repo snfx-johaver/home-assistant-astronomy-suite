@@ -79,7 +79,19 @@ DSO_OBJECT_SENSORS = [
 
 
 def _julian_date(dt: datetime) -> float:
-    """Compute Julian Date from a datetime."""
+    """Compute Julian Date from a datetime.
+
+    The fields below are read as UTC, so a tz-aware input must be converted
+    first. Callers pass local time — `compute_all` uses
+    `datetime.now(timezone.utc).astimezone()` — and without this conversion a
+    UTC+2 wall clock was scored as UTC, putting every Julian Date two hours
+    ahead. That shifted local sidereal time by ~2 sidereal hours and the hour
+    angle by ~30 degrees, moving every object's altitude and azimuth.
+
+    Naive input keeps its previous meaning: the fields are already UTC.
+    """
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc)
     a = (14 - dt.month) // 12
     y = dt.year + 4800 - a
     m = dt.month + 12 * a - 3
