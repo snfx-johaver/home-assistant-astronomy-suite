@@ -19,6 +19,7 @@ from .const import (
     GOES16_EARTH_URL,
     GOES18_EARTH_URL,
     HIMAWARI8_EARTH_URL,
+    INTEGRATION_VERSION,
     SDO_SUN_URL,
     SOHO_SUN_URL,
 )
@@ -66,7 +67,7 @@ class NasaApodCamera(CoordinatorEntity[NasaDataCoordinator], Camera):
             "name": "Astronomy Space Suite",
             "manufacturer": "NASA",
             "model": "Open APIs",
-            "sw_version": "1.7.0",
+            "sw_version": INTEGRATION_VERSION,
         }
         self._image_url: str | None = None
         self._cached_image: bytes | None = None
@@ -147,7 +148,7 @@ class NasaEpicEarthCamera(CoordinatorEntity[NasaDataCoordinator], Camera):
             "name": "Astronomy Space Suite",
             "manufacturer": "NASA",
             "model": "Open APIs",
-            "sw_version": "1.7.0",
+            "sw_version": INTEGRATION_VERSION,
         }
         self._cached_image: bytes | None = None
         self._cached_url: str | None = None
@@ -246,7 +247,7 @@ class StaticImageCamera(CoordinatorEntity[NasaDataCoordinator], Camera):
             "name": "Astronomy Space Suite",
             "manufacturer": "NASA",
             "model": "Open APIs",
-            "sw_version": "1.7.0",
+            "sw_version": INTEGRATION_VERSION,
         }
         self._cached_image: bytes | None = None
 

@@ -23,7 +23,7 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
 )
 
-from .const import DOMAIN
+from .const import DOMAIN, INTEGRATION_VERSION
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -239,7 +239,7 @@ class EphemerisSensor(CoordinatorEntity, SensorEntity):
             "name": "Astronomy Space Suite",
             "manufacturer": "NASA",
             "model": "Open APIs",
-            "sw_version": "1.8.0",
+            "sw_version": INTEGRATION_VERSION,
         }
         # Set entity_id suggestion
         self.entity_id = f"sensor.nasa_astronomy_ephemeris_{body}_{sensor_key}"
