@@ -41,11 +41,40 @@ VERSION_FILES = {
     "package": ROOT / "www" / "community" / "astronomy-cards" / "package.json",
 }
 
-# The card bundle ships from two locations that must stay byte-identical
-# (see README "Architecture"), so the version banner is rewritten in both.
-CARDS_JS_FILES = (
-    ROOT / "custom_components" / "nasa_astronomy" / "astronomy-cards.js",
-    ROOT / "www" / "community" / "astronomy-cards" / "astronomy-cards.js",
+# Each card bundle ships from two locations that must stay byte-identical
+# (see README "Architecture"), so its version strings are rewritten in both.
+#
+# Every bundle that ships must appear here. deepsky-cards.js did not, and sat
+# at 1.0.0 for fourteen releases while logging that number to the browser
+# console on load. A bundle absent from this table does not fail loudly -- it
+# just quietly stops tracking the release, which is why the test suite measures
+# coverage by breaking each bundle's constant rather than by reading this list.
+CARD_BUNDLES = (
+    {
+        "label": "astronomy-cards.js (both copies)",
+        "paths": (
+            ROOT / "custom_components" / "nasa_astronomy" / "astronomy-cards.js",
+            ROOT / "www" / "community" / "astronomy-cards" / "astronomy-cards.js",
+        ),
+        "patterns": (
+            # A product name, not a code identifier: the next rename will be
+            # done by someone who correctly believes they are not touching
+            # code, and this will stop matching again.
+            (r'(Astronomy Space Suite Cards v)\d+\.\d+\.\d+', "header/banner"),
+            (r'(const VERSION = ")\d+\.\d+\.\d+', "VERSION constant"),
+        ),
+    },
+    {
+        "label": "deepsky-cards.js (both copies)",
+        "paths": (
+            ROOT / "custom_components" / "nasa_astronomy" / "deepsky-cards.js",
+            ROOT / "www" / "community" / "astronomy-cards" / "deepsky-cards.js",
+        ),
+        "patterns": (
+            (r'(^ \* Version: )\d+\.\d+\.\d+', "header"),
+            (r'(const DEEPSKY_VERSION = ")\d+\.\d+\.\d+', "VERSION constant"),
+        ),
+    },
 )
 
 
@@ -94,32 +123,29 @@ def plan_package_json(new_version: str) -> list[tuple[Path, str]]:
     return [(path, json.dumps(data, indent=2) + "\n")]
 
 
-def plan_cards_js(new_version: str) -> list[tuple[Path, str]]:
-    """Rewrite every version string in both copies of the card bundle.
+def bundle_planner(bundle):
+    """Build the planner for one card bundle.
 
-    The patterns below are anchored on the strings that actually appear in the
-    bundle. When the bundle was renamed from "NASA Astronomy Cards" the old
-    patterns stopped matching and the banner silently drifted, so each
-    substitution is verified and the script fails loudly instead.
-
-    Note that ``Astronomy Space Suite Cards v`` is a *product name*, not a code
-    identifier: the next rename will be done by someone who correctly believes
-    they are not touching code, and this will stop matching again. That is the
-    case this returns-rather-than-writes shape exists to make survivable.
+    Returns the writes it wants rather than performing them, so a pattern that
+    stops matching aborts the release before anything reaches disk. See the
+    two-phase note in the module docstring.
     """
-    patterns = (
-        (r'(Astronomy Space Suite Cards v)\d+\.\d+\.\d+', "header/banner"),
-        (r'(const VERSION = ")\d+\.\d+\.\d+', "VERSION constant"),
-    )
-    planned = []
-    for path in CARDS_JS_FILES:
-        content = path.read_text(encoding="utf-8")
-        for pattern, label in patterns:
-            content, count = re.subn(pattern, rf'\g<1>{new_version}', content)
-            if not count:
-                raise SystemExit(f"❌ {path.name}: no {label} version string matched {pattern!r}")
-        planned.append((path, content))
-    return planned
+    def plan(new_version: str) -> list[tuple[Path, str]]:
+        planned = []
+        for path in bundle["paths"]:
+            content = path.read_text(encoding="utf-8")
+            for pattern, label in bundle["patterns"]:
+                content, count = re.subn(
+                    pattern, rf'\g<1>{new_version}', content, flags=re.M
+                )
+                if not count:
+                    raise SystemExit(
+                        f"❌ {path.name}: no {label} version string matched {pattern!r}"
+                    )
+            planned.append((path, content))
+        return planned
+
+    return plan
 
 
 def git_tag_and_commit(new_version: str) -> None:
@@ -146,8 +172,7 @@ PLAN_STEPS = (
     ("version.json", plan_version_json),
     ("manifest.json", plan_manifest),
     ("package.json", plan_package_json),
-    ("astronomy-cards.js (both copies)", plan_cards_js),
-)
+) + tuple((b["label"], bundle_planner(b)) for b in CARD_BUNDLES)
 
 
 def main() -> None:

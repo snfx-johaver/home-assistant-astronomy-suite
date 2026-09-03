@@ -58,8 +58,39 @@ CHILD_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8"}
 # Matches the ``?v=1.2.3`` cache-bust these URLs are built with.
 CACHE_BUST = re.compile(r"\?v=(?P<version>[^&]+)$")
 
-# The version constant inside a card bundle.
-BUNDLE_VERSION = re.compile(r'const VERSION = "(?P<version>[^"]+)"')
+# The version constant inside a card bundle. Bundles name it differently
+# (``VERSION``, ``DEEPSKY_VERSION``), so match the suffix rather than listing.
+BUNDLE_VERSION = re.compile(r'const [A-Z_]*VERSION = "(?P<version>[^"]+)"')
+
+# The two directories a card bundle ships from. They must stay byte-identical
+# (see README "Architecture").
+CARD_DIRS = (
+    Path("custom_components") / "nasa_astronomy",
+    Path("www") / "community" / "astronomy-cards",
+)
+
+
+def discover_bundles():
+    """Map each card bundle filename to its copies, discovered not listed.
+
+    Enumerating from disk is the point: the failure this guards against is a
+    bundle nobody remembered to register with the release script, so a
+    hand-written list here would share the blind spot it is meant to catch.
+    """
+    names = sorted(
+        {p.name for d in CARD_DIRS for p in (REPO_ROOT / d).glob("*-cards.js")}
+    )
+    return {name: tuple(d / name for d in CARD_DIRS) for name in names}
+
+
+BUNDLE_COPIES = discover_bundles()
+
+# Every file a release rewrites, relative to the repo root.
+VERSIONED_FILES = (
+    Path("version.json"),
+    Path("custom_components") / "nasa_astronomy" / "manifest.json",
+    Path("www") / "community" / "astronomy-cards" / "package.json",
+) + tuple(copy for copies in BUNDLE_COPIES.values() for copy in copies)
 
 
 def manifest_version():
@@ -109,15 +140,7 @@ class CardResourceVersionTests(unittest.TestCase):
 
 
 # Both card bundles, in the order bump_version.py processes them.
-BUNDLES = (
-    Path("custom_components") / "nasa_astronomy" / "astronomy-cards.js",
-    Path("www") / "community" / "astronomy-cards" / "astronomy-cards.js",
-)
-VERSIONED_FILES = (
-    Path("version.json"),
-    Path("custom_components") / "nasa_astronomy" / "manifest.json",
-    Path("www") / "community" / "astronomy-cards" / "package.json",
-) + BUNDLES
+BUNDLES = BUNDLE_COPIES["astronomy-cards.js"]
 
 
 def copy_of_the_repo(scratch):
@@ -149,6 +172,51 @@ def rename_the_product_in(bundle_path):
         ),
         encoding="utf-8",
     )
+
+
+def break_the_version_constant_in(bundle_path):
+    """Rename a bundle's version identifier so the release pattern misses it."""
+    bundle_path.write_text(
+        BUNDLE_VERSION.sub(
+            lambda m: m.group(0).replace("VERSION", "VERSION_RENAMED", 1),
+            bundle_path.read_text(encoding="utf-8"),
+            count=1,
+        ),
+        encoding="utf-8",
+    )
+
+
+class CardBundleVersionTests(unittest.TestCase):
+    """Every shipped card bundle must report the released version.
+
+    ``deepsky-cards.js`` sat at ``1.0.0`` while the suite reached ``1.11.4``.
+    It was never independently versioned -- ``git log -S`` shows the constant
+    changed exactly once, in the commit that created it, across six later
+    modifications including a feature addition and a five-defect fix. An
+    artefact with a real independent version bumps when it changes.
+
+    It is user-visible: the bundle logs ``v${DEEPSKY_VERSION}`` to the console
+    on load, so anyone debugging a deep-sky card read a confident wrong number.
+    That is the same defect as one device advertising four ``sw_version``
+    values, in a different costume.
+    """
+
+    def test_discovery_found_both_bundles(self):
+        """Non-vacuity: the per-bundle assertions must not loop over nothing."""
+        self.assertEqual(
+            sorted(BUNDLE_COPIES), ["astronomy-cards.js", "deepsky-cards.js"]
+        )
+
+    def test_every_card_bundle_reports_the_manifest_version(self):
+        expected = manifest_version()
+        for name, copies in BUNDLE_COPIES.items():
+            for copy in copies:
+                with self.subTest(bundle=str(copy)):
+                    found = BUNDLE_VERSION.search(
+                        (REPO_ROOT / copy).read_text(encoding="utf-8")
+                    )
+                    self.assertIsNotNone(found, f"{name} has no version constant")
+                    self.assertEqual(found.group("version"), expected)
 
 
 class ReleaseScriptTests(unittest.TestCase):
@@ -291,6 +359,43 @@ class AbortedReleaseTests(unittest.TestCase):
                 1,
                 f"the two card bundles must never disagree on version: {versions}",
             )
+
+    def test_every_card_bundle_is_covered_by_the_release_script(self):
+        """A bundle the script does not know about is a bundle that will drift.
+
+        Coverage is measured, not declared: for each bundle discovered on disk,
+        break its version constant and require the release to notice. Reading
+        the script's own list of registered bundles would only confirm the list
+        agrees with itself -- and ``deepsky-cards.js`` shipped for fourteen
+        releases precisely because it was absent from that list.
+
+        The break is applied to the *second* copy so that, under a script that
+        writes as it goes, the first is already committed when it gives up.
+        """
+        for name, copies in BUNDLE_COPIES.items():
+            with self.subTest(bundle=name), tempfile.TemporaryDirectory() as scratch:
+                copy = copy_of_the_repo(scratch)
+                break_the_version_constant_in(copy / copies[1])
+
+                before = {
+                    str(rel): (copy / rel).read_bytes() for rel in VERSIONED_FILES
+                }
+                result = run_bumper(copy)
+
+                self.assertNotEqual(
+                    result.returncode,
+                    0,
+                    f"{name} is not covered by the release script: renaming its "
+                    "version constant changed nothing and the bump still "
+                    f"succeeded.\n{result.stdout}",
+                )
+                changed = sorted(
+                    rel for rel, original in before.items()
+                    if (copy / rel).read_bytes() != original
+                )
+                self.assertEqual(
+                    changed, [], f"aborting on {name} left a half-bumped tree: {changed}"
+                )
 
 
 if __name__ == "__main__":
