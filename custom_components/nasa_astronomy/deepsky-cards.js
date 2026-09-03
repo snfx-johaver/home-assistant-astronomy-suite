@@ -1,13 +1,13 @@
 console.info('deepsky-cards.js loading...'); /**
  * Deep Sky Cards Bundle
- * Version: 1.11.4
+ * Version: 1.11.5
  *
  * Consolidated deep-sky observation cards for Astronomy Space Suite.
  * Includes: Night Sky Highlights 2, Tonight Table, Yard Map, Panorama, 3D Dome.
  * All Shadow DOM, no global CSS, auto-registered via window.customCards.
  */
 
-const DEEPSKY_VERSION = "1.11.4";
+const DEEPSKY_VERSION = "1.11.5";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SHARED STYLES
