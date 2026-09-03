@@ -38,6 +38,25 @@ NOTE ON ORDERING
 ``INTEGRATION_VERSION`` resolves once at import (see
 ``test_device_info_version.py``), but this module reads ``manifest.json``
 directly on each call, so it is immune to that ordering hazard.
+
+KNOWN LIMITS
+------------
+Declared here so the next person meets them deliberately rather than trusting
+the word "every" above:
+
+* **Two-part versions.** ``VERSION_SHAPED`` requires three components, so a
+  ``v1.11`` banner is invisible. Every version in this project is three-part,
+  which makes this a boundary rather than a bug -- but a two-part literal
+  would drift exactly like ``index.ts`` did.
+* **Versions assembled at runtime.** ``MAJOR + "." + MINOR`` is invisible to
+  any literal sweep by construction. Nothing here can catch it; only the
+  release script refusing to match would.
+* **Files the sweep does not read.** Handled by declaration rather than by
+  silence -- see ``BINARY_SUFFIXES`` and ``SweepCoverageTests``. This was a
+  real defect: the original handler caught ``OSError`` alongside
+  ``UnicodeDecodeError``, so a corrupted, missing, or unreadable text file
+  left the universe as quietly as a PNG, and took every test in this module
+  with it while staying green.
 """
 
 import json
@@ -67,6 +86,16 @@ VERSION_SHAPED = re.compile(r"(?<![\d.])\d+\.\d+\.\d+(?![\d.])")
 # A caret/tilde/comparator in front of the literal makes it a constraint on
 # somebody else's package rather than a claim about this one.
 DEPENDENCY_RANGE = re.compile(r"[\^~]|>=?|<=?")
+
+# Files the sweep is allowed not to read, by declaration rather than by
+# accident. Skipping on decode failure instead would make a corrupted or
+# missing text file indistinguishable from an image.
+#
+# Keeping this list honest matters more than keeping it short: adding ".js"
+# here would silence a real failure, which is why
+# test_the_binary_declaration_is_not_an_escape_hatch requires every declared
+# suffix to name files that genuinely cannot be decoded.
+BINARY_SUFFIXES = (".png",)
 
 # Files whose version-shaped literals claim to be *this product's* version.
 # Every literal in these must equal the release version AND be written by the
@@ -123,18 +152,48 @@ def version_literals_in(relative_path):
 
     Dependency ranges are excluded here rather than classified per-file,
     because ``^1.2.3`` means the same thing wherever it appears.
+
+    Nothing is swallowed. Declared-binary files are skipped by *declaration*;
+    everything else is decoded, and both ``UnicodeDecodeError`` and ``OSError``
+    propagate. An earlier version caught both and returned, which meant a
+    tracked file that was unreadable, missing from disk, or had picked up a
+    single non-UTF-8 byte left the sweep's universe in exactly the same way a
+    PNG did -- silently, and for all of this module's tests at once.
     """
-    path = ROOT / relative_path
-    try:
-        text = path.read_text(encoding="utf-8")
-    except (UnicodeDecodeError, OSError):
+    if is_declared_binary(relative_path):
         return
+    path = ROOT / relative_path
+    text = path.read_text(encoding="utf-8")
     for lineno, line in enumerate(text.splitlines(), 1):
         for match in VERSION_SHAPED.finditer(line):
             prefix = line[max(0, match.start() - 2):match.start()]
             if DEPENDENCY_RANGE.search(prefix):
                 continue
             yield lineno, match.group(0), line.strip()
+
+
+def is_declared_binary(relative_path):
+    return Path(relative_path).suffix.lower() in BINARY_SUFFIXES
+
+
+def partition_tracked_files():
+    """Split tracked files into text, declared-binary, and unaccounted-for.
+
+    The third bucket is the point: it is what a bare ``except: return`` threw
+    away. Returning it lets a test fail on it instead.
+    """
+    text, declared_binary, undecodable = [], [], []
+    for name in tracked_files():
+        if is_declared_binary(name):
+            declared_binary.append(name)
+            continue
+        try:
+            (ROOT / name).read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            undecodable.append(name)
+        else:
+            text.append(name)
+    return text, declared_binary, undecodable
 
 
 def files_with_version_literals():
@@ -183,6 +242,70 @@ def discovered_build_configs():
         for name in tracked_files()
         if name.endswith(BUILD_CONFIG_SUFFIXES)
     ]
+
+
+class SweepCoverageTests(unittest.TestCase):
+    """The sweep's input set must itself be accounted for.
+
+    Every other test in this module iterates the same set of files. A file
+    that leaves that set silently does not weaken one assertion, it weakens
+    all of them simultaneously, and they all stay green while it happens.
+    """
+
+    def test_every_tracked_file_is_text_or_declared_binary(self):
+        _text, _binary, undecodable = partition_tracked_files()
+        self.assertEqual(
+            [],
+            undecodable,
+            "these tracked files could not be decoded and are not declared "
+            "binary, so they silently left the sweep's universe -- and with "
+            "it the universe of every test in this module: "
+            f"{undecodable}",
+        )
+
+    def test_the_binary_declaration_is_not_an_escape_hatch(self):
+        """The obvious way to silence the test above must not work.
+
+        Adding a text suffix to BINARY_SUFFIXES would turn a real failure
+        green. Every declared suffix therefore has to name tracked files that
+        genuinely cannot be decoded as UTF-8.
+        """
+        for suffix in BINARY_SUFFIXES:
+            with self.subTest(suffix=suffix):
+                matching = [
+                    name for name in tracked_files()
+                    if Path(name).suffix.lower() == suffix
+                ]
+                self.assertTrue(
+                    matching, f"{suffix} is declared binary but matches no file"
+                )
+                for name in matching:
+                    with self.assertRaises(
+                        UnicodeDecodeError,
+                        msg=f"{name} decodes fine, so {suffix} is not a binary "
+                        "suffix and declaring it one hides real files",
+                    ):
+                        (ROOT / name).read_text(encoding="utf-8")
+
+    def test_unreadable_tracked_files_are_a_fault_not_a_skip(self):
+        """OSError must propagate rather than being swallowed as 'binary'.
+
+        A tracked file missing from disk, or unreadable, is a fault. The
+        previous handler caught OSError alongside UnicodeDecodeError, so a
+        missing file and an image were the same event.
+        """
+        missing = "does-not-exist-anywhere.js"
+        with self.assertRaises(OSError):
+            list(version_literals_in(missing))
+
+    def test_the_sweep_reads_more_than_it_skips(self):
+        """Non-vacuity: a sweep that declared everything binary would pass."""
+        text, binary, _undecodable = partition_tracked_files()
+        self.assertGreater(
+            len(text),
+            len(binary),
+            "more tracked files are being skipped than read",
+        )
 
 
 class VersionLiteralClassificationTests(unittest.TestCase):
