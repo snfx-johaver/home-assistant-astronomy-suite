@@ -66,6 +66,11 @@ const DSK_NAME_RE = new RegExp(`Deep Sky\\s+(.+?)\\s+(?:${DSK_SENSOR_SUFFIXES})$
  * friendly_name — the leading `Deep Sky` anchor is deliberately unanchored so a
  * device-name prefix ("Astronomy Space Suite Deep Sky M31 Altitude") is dropped
  * too. Last resort is the entity-id derived key.
+ *
+ * The prefix is HA working as designed, not a bug: the deep-sky sensors set
+ * has_entity_name = False, which selects legacy naming, and legacy naming for a
+ * device-attached entity composes "<device name> <entity name>". Because the
+ * fallback is unanchored it also survives a device rename by the user.
  */
 function dskObjectName(stateObj, objKey) {
   const attrs = stateObj?.attributes || {};

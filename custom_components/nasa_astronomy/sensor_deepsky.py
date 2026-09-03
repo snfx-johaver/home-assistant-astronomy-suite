@@ -359,6 +359,11 @@ class DeepSkySensor(CoordinatorEntity, SensorEntity):
         self._attr_icon = icon
         self._attr_native_unit_of_measurement = unit
         self._attr_state_class = state_class
+        # Legacy naming: HA composes friendly_name as "<device name> <entity name>",
+        # e.g. "Astronomy Space Suite Deep Sky M31 Altitude". Confirmed against a
+        # live entity registry. Do NOT switch this to True to shorten the name —
+        # it would rename all 121 entities on every existing install. Cards read
+        # the `object_name` attribute below instead of parsing friendly_name.
         self._attr_has_entity_name = False
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry_id)},
@@ -407,6 +412,8 @@ class DeepSkyBestTonightSensor(CoordinatorEntity, SensorEntity):
         self._attr_name = "Deep Sky Best Tonight"
         self._attr_unique_id = f"nasa_astronomy_deepsky_best_tonight_{entry_id}"
         self._attr_icon = "mdi:telescope"
+        # See DeepSkySensor: legacy naming prepends the device name. Left as-is
+        # deliberately so existing installs keep their entity names.
         self._attr_has_entity_name = False
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry_id)},

@@ -127,6 +127,16 @@ test("BUG 2: falls back to the entity key when nothing else is available", () =>
   assert.equal(deepsky.dskObjectName(makeState("x", "1", {}), "ngc_7000"), "NGC 7000");
 });
 
+test("BUG 2: the friendly_name fallback survives a user device rename", () => {
+  // has_entity_name = False means HA composes "<device name> <entity name>", so
+  // renaming the device changes the prefix. The regex is unanchored for this.
+  for (const device of ["Astronomy Space Suite", "Sky Stuff", "Jorises Telescoop", ""]) {
+    const friendly = `${device} Deep Sky M31 Altitude`.trim();
+    const stateObj = makeState("sensor.x", "10", { friendly_name: friendly });
+    assert.equal(deepsky.dskObjectName(stateObj, "m31"), "M31", friendly);
+  }
+});
+
 test("BUG 2: table rows render bare designations", () => {
   const states = {};
   for (const [key, name] of [["m31", "M31"], ["ngc_7000", "NGC 7000"]]) {
