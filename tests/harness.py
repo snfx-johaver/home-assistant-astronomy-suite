@@ -44,7 +44,21 @@ def _register(name, **attrs):
     for key, value in attrs.items():
         setattr(module, key, value)
     sys.modules[name] = module
+    # Bind the submodule onto its parent. Seeding ``sys.modules`` by hand skips
+    # the step the real import machinery does here, which breaks
+    # ``from homeassistant.helpers import config_validation``.
+    parent_name, _, child = name.rpartition(".")
+    if parent_name and parent_name in sys.modules:
+        setattr(sys.modules[parent_name], child, module)
     return module
+
+
+class _Platform:
+    """Stand-in for the ``Platform`` enum, which is used for the platform list."""
+
+    SENSOR = "sensor"
+    CAMERA = "camera"
+    BINARY_SENSOR = "binary_sensor"
 
 
 class _EntityDescription(_StubBase):
@@ -75,9 +89,18 @@ def install_homeassistant_stubs():
         SensorEntityDescription=_EntityDescription,
     )
     _register("homeassistant.config_entries", ConfigEntry=_StubBase)
-    _register("homeassistant.const", DEGREE="\u00b0")
+    _register(
+        "homeassistant.const",
+        DEGREE="\u00b0",
+        CONF_API_KEY="api_key",
+        Platform=_Platform,
+    )
     _register("homeassistant.core", HomeAssistant=_StubBase, callback=lambda fn: fn)
     _register("homeassistant.helpers")
+    _register(
+        "homeassistant.helpers.config_validation",
+        config_entry_only_config_schema=lambda domain: {"domain": domain},
+    )
     _register(
         "homeassistant.helpers.aiohttp_client",
         async_get_clientsession=lambda *args, **kwargs: None,
