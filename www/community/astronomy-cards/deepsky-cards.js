@@ -56,16 +56,29 @@ function dskGetState(hass, entityId) {
 }
 
 const DSK_SENSOR_SUFFIXES = "Altitude|Azimuth|Transit Time|Visible|Score|Magnitude";
+
+// Matches the "Deep Sky <object> <metric>" tail of a friendly_name.
+//
+// INTENTIONALLY UNANCHORED at the start — do not add a leading `^`. Home
+// Assistant prepends the device name ("Astronomy Space Suite Deep Sky M31
+// Altitude", see sensor_deepsky.py) and the user can rename that device at any
+// time, so there is no fixed prefix to anchor against. Anchoring this would
+// reintroduce BUG 2, where every table row rendered as "Astronomy Space Suite
+// M31". The trailing `$` is deliberate and safe: the metric really is last.
 const DSK_NAME_RE = new RegExp(`Deep Sky\\s+(.+?)\\s+(?:${DSK_SENSOR_SUFFIXES})$`, "i");
 
 /**
  * Resolve the catalogue designation ("M31", "NGC 7000") for a deep-sky sensor.
  *
  * Prefers the dedicated `object_name` attribute exposed by sensor_deepsky.py.
- * Falls back to stripping the "Deep Sky <name> <metric>" pattern out of
- * friendly_name — the leading `Deep Sky` anchor is deliberately unanchored so a
- * device-name prefix ("Astronomy Space Suite Deep Sky M31 Altitude") is dropped
- * too. Last resort is the entity-id derived key.
+ * Falls back to matching the "Deep Sky <name> <metric>" tail of friendly_name,
+ * which drops any device-name prefix ("Astronomy Space Suite Deep Sky M31
+ * Altitude") along with it. Last resort is the entity-id derived key.
+ *
+ * The prefix is HA working as designed, not a bug: the deep-sky sensors set
+ * has_entity_name = False, which selects legacy naming, and legacy naming for a
+ * device-attached entity composes "<device name> <entity name>". Because the
+ * fallback is unanchored it also survives a device rename by the user.
  */
 function dskObjectName(stateObj, objKey) {
   const attrs = stateObj?.attributes || {};

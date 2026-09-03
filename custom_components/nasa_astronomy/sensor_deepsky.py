@@ -359,6 +359,20 @@ class DeepSkySensor(CoordinatorEntity, SensorEntity):
         self._attr_icon = icon
         self._attr_native_unit_of_measurement = unit
         self._attr_state_class = state_class
+        # `False` SELECTS Home Assistant's legacy naming — it does NOT opt out of
+        # the device prefix. Legacy naming composes friendly_name for a
+        # device-attached entity as "<device name> <entity name>". Confirmed
+        # against the live entity registry:
+        #     device name          = "Astronomy Space Suite" (name_by_user: null)
+        #     entity original_name = "Deep Sky M31 Altitude" (no prefix stored)
+        #     has_entity_name      = False on all 121 entities, 0 custom names
+        #  => friendly_name        = "Astronomy Space Suite Deep Sky M31 Altitude"
+        # The prefix is therefore HA behaving as designed, not a defect here.
+        #
+        # Considered and rejected: setting this True with a short _attr_name is
+        # the textbook fix, but it would rewrite friendly_name for all 121
+        # entities on every existing install, breaking dashboards and
+        # automations. Cards read the `object_name` attribute below instead.
         self._attr_has_entity_name = False
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry_id)},
@@ -407,6 +421,8 @@ class DeepSkyBestTonightSensor(CoordinatorEntity, SensorEntity):
         self._attr_name = "Deep Sky Best Tonight"
         self._attr_unique_id = f"nasa_astronomy_deepsky_best_tonight_{entry_id}"
         self._attr_icon = "mdi:telescope"
+        # See DeepSkySensor: legacy naming prepends the device name. Left as-is
+        # deliberately so existing installs keep their entity names.
         self._attr_has_entity_name = False
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry_id)},
