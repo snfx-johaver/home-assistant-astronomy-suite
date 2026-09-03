@@ -1,3 +1,8 @@
 # Byte-compiled files produced by running the Python tests.
 __pycache__/
 *.py[cod]
+
+# Node build artefacts. The rollup output deliberately lands in dist/ rather
+# than over the shipped bundle -- see www/community/astronomy-cards/rollup.config.mjs.
+node_modules/
+dist/
