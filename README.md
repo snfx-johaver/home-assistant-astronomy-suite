@@ -313,6 +313,10 @@ MIT
 
 ## 📋 Changelog
 
+### v1.10.4
+- **FIX: Solar Activity Monitor** — the "Live Sun" thumbnail grid forced a 4:3 box around SDO/SOHO square full-disc imagery with `object-fit: cover`, slicing roughly 25% off the top and bottom of the Sun; the tiles now size to the image. This is the same defect fixed for the Earth Observation card in v1.10.3 — that sweep corrected the Earth frame but missed this second instance
+- **Internal** — added a class-level regression test asserting that no disc-image rule forces a fixed aspect ratio, so this cannot recur a third time. `.apod-media` is deliberately excluded and covered by its own test: APOD is arbitrary photography rather than a disc on a black field, so cropping to fill the hero area is a design choice, not the same defect
+
 ### v1.10.3
 - **FIX: Night Sky Highlights 2** — Best DSO tile rendered the literal `[object Object]`; it now reads `top_objects[0].name`, and the score badge reads `top_objects[0].score` instead of a non-existent top-level `score` attribute
 - **FIX: Tonight Table** — object names were prefixed with the device name ("Astronomy Space Suite M31"); deep-sky sensors now expose a dedicated `object_name` attribute that the cards read instead of parsing `friendly_name`

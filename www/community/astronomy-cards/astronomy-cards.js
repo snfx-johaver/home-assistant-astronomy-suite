@@ -1319,11 +1319,15 @@ class SolarActivityCard extends HTMLElement {
           overflow: hidden;
           background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
         }
+        /* Same rule as .earth-frame img: SDO and SOHO publish square full-disc
+           frames, so a fixed 4/3 box cropped ~25% of the disc (object-fit:
+           cover) — the top and bottom of the Sun were sliced off. Size the tile
+           to the image instead. The grid is auto-fit/minmax, so a taller square
+           tile reflows without breaking the layout. */
         .live-sun-card img {
           display: block;
           width: 100%;
-          aspect-ratio: 4 / 3;
-          object-fit: cover;
+          height: auto;
           background: #000;
         }
         .live-sun-label {

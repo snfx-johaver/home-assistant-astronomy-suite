@@ -446,6 +446,36 @@ test("BUG 5: the image frame no longer forces a fixed aspect ratio", () => {
   assert.equal(/\.earth-frame\.sun img \{/.test(source), false, "sun-specific object-fit override should be gone");
 });
 
+// Class-level guard. A fixed ratio on square full-disc imagery either crops the
+// disc or leaves a dead band, so every rule painting a solar/planetary disc must
+// size itself to its image. The Earth card was fixed first; the Live Sun grid
+// carried the identical defect and cropped ~25% of the disc.
+test("BUG 5: no disc-image rule forces a fixed aspect ratio", () => {
+  const source = readFileSync(BUNDLES.astronomy, "utf8");
+  const discRules = [
+    [".earth-frame img", /\.earth-frame img \{[^}]*\}/],
+    [".live-sun-card img", /\.live-sun-card img \{[^}]*\}/],
+  ];
+  for (const [selector, pattern] of discRules) {
+    const rule = source.match(pattern);
+    assert.ok(rule, `${selector} rule not found`);
+    assert.equal(/aspect-ratio/.test(rule[0]), false, `${selector} must not force a ratio: ${rule[0]}`);
+    assert.equal(/object-fit/.test(rule[0]), false, `${selector} must not crop the disc: ${rule[0]}`);
+    assert.match(rule[0], /height:\s*auto/, `${selector} must size to its image: ${rule[0]}`);
+  }
+});
+
+test("BUG 5: APOD cropping is a deliberate exclusion, not the same defect", () => {
+  const source = readFileSync(BUNDLES.astronomy, "utf8");
+  const rule = source.match(/\.apod-media img,\s*\.apod-video iframe \{[^}]*\}/);
+  assert.ok(rule, ".apod-media img rule not found");
+  // APOD is arbitrary photography, not a disc on a black field, so cropping to
+  // fill the hero area is a design choice rather than the BUG 5 defect. This
+  // assertion exists to stop an over-correction sweep from "fixing" it too.
+  // Changing it on purpose is fine — update this test when you do.
+  assert.match(rule[0], /object-fit/, "APOD cropping is intentional; see comment above");
+});
+
 // ── Bundle sync guarantee ───────────────────────────────────────────────────
 
 test("the custom_components and www card bundles are byte-identical", () => {
