@@ -10,6 +10,15 @@ Updates version in all files:
   - custom_components/nasa_astronomy/manifest.json
   - www/community/astronomy-cards/package.json
   - astronomy-cards.js in BOTH locations (header comment, VERSION, console banner)
+  - deepsky-cards.js in BOTH locations (header comment, DEEPSKY_VERSION)
+  - www/community/astronomy-cards/index.ts (console banner)
+
+That list is not the authority on what carries a version, and must not become
+one. Both bundles above were added only after shipping a stale version for
+fourteen releases apiece, each because it was absent from a list like this.
+tests/test_version_literals.py sweeps every tracked file for version-shaped
+literals and fails on any it cannot account for, so a new one shows up as a
+red test rather than as a number nobody notices.
 
 __init__.py is deliberately absent: its VERSION now derives from manifest.json
 via const.INTEGRATION_VERSION, so there is no literal left to rewrite and a
@@ -73,6 +82,20 @@ CARD_BUNDLES = (
         "patterns": (
             (r'(^ \* Version: )\d+\.\d+\.\d+', "header"),
             (r'(const DEEPSKY_VERSION = ")\d+\.\d+\.\d+', "VERSION constant"),
+        ),
+    },
+    {
+        "label": "index.ts (card entry point)",
+        "paths": (
+            ROOT / "www" / "community" / "astronomy-cards" / "index.ts",
+        ),
+        "patterns": (
+            # Another product name rather than a code identifier, and this one
+            # is already stale relative to its own bundle: the entry point says
+            # NASA-ASTRONOMY-CARDS while the shipped banner says "Astronomy
+            # Space Suite Cards". Renaming either stops this matching, and the
+            # abort is the point -- it fails before anything is written.
+            (r'(NASA-ASTRONOMY-CARDS %c v)\d+\.\d+\.\d+', "console banner"),
         ),
     },
 )
