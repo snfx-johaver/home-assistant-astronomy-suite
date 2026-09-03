@@ -37,6 +37,25 @@ CEST = timezone(timedelta(hours=2))
 CET = timezone(timedelta(hours=1))
 
 
+def independent_julian_date(moment):
+    """An oracle that shares no code with the function under test.
+
+    Epoch-based, the same formulation as `toJulianDay` in the card bundles
+    (`date.getTime() / DAY_MS + 2440587.5`), which was never affected by this
+    defect. Deriving it from the POSIX timestamp means it depends on the
+    instant only, so it cannot reproduce a wall-clock mistake and cancel it
+    out. Tests that verify with the module's own `_julian_date` are blind to
+    the bug, which is precisely what this avoids.
+    """
+    return moment.timestamp() / 86400.0 + 2440587.5
+
+
+def _minutes(text):
+    """Parse an "HH:MM" rendering into minutes past midnight."""
+    hours, mins = (int(part) for part in text.split(":"))
+    return hours * 60 + mins
+
+
 class JulianDateTests(unittest.TestCase):
     """``_julian_date`` must depend on the instant, not on its wall clock."""
 
@@ -96,6 +115,24 @@ class JulianDateTests(unittest.TestCase):
                 self.assertAlmostEqual(_julian_date(moment), reference(moment), places=9)
 
 
+    def test_matches_an_independent_epoch_based_oracle(self):
+        """Cross-check against a formulation that shares no code with it.
+
+        This is the JavaScript control from the diagnosis, ported: the card
+        bundles compute Julian Day from the epoch, so they were never affected.
+        """
+        for moment in (
+            J2000_UTC,
+            datetime(2000, 1, 1, 13, 0, 0, tzinfo=CET),
+            datetime(2024, 6, 21, 23, 45, 30, tzinfo=CEST),
+            datetime(2024, 12, 31, 3, 15, 0, tzinfo=timezone(timedelta(hours=-8))),
+        ):
+            with self.subTest(moment=moment):
+                self.assertAlmostEqual(
+                    _julian_date(moment), independent_julian_date(moment), places=9
+                )
+
+
 class AltAzTimezoneTests(unittest.TestCase):
     """The user-visible symptom: positions must not depend on the clock's zone."""
 
@@ -126,6 +163,81 @@ class AltAzTimezoneTests(unittest.TestCase):
         alt_now, _ = self._alt_az(utc_moment)
         alt_later, _ = self._alt_az(two_hours_later)
         self.assertGreater(abs(alt_later - alt_now), 5.0)
+
+
+class TransitAndWindowTests(unittest.TestCase):
+    """The two call sites that build LOCAL wall-clock datetimes.
+
+    Both start from `dt.replace(...)` — local midnight and local 18:00 — and
+    render their result as a local wall clock. The UTC normalisation inside
+    `_julian_date` makes them correct rather than breaking them, which is the
+    part of the fix worth pinning down.
+    """
+
+    RA_HOURS = 0.712  # M31
+    DEC_DEG = 41.27
+    LAT = 55.6761
+    LON = 12.5683
+
+    UTC_MOMENT = datetime(2024, 9, 15, 20, 0, 0, tzinfo=timezone.utc)
+
+    def test_transit_is_rendered_in_the_callers_timezone(self):
+        """One instant, two renderings, exactly the offset apart."""
+        cest_moment = self.UTC_MOMENT.astimezone(CEST)
+        as_utc = sensor_deepsky._compute_transit_time(self.RA_HOURS, self.LON, self.UTC_MOMENT)
+        as_cest = sensor_deepsky._compute_transit_time(self.RA_HOURS, self.LON, cest_moment)
+        self.assertEqual((_minutes(as_cest) - _minutes(as_utc)) % (24 * 60), 120)
+
+    def test_reported_transit_is_the_actual_culmination(self):
+        """At transit the hour angle is zero, so the object is on the meridian.
+
+        Verified with `independent_julian_date`. Using the module's own
+        `_julian_date` here would make the check circular: the pre-fix function
+        would mis-time the transit and then mis-measure it by the same amount,
+        and the test would pass while the bug was live.
+        """
+        cest_moment = self.UTC_MOMENT.astimezone(CEST)
+        text = sensor_deepsky._compute_transit_time(self.RA_HOURS, self.LON, cest_moment)
+        hours, mins = (int(part) for part in text.split(":"))
+        at_transit = cest_moment.replace(hour=hours, minute=mins, second=0, microsecond=0)
+
+        lst = sensor_deepsky._local_sidereal_time(independent_julian_date(at_transit), self.LON)
+        hour_angle = ((lst - self.RA_HOURS + 12) % 24) - 12
+        self.assertLess(abs(hour_angle), 0.05, f"hour angle {hour_angle * 60:.2f} min from meridian")
+
+    def test_peak_time_is_rendered_in_the_callers_timezone(self):
+        """As with transit: one instant, two renderings, the offset apart."""
+        cest_moment = self.UTC_MOMENT.astimezone(CEST)
+        as_utc = sensor_deepsky._compute_best_window(
+            self.RA_HOURS, self.DEC_DEG, self.LAT, self.LON, self.UTC_MOMENT
+        )
+        as_cest = sensor_deepsky._compute_best_window(
+            self.RA_HOURS, self.DEC_DEG, self.LAT, self.LON, cest_moment
+        )
+        self.assertEqual(
+            (_minutes(as_cest["peak_time"]) - _minutes(as_utc["peak_time"])) % (24 * 60), 120
+        )
+
+    def test_peak_altitude_does_not_depend_on_the_clocks_timezone(self):
+        """`peak_altitude` is physical, so it must survive a change of zone."""
+        cest_moment = self.UTC_MOMENT.astimezone(CEST)
+        as_utc = sensor_deepsky._compute_best_window(
+            self.RA_HOURS, self.DEC_DEG, self.LAT, self.LON, self.UTC_MOMENT
+        )
+        as_cest = sensor_deepsky._compute_best_window(
+            self.RA_HOURS, self.DEC_DEG, self.LAT, self.LON, cest_moment
+        )
+        self.assertEqual(as_utc["peak_altitude"], as_cest["peak_altitude"])
+
+    def test_best_window_peak_lands_on_the_transit(self):
+        """Within the function's own 30-minute sampling grid."""
+        cest_moment = self.UTC_MOMENT.astimezone(CEST)
+        window = sensor_deepsky._compute_best_window(
+            self.RA_HOURS, self.DEC_DEG, self.LAT, self.LON, cest_moment
+        )
+        transit = sensor_deepsky._compute_transit_time(self.RA_HOURS, self.LON, cest_moment)
+        gap = abs(_minutes(window["peak_time"]) - _minutes(transit))
+        self.assertLessEqual(min(gap, 24 * 60 - gap), 30)
 
 
 if __name__ == "__main__":
