@@ -45,6 +45,14 @@ bump the manifest. In that configuration
 ``test_all_platforms_report_the_same_version`` passes (ten identically stale
 values do agree) while ``test_every_platform_reports_the_manifest_version``
 fails, which is the whole reason both assertions exist.
+
+``INTEGRATION_VERSION`` is also resolved once at ``const`` import and never
+re-read, so a manifest-perturbation test written against the *fixed* code is
+order-dependent: perturb before ``const`` is imported and the platforms follow
+the new value, perturb after and they keep the old one and go red. That is
+correct for production -- editing a manifest under a running Home Assistant
+should not retroactively change what entities report -- but it will look like
+flakiness to anyone who writes such a test without knowing.
 """
 
 import ast

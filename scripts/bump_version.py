@@ -8,9 +8,12 @@ Usage:
 Updates version in all files:
   - version.json
   - custom_components/nasa_astronomy/manifest.json
-  - custom_components/nasa_astronomy/__init__.py
   - www/community/astronomy-cards/package.json
   - astronomy-cards.js in BOTH locations (header comment, VERSION, console banner)
+
+__init__.py is deliberately absent: its VERSION now derives from manifest.json
+via const.INTEGRATION_VERSION, so there is no literal left to rewrite and a
+rewrite step here would abort every release on its own no-match guard.
 
 Then creates a git tag and commit.
 """
@@ -27,7 +30,6 @@ VERSION_FILES = {
     "version_json": ROOT / "version.json",
     "manifest": ROOT / "custom_components" / "nasa_astronomy" / "manifest.json",
     "package": ROOT / "www" / "community" / "astronomy-cards" / "package.json",
-    "init_py": ROOT / "custom_components" / "nasa_astronomy" / "__init__.py",
 }
 
 # The card bundle ships from two locations that must stay byte-identical
@@ -110,15 +112,6 @@ def update_cards_js(new_version: str) -> None:
         path.write_text(content, encoding="utf-8")
 
 
-def update_init_py(new_version: str) -> None:
-    path = VERSION_FILES["init_py"]
-    content = path.read_text(encoding="utf-8")
-    content, count = re.subn(r'(^VERSION = ")\d+\.\d+\.\d+', rf'\g<1>{new_version}', content, flags=re.M)
-    if not count:
-        raise SystemExit("❌ __init__.py: no VERSION constant matched")
-    path.write_text(content, encoding="utf-8")
-
-
 def git_tag_and_commit(new_version: str) -> None:
     tag = f"v{new_version}"
     subprocess.run(["git", "add", "-A"], cwd=ROOT, check=True)
@@ -156,9 +149,6 @@ def main() -> None:
 
     update_package_json(new_version)
     print(f"  ✓ package.json")
-
-    update_init_py(new_version)
-    print(f"  ✓ __init__.py")
 
     update_cards_js(new_version)
     print(f"  ✓ astronomy-cards.js (both copies)")
