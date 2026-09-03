@@ -57,6 +57,31 @@ the word "every" above:
   ``UnicodeDecodeError``, so a corrupted, missing, or unreadable text file
   left the universe as quietly as a PNG, and took every test in this module
   with it while staying green.
+
+AUDITING THIS MODULE
+--------------------
+Every test here asserts over a universe this module declares: the tracked
+file list, ``BINARY_SUFFIXES``, the classification sets. To check whether a
+control is doing what its name claims, **mutate a declaration to its
+degenerate value and enumerate which tests fire and what they name**:
+
+* ``tracked_files()`` -> ``[]``           (the universe is empty)
+* ``BINARY_SUFFIXES`` -> every suffix     (nothing is read)
+
+Three kinds of result, all of which have occurred here:
+
+* Fires and **names files** -- a real control.
+* Fires and **names nothing** -- usually a counting restatement of a
+  property another test already asserts by naming, carrying a false-red
+  mode the exact control does not have. This is how the old
+  ``reads_more_than_it_skips`` was identified and removed.
+* **Does not fire** -- an unasserted safety property: behaviour that is
+  correct by construction with nothing holding it in place. See
+  ``test_the_must_find_control_does_not_share_the_sweeps_universe``.
+
+The mutation is the method. Reading the tests will not find these, because
+each one looks correct in isolation; what is wrong is a relationship
+between a test and the universe it quantifies over.
 """
 
 import json
@@ -295,16 +320,59 @@ class SweepCoverageTests(unittest.TestCase):
         missing file and an image were the same event.
         """
         missing = "does-not-exist-anywhere.js"
+        self.assertFalse(
+            is_declared_binary(missing),
+            "this probe only exercises the read path if its suffix is not "
+            "declared binary -- otherwise it is skipped before the open is "
+            "attempted and would fail for an unrelated reason",
+        )
         with self.assertRaises(OSError):
             list(version_literals_in(missing))
 
-    def test_the_sweep_reads_more_than_it_skips(self):
-        """Non-vacuity: a sweep that declared everything binary would pass."""
-        text, binary, _undecodable = partition_tracked_files()
-        self.assertGreater(
-            len(text),
-            len(binary),
-            "more tracked files are being skipped than read",
+    def test_the_sweep_read_something(self):
+        """Non-vacuity, guarding a zero rather than standing as its own gate.
+
+        An earlier version compared ``len(text) > len(binary)``. That was a
+        counting restatement of a property already asserted by naming in
+        ``test_the_sweep_finds_every_file_the_release_script_writes``, and it
+        added a way to go red with no defect present: it was 34 added images
+        away from failing. A control that can be red without a defect gets
+        relaxed the first time it fires spuriously, and the relaxation looks
+        reasonable because the red meant nothing.
+
+        Zero is the only value here that is never legitimate.
+        """
+        text, _binary, _undecodable = partition_tracked_files()
+        self.assertTrue(text, "the sweep read nothing")
+
+    def test_the_must_find_control_does_not_share_the_sweeps_universe(self):
+        """An unasserted safety property, now asserted.
+
+        ``test_the_sweep_finds_every_file_the_release_script_writes``
+        computes *what the release script writes* minus *what the sweep
+        found*. It detects a shrunken sweep only because the first operand
+        comes from the release script's own planners rather than from the
+        file list the sweep walks. Feed both from ``tracked_files()`` and an
+        empty universe yields an empty difference: the control agrees with
+        itself and stays green while seeing nothing.
+
+        That independence held by construction and nothing asserted it, so
+        the refactor that removed it would have gone unnoticed -- a correct
+        behaviour with no test holding it in place, which is a different
+        object from a defect and invisible to every technique that starts
+        from something being wrong.
+        """
+        original = globals()["tracked_files"]
+        globals()["tracked_files"] = lambda: []
+        try:
+            survives = paths_the_release_script_writes()
+        finally:
+            globals()["tracked_files"] = original
+        self.assertTrue(
+            survives,
+            "emptying the sweep's file list also emptied the release "
+            "script's, so the must-find control now shares the universe it "
+            "is supposed to be auditing and can no longer detect it shrinking",
         )
 
 
