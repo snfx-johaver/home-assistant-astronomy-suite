@@ -709,6 +709,36 @@ class WorkflowWiringTests(unittest.TestCase):
             % "\n    ".join(stale),
         )
 
+    def test_the_python_suite_runs_where_its_fixtures_exist(self):
+        """The suite's fixture is git history, so the checkout must supply it.
+
+        The changelog tests replay every tag-to-tag range rather than listing
+        ranges by hand, which makes the repository's history part of the test
+        environment. A default `actions/checkout` is shallow and has no tags,
+        so those tests fail with "no tags found" -- correct, but three steps
+        removed from the cause. This names the cause.
+
+        An environment a test depends on and nothing asserts is the same shape
+        as a safety property nothing asserts.
+        """
+        text = (ROOT / ".github" / "workflows" / "validate.yml").read_text(
+            encoding="utf-8"
+        )
+        jobs = re.split(r"\n(?=  \w[\w-]*:\n)", text)
+        running = [j for j in jobs if "unittest discover" in j]
+        self.assertEqual(
+            len(running),
+            1,
+            "expected exactly one job to run the Python suite, found %d"
+            % len(running),
+        )
+        self.assertTrue(
+            "fetch-depth: 0" in running[0],
+            "the job that runs the Python suite checks out shallowly, so the "
+            "release-decision tests will see no tags and their history "
+            "fixture will be empty",
+        )
+
     def test_the_release_body_compares_two_tags(self):
         """The published link must span the release, not start at it.
 
