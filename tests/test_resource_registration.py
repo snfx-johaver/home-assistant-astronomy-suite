@@ -49,6 +49,7 @@ import json
 import re
 import tempfile
 import unittest
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from harness import load_component_module
@@ -141,6 +142,43 @@ class FakeResources:
         return [item["url"] for item in self.items]
 
 
+@dataclass
+class FakeLovelaceData:
+    """What ``hass.data["lovelace"]`` actually is on a current Home Assistant.
+
+    Mirrors ``homeassistant.components.lovelace.LovelaceData``, which has been
+    a ``@dataclass`` -- not a mapping -- since 2024. Field names and order are
+    copied from upstream so the stand-in fails the same way the real object
+    would: ``lovelace_data.get("resources")`` raises ``AttributeError``, and a
+    caller that swallows exceptions never learns its primary path is dead.
+
+    This fixture used to be ``{"resources": resources}``. That dict modelled
+    the shape the integration *expected* rather than the shape Home Assistant
+    *provides*, so every assertion below passed against code that cannot run
+    in production -- a stub kinder than the thing it stands for, which is the
+    same defect ``harness.mjs`` had with ``customElements.define``.
+    """
+
+    resource_mode: str
+    dashboards: dict = field(default_factory=dict)
+    resources: object = None
+    yaml_dashboards: dict = field(default_factory=dict)
+
+
+def as_dataclass(resources):
+    return FakeLovelaceData(resource_mode="storage", resources=resources)
+
+
+def as_mapping(resources):
+    """The pre-2024 shape, kept because the integration still supports it."""
+    return {"resources": resources, "mode": "storage"}
+
+
+# Every shape ``hass.data["lovelace"]`` is known to take, enumerated rather
+# than sampled: picking one is how the dataclass shape went unmeasured.
+LOVELACE_SHAPES = {"dataclass": as_dataclass, "mapping": as_mapping}
+
+
 class FakeConfig:
     def __init__(self, root):
         self.root = Path(root)
@@ -152,11 +190,11 @@ class FakeConfig:
 class FakeHass:
     """Just enough ``hass`` for the registration functions."""
 
-    def __init__(self, root, resources=None):
+    def __init__(self, root, resources=None, shape="dataclass"):
         self.config = FakeConfig(root)
         self.data = {}
         if resources is not None:
-            self.data["lovelace"] = {"resources": resources}
+            self.data["lovelace"] = LOVELACE_SHAPES[shape](resources)
 
     async def async_add_executor_job(self, func, *args):
         return func(*args)
@@ -200,40 +238,78 @@ class DiscoveryTests(unittest.TestCase):
 class ApiPathTests(unittest.TestCase):
     """The ``hass.data['lovelace']`` registration path."""
 
-    def _run_all(self, registrars, order):
-        """Run ``registrars`` against resources listed in ``order``."""
-        with tempfile.TemporaryDirectory() as scratch:
-            resources = FakeResources([stale(url) for url in order])
-            hass = FakeHass(scratch, resources)
-            for registrar in registrars:
-                asyncio.run(registrar(hass))
-            return resources
+    def _run_all(self, registrars, order, shape="dataclass"):
+        """Run ``registrars`` against resources listed in ``order``.
+
+        Returns the collection and whether the ``.storage`` fallback ran. The
+        second half matters: a registrar that cannot read ``hass.data`` still
+        reaches the right end state via the fallback, so asserting only on
+        URLs cannot tell a working primary path from a dead one.
+        """
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        resources = FakeResources([stale(url) for url in order])
+        hass = FakeHass(scratch.name, resources, shape=shape)
+        for registrar in registrars:
+            asyncio.run(registrar(hass))
+        fell_back = (Path(scratch.name) / ".storage" / "lovelace_resources").exists()
+        return resources, fell_back
 
     def _cases(self):
-        """Every registrar order against every resource order.
+        """Every Lovelace shape, registrar order and resource order.
 
-        Both dimensions are enumerated rather than taken as given. The
+        All three dimensions are enumerated rather than taken as given. The
         registrar order this module happens to iterate in is alphabetical,
         which coincides with the order ``async_setup_entry`` calls them --
         a coincidence, and one that would quietly stop holding the moment a
         bundle is added whose name sorts differently. A correct
-        implementation does not depend on either order, so the test should
+        implementation does not depend on any of them, so the test should
         not depend on getting them right.
         """
-        for registrar_order in itertools.permutations(sorted(ASYNC_REGISTRARS)):
-            registrars = [ASYNC_REGISTRARS[name] for name in registrar_order]
-            for url_order in itertools.permutations(sorted(BUNDLE_URLS.values())):
-                label = {
-                    "registrars": [n.replace("_async_register_", "") for n in registrar_order],
-                    "resources": [filename_of(u) for u in url_order],
-                }
-                yield registrars, url_order, label
+        for shape in sorted(LOVELACE_SHAPES):
+            for registrar_order in itertools.permutations(sorted(ASYNC_REGISTRARS)):
+                registrars = [ASYNC_REGISTRARS[name] for name in registrar_order]
+                for url_order in itertools.permutations(sorted(BUNDLE_URLS.values())):
+                    label = {
+                        "lovelace": shape,
+                        "registrars": [n.replace("_async_register_", "") for n in registrar_order],
+                        "resources": [filename_of(u) for u in url_order],
+                    }
+                    yield registrars, url_order, shape, label
+
+    def test_the_primary_path_is_used_for_every_lovelace_shape(self):
+        """``hass.data['lovelace']`` is a dataclass, and was read as a mapping.
+
+        ``lovelace_data.get("resources")`` raises ``AttributeError`` against
+        the real object. The registrars caught it with a bare ``except
+        Exception`` and logged at ``debug``, so the primary path never ran and
+        nothing said so: every install has been registering its cards by
+        editing ``.storage/lovelace_resources`` underneath a running Home
+        Assistant, which is the path written for the case where the API is
+        unavailable.
+
+        Asserted as *the fallback did not run* rather than as *the collection
+        was touched*, because the fallback reaches the same end state -- which
+        is exactly why this went unnoticed.
+        """
+        for registrars, order, shape, label in self._cases():
+            with self.subTest(**label):
+                resources, fell_back = self._run_all(registrars, order, shape)
+                self.assertFalse(
+                    fell_back,
+                    "the .storage fallback ran even though hass.data['lovelace'] "
+                    "was available: the primary path is unreachable for this shape",
+                )
+                self.assertTrue(
+                    resources.updated or resources.created,
+                    "the resource collection was never touched",
+                )
 
     def test_no_registrar_changes_a_resources_filename(self):
         """The invariant. A cache-bust may be rewritten; a filename may not."""
-        for registrars, order, label in self._cases():
+        for registrars, order, shape, label in self._cases():
             with self.subTest(**label):
-                resources = self._run_all(registrars, order)
+                resources, _ = self._run_all(registrars, order, shape)
                 renamed = [
                     (before, after)
                     for _, before, after in resources.updated
@@ -248,17 +324,17 @@ class ApiPathTests(unittest.TestCase):
     def test_every_bundle_ends_up_registered_exactly_once(self):
         """End state, which is what a user's resource list actually is."""
         expected = sorted(filename_of(url) for url in BUNDLE_URLS.values())
-        for registrars, order, label in self._cases():
+        for registrars, order, shape, label in self._cases():
             with self.subTest(**label):
-                resources = self._run_all(registrars, order)
+                resources, _ = self._run_all(registrars, order, shape)
                 self.assertEqual(sorted(filename_of(u) for u in resources.urls()), expected)
 
     def test_every_resource_ends_up_at_the_current_version(self):
         """The stale-forever half: a resource nobody visits is never updated."""
         current = {filename_of(url): url for url in BUNDLE_URLS.values()}
-        for registrars, order, label in self._cases():
+        for registrars, order, shape, label in self._cases():
             with self.subTest(**label):
-                resources = self._run_all(registrars, order)
+                resources, _ = self._run_all(registrars, order, shape)
                 stuck = [u for u in resources.urls() if u != current.get(filename_of(u))]
                 self.assertEqual(stuck, [], f"still stale; expected {sorted(current.values())}")
 
@@ -269,8 +345,21 @@ class ApiPathTests(unittest.TestCase):
         no resource ever would satisfy every invariant above trivially.
         """
         registrars = [ASYNC_REGISTRARS[name] for name in sorted(ASYNC_REGISTRARS)]
-        resources = self._run_all(registrars, sorted(BUNDLE_URLS.values()))
+        resources, _ = self._run_all(registrars, sorted(BUNDLE_URLS.values()))
         self.assertTrue(resources.updated, "no registrar updated anything")
+
+    def test_the_real_lovelace_data_is_not_a_mapping(self):
+        """The premise, pinned against the upstream class rather than recalled.
+
+        Passes before and after: it is a fact about Home Assistant, and it is
+        the reason the fixture above is a dataclass. If Lovelace ever goes
+        back to a mapping this becomes the thing that says so.
+        """
+        self.assertFalse(
+            hasattr(FakeLovelaceData(resource_mode="storage"), "get"),
+            "a dataclass must not answer .get(); the fixture has stopped "
+            "modelling the failure it exists to reproduce",
+        )
 
 
 class StoragePathTests(unittest.TestCase):

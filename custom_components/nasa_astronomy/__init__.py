@@ -1,8 +1,10 @@
 """Astronomy Space Suite - Custom Integration for Home Assistant."""
 from __future__ import annotations
 
+import hashlib
 import logging
 import shutil
+from collections.abc import Mapping
 from datetime import timedelta
 from pathlib import Path
 
@@ -22,8 +24,69 @@ PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.CAMERA]
 VERSION = INTEGRATION_VERSION
 CARDS_FILENAME = "astronomy-cards.js"
 DEEPSKY_CARDS_FILENAME = "deepsky-cards.js"
-CARDS_LOCAL_URL = f"/local/community/astronomy-cards/astronomy-cards.js?v={VERSION}"
-DEEPSKY_CARDS_LOCAL_URL = f"/local/community/astronomy-cards/deepsky-cards.js?v={VERSION}"
+def _lovelace_resources(lovelace_data: object) -> object | None:
+    """The Lovelace resource collection, whatever shape ``hass.data`` holds.
+
+    ``hass.data["lovelace"]`` is a ``LovelaceData`` **dataclass**, and has been
+    since Home Assistant 2024. It was read here as ``lovelace_data.get(
+    "resources")``, which a dataclass answers with ``AttributeError`` -- caught
+    by a bare ``except Exception`` and logged at ``debug``. So the API path has
+    not run on any current install, and every registration has been happening
+    through the ``.storage`` fallback: a file edited underneath a running Home
+    Assistant, which keeps its own copy in memory and requires a restart to
+    notice. The end state looked right, which is why this was invisible.
+
+    Attribute first, mapping second, because older releases did store a plain
+    dict and the fallback still has to work for them.
+    """
+    resources = getattr(lovelace_data, "resources", None)
+    if resources is not None:
+        return resources
+    if isinstance(lovelace_data, Mapping):
+        return lovelace_data.get("resources")
+    return None
+
+
+def _cache_bust_for(path: Path) -> str:
+    """The ``?v=`` key for a card bundle: its release *and* its bytes.
+
+    A cache-bust exists to make a browser re-fetch when the file changes, and
+    Home Assistant serves ``/local/`` with ``Cache-Control: max-age=2678400``
+    and no revalidation -- so for 31 days a changed URL is the *only* thing
+    that can dislodge a cached bundle.
+
+    Deriving the key from ``manifest.json`` alone made it an unenforced promise
+    that two separate mechanisms move together: the key comes from the
+    manifest, the bytes come from ``shutil.copy2``, and nothing couples them.
+    Replace a bundle without cutting a release -- a hand-copied file, a local
+    rebuild -- and the bytes move while the key does not. Every browser that
+    already loaded that dashboard keeps the old bundle for a month, and no
+    log line anywhere is wrong.
+
+    The digest fixes that by construction: it is a function of the bytes, so
+    it cannot fail to move when they do. The version is kept in front of it
+    because it is what a human reads in the resource list, and because the
+    release apparatus already guards that half.
+
+    Falls back to the version alone if the bundle cannot be read, matching
+    ``_deploy_cards_to_www``, which warns and carries on rather than failing
+    setup over a missing card file.
+    """
+    try:
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    except OSError:
+        return VERSION
+    return f"{VERSION}-{digest}"
+
+
+CARDS_LOCAL_URL = (
+    f"/local/community/astronomy-cards/{CARDS_FILENAME}"
+    f"?v={_cache_bust_for(Path(__file__).parent / CARDS_FILENAME)}"
+)
+DEEPSKY_CARDS_LOCAL_URL = (
+    f"/local/community/astronomy-cards/{DEEPSKY_CARDS_FILENAME}"
+    f"?v={_cache_bust_for(Path(__file__).parent / DEEPSKY_CARDS_FILENAME)}"
+)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -142,7 +205,7 @@ async def _async_register_cards_resource(hass: HomeAssistant) -> None:
     try:
         lovelace_data = hass.data.get("lovelace")
         if lovelace_data is not None:
-            resources = lovelace_data.get("resources")
+            resources = _lovelace_resources(lovelace_data)
             if resources is not None:
                 for resource in resources.async_items():
                     url = resource.get("url", "")
@@ -161,7 +224,15 @@ async def _async_register_cards_resource(hass: HomeAssistant) -> None:
                 _LOGGER.info("Registered Lovelace resource via API: %s", CARDS_LOCAL_URL)
                 return
     except Exception as err:
-        _LOGGER.debug("API resource registration failed: %s", err)
+        # Not debug: this path failing silently is how the integration spent
+        # every release registering cards by editing .storage by hand.
+        _LOGGER.warning(
+            "Lovelace API resource registration failed (%s: %s); falling back "
+            "to editing .storage/lovelace_resources, which needs a restart to "
+            "take effect",
+            type(err).__name__,
+            err,
+        )
 
     # Fallback: directly update .storage/lovelace_resources
     await hass.async_add_executor_job(_register_resource_via_storage, hass)
@@ -221,7 +292,7 @@ async def _async_register_deepsky_cards_resource(hass: HomeAssistant) -> None:
     try:
         lovelace_data = hass.data.get("lovelace")
         if lovelace_data is not None:
-            resources = lovelace_data.get("resources")
+            resources = _lovelace_resources(lovelace_data)
             if resources is not None:
                 for resource in resources.async_items():
                     url = resource.get("url", "")
@@ -239,7 +310,12 @@ async def _async_register_deepsky_cards_resource(hass: HomeAssistant) -> None:
                 _LOGGER.info("Registered deepsky-cards Lovelace resource: %s", DEEPSKY_CARDS_LOCAL_URL)
                 return
     except Exception as err:
-        _LOGGER.debug("API deepsky-cards resource registration failed: %s", err)
+        _LOGGER.warning(
+            "Lovelace API deepsky-cards registration failed (%s: %s); falling "
+            "back to editing .storage/lovelace_resources",
+            type(err).__name__,
+            err,
+        )
 
     # Fallback: storage file
     await hass.async_add_executor_job(_register_deepsky_resource_via_storage, hass)
