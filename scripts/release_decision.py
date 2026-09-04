@@ -402,29 +402,48 @@ def range_start(last_tag: str, is_shallow: bool) -> str | None:
     """Where the range begins, or None meaning "everything tracked".
 
     `git describe` fails identically for two different worlds: a repository
-    that has never been tagged, and a repository whose tags were simply not
-    fetched. The first is a genuine first release and `ls-files` is the right
-    answer for it. The second is a shallow clone, where `ls-files` claims every
-    tracked file as new -- 25 of them shipping -- and turns a gate that has
-    suppressed five consecutive releases into an unconditional publish.
+    that has never been tagged, and a repository where the last tagged commit
+    is outside the shallow history. The first is a genuine first release and
+    `ls-files` is the right answer for it. The second turns a gate that has
+    suppressed six consecutive releases into an unconditional publish.
 
-    Measured on a real `--depth 1` clone before this existed:
+    The mechanism is commit reachability, not whether tag refs were fetched.
+    A `--depth 1` clone of this repository followed by `git fetch --tags` has
+    all 36 tags present as refs and `describe` still exits 128, because it
+    walks ancestors from HEAD and the graft boundary is in the way. So "the
+    tags are here" is not a safe proxy for "the range is computable", and the
+    tag list is not what this function is allowed to look at.
 
-        decision: RELEASE (patch)
-        reason:   a patch bump, and 25 shipped file(s) changed
-        changed:  57 file(s), 25 of them shipped
+    The refusal covers the whole shallow space rather than only the untagged
+    corner, and the reason is that a bounded depth is not wrong -- it is
+    *contingently* right. Measured against this repository, whose HEAD was
+    then six commits past v1.11.8, with the guard below neutralised:
 
-    So the two are told apart rather than guessed between, and the unanswerable
-    case is refused rather than defaulted. A release gate that cannot see the
-    history it reasons about must not fall back to publishing.
+        depth  1  describe=EXIT128   RELEASE (patch)  57 file(s), 25 shipped
+        depth  3  describe=EXIT128   RELEASE (patch)  57 file(s), 25 shipped
+        depth  6  describe=EXIT128   RELEASE (patch)  57 file(s), 25 shipped
+        depth 10  describe=v1.11.8   SKIP (none)       5 file(s),  0 shipped
+
+    Above the boundary the answer is byte-identical to a full clone; one
+    commit below it, the gate publishes everything. It does not degrade, it
+    inverts -- and the boundary is the distance from HEAD to the last tag,
+    which grows with every commit and resets with every release. A gate whose
+    correctness depends on a number that moves on its own is the drift this
+    module exists to remove, so the contingent cases are refused too.
+
+    What this deliberately does NOT claim: that a bounded depth produces a
+    wrong range. It does not. If `describe` succeeds the tag is reachable and
+    the range walks correctly, merges included. That is pinned by a test, so
+    nobody re-derives the stronger and false version of this argument.
     """
     if is_shallow:
         raise ShallowCheckoutError(
-            "this is a shallow clone, so an empty tag list cannot be "
-            "distinguished from tags that were never fetched. Refusing to "
-            "guess: treating it as a first release would claim every tracked "
-            "file as new and publish unconditionally. Check out with "
-            "fetch-depth: 0."
+            "this is a shallow clone, so a failed `git describe` cannot be "
+            "distinguished from a genuine first release -- the tagged commit "
+            "may simply be past the graft boundary, which fetching the tags "
+            "does not fix. Refusing to guess: treating it as a first release "
+            "would claim every tracked file as new and publish "
+            "unconditionally. Check out with fetch-depth: 0."
         )
     return last_tag or None
 

@@ -727,11 +727,16 @@ class ShallowCheckoutTests(unittest.TestCase):
         )
 
     def test_git_really_does_behave_this_way_on_a_shallow_clone(self):
-        """The premise, measured rather than recalled.
+        """The premise, measured rather than recalled -- and the corrected one.
 
-        The guard is only correct if a shallow clone actually reports itself as
-        one *and* loses its tags. Both are facts about git, not about this
-        repository, so they are checked against a real one built here.
+        The guard's first version justified itself with "the tags were not
+        fetched". That is the wrong mechanism, and this test is what proves it:
+        the tags are fetched below, all of them, and `describe` still fails.
+        What matters is whether the tagged *commit* is inside the graft, so the
+        tag list is not a safe proxy and this function is not allowed to use it.
+
+        Both sides of the boundary are pinned, because the second one refutes a
+        stronger claim I made and had to withdraw -- see the sibling test.
         """
         with tempfile.TemporaryDirectory() as tmp:
             origin = Path(tmp) / "origin"
@@ -746,23 +751,20 @@ class ShallowCheckoutTests(unittest.TestCase):
             run("init", "-q", "-b", "main")
             run("config", "user.email", "t@example.invalid")
             run("config", "user.name", "t")
-            (origin / "a.txt").write_text("one", encoding="utf-8")
-            run("add", "-A")
-            run("commit", "-q", "-m", "first")
+
+            def commit(message: str) -> None:
+                (origin / "a.txt").write_text(message, encoding="utf-8")
+                run("add", "-A")
+                run("commit", "-q", "-m", message)
+
+            commit("first")
             run("tag", "v0.0.1")
-            (origin / "a.txt").write_text("two", encoding="utf-8")
-            run("commit", "-q", "-a", "-m", "second")
+            for n in range(5):
+                commit(f"after the tag {n}")
 
             clone = Path(tmp) / "clone"
-            run(
-                "clone",
-                "-q",
-                "--depth",
-                "1",
-                origin.as_uri(),
-                str(clone),
-                cwd=tmp,
-            )
+            run("clone", "-q", "--depth", "1", origin.as_uri(), str(clone), cwd=tmp)
+            run("fetch", "--tags", "-q", cwd=clone)
 
             shallow = run(
                 "rev-parse", "--is-shallow-repository", cwd=clone
@@ -770,11 +772,11 @@ class ShallowCheckoutTests(unittest.TestCase):
             self.assertEqual(
                 shallow, "true", "a --depth 1 clone did not report as shallow"
             )
-            self.assertEqual(
-                run("tag", "--list", cwd=clone).stdout.strip(),
-                "",
-                "a --depth 1 clone kept its tags, which would make the guard "
-                "unnecessary -- and this one is not that clone",
+            self.assertIn(
+                "v0.0.1",
+                run("tag", "--list", cwd=clone).stdout.split(),
+                "the tags were not fetched, so this clone cannot show that "
+                "present tags are still not enough -- which is the whole point",
             )
             described = subprocess.run(
                 ["git", "describe", "--tags", "--abbrev=0"],
@@ -785,13 +787,95 @@ class ShallowCheckoutTests(unittest.TestCase):
             self.assertNotEqual(
                 described.returncode,
                 0,
-                "git describe succeeded on a tagless shallow clone, so the "
-                "empty-tag path this guard protects is unreachable",
+                "git describe succeeded with the tag present but the tagged "
+                "commit outside the graft, so the guard's stated mechanism is "
+                "wrong and the docstring needs rewriting before this passes",
             )
             # The end of the chain: given exactly what git reports there, the
             # policy refuses instead of claiming a first release.
             with self.assertRaises(release_decision.ShallowCheckoutError):
                 release_decision.range_start("", shallow == "true")
+
+    def test_a_deep_enough_clone_computes_the_range_correctly(self):
+        """The claim this module refuses to make: bounded depth is not wrong.
+
+        An earlier justification for refusing the whole shallow space said a
+        bounded depth could leave `describe` succeeding while the range stayed
+        unwalkable. It cannot: `describe` walks ancestors from HEAD, so if it
+        finds a tag the tag is reachable and the range walks. The two states
+        exclude each other, and this pins that -- if it ever goes red, the
+        refusal is catching real breakage rather than being conservative, and
+        the docstring above is the thing that needs revisiting.
+
+        The refusal stays regardless, for the reason measured in that
+        docstring: below the boundary the gate does not degrade, it inverts.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            origin = Path(tmp) / "origin"
+            origin.mkdir()
+            run = lambda *a, **k: subprocess.run(  # noqa: E731
+                ["git", *a],
+                cwd=k.get("cwd", origin),
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            run("init", "-q", "-b", "main")
+            run("config", "user.email", "t@example.invalid")
+            run("config", "user.name", "t")
+
+            def commit(message: str, name: str = "a.txt") -> None:
+                (origin / name).write_text(message, encoding="utf-8")
+                run("add", "-A")
+                run("commit", "-q", "-m", message)
+
+            commit("first")
+            run("tag", "v0.0.1")
+            # A merge, because a second parent is the obvious way a bounded
+            # walk could go wrong and it is worth ruling out rather than
+            # assuming.
+            run("checkout", "-q", "-b", "side")
+            commit("side work", "s.txt")
+            run("checkout", "-q", "main")
+            commit("after the tag")
+            run("merge", "-q", "--no-ff", "-m", "merge side", "side")
+            commit("final")
+
+            truth = run(
+                "log", "v0.0.1..HEAD", "--pretty=%s", "--no-merges"
+            ).stdout.split("\n")
+            truth = [line for line in truth if line.strip()]
+
+            clone = Path(tmp) / "clone"
+            run("clone", "-q", "--depth", "20", origin.as_uri(), str(clone), cwd=tmp)
+            run("fetch", "--tags", "-q", cwd=clone)
+
+            described = subprocess.run(
+                ["git", "describe", "--tags", "--abbrev=0"],
+                cwd=clone,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                described.returncode,
+                0,
+                "a clone deep enough to contain the tag could not describe it, "
+                "so this test is no longer measuring the case it names",
+            )
+            walked = run(
+                "log",
+                f"{described.stdout.strip()}..HEAD",
+                "--pretty=%s",
+                "--no-merges",
+                cwd=clone,
+            ).stdout.split("\n")
+            self.assertEqual(
+                [line for line in walked if line.strip()],
+                truth,
+                "a clone whose describe succeeded still walked a different "
+                "range than the full history, which would mean a successful "
+                "describe is not sufficient after all",
+            )
 
     def test_the_refusal_says_what_to_do_about_it(self):
         try:
@@ -846,11 +930,31 @@ class WorkflowWiringTests(unittest.TestCase):
         which asserted one consumer of a rule that has two. The jobs are
         discovered instead, so a third one added later is covered by the same
         assertion rather than by remembering.
+
+        Two blind spots remain and are worth stating rather than implying.
+        Actions accepts `.yaml` as readily as `.yml`, so both are globbed. And
+        the markers below are invocation strings: a job that ran the suite as
+        `pytest` would read history and be invisible here. That is the same
+        shape as naming a file, one level in, and it is not fully solvable from
+        inside a workflow -- nothing in the YAML declares "this job reads git
+        history". The must-find assertion is the compensating control: if the
+        markers ever stop matching, the count drops and this goes red rather
+        than passing over an empty set.
         """
         needs_history = ("unittest discover", "release_decision.py")
         offenders = []
         checked = []
-        for path in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
+        workflows = sorted(
+            path
+            for pattern in ("*.yml", "*.yaml")
+            for path in (ROOT / ".github" / "workflows").glob(pattern)
+        )
+        self.assertTrue(
+            workflows,
+            "no workflow files were found at all, so this test is asserting "
+            "nothing -- check the glob before trusting a green run",
+        )
+        for path in workflows:
             text = path.read_text(encoding="utf-8")
             for job in re.split(r"\n(?=  \w[\w-]*:\n)", text):
                 if not any(marker in job for marker in needs_history):
