@@ -343,6 +343,48 @@ class ClassificationCorrectnessTests(unittest.TestCase):
             "HACS installs, so the derived shipping set is wrong",
         )
 
+    def test_the_readme_ships_whatever_hacs_json_says_about_rendering(self):
+        """`render_readme` is read by this repository and by nobody else.
+
+        HACS picks the file it renders from a hardcoded list of README
+        spellings -- `hacs/integration`, `HacsRepository.get_info_md_content`,
+        where the variant list is built from `name: str = "readme"`. The
+        `render_readme` key is still accepted by its schema validator and is no
+        longer consulted when choosing the file, which is why `info.md` renders
+        nowhere however it is configured.
+
+        So gating on that key reproduced the defect this module exists to
+        remove, inside the module: the declared source of truth was read while
+        the deciding one was somewhere else. Setting `render_readme: false`
+        would have dropped README.md out of the shipping set while HACS carried
+        on rendering it, and a genuine documentation release would have been
+        silently withheld.
+
+        This passes now because nothing reads the key. It goes red the moment
+        someone reintroduces a gate on it.
+        """
+        roots = release_decision.displayed_roots(
+            tracked=["README.md", "hacs.json"],
+        )
+        self.assertIn(
+            "README.md",
+            roots,
+            "README.md stopped shipping because hacs.json disabled a key HACS "
+            "does not consult; a docs release would be withheld while every "
+            "user still sees the change",
+        )
+
+    def test_the_readme_is_only_shipping_when_the_repository_has_one(self):
+        """The other direction, so the rule is not `always true`."""
+        roots = release_decision.displayed_roots(
+            tracked=["hacs.json", "custom_components/x/manifest.json"],
+        )
+        self.assertNotIn(
+            "README.md",
+            roots,
+            "a README that does not exist was classified as shipping",
+        )
+
     def test_nothing_that_ships_is_declared_not_shipping(self):
         """The other direction: a real shipped path filed as inert."""
         derived = derived_shipping()
