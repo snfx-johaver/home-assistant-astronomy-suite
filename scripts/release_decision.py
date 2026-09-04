@@ -82,6 +82,27 @@ for it: turning that key off would have silently stopped documentation
 releasing while every user carried on seeing the change. It is also why
 `info.md` renders nowhere however it is configured.
 
+"REACHES A USER ONLY VIA A RELEASE" IS NOT ONE PROPERTY
+
+The two non-code entries in the derived set both satisfy the rule this module
+applies, and they satisfy it on different schedules. This cannot be asserted by
+a test here -- it is a fact about HACS's source, not about this repository --
+so it is recorded where the next person will meet it.
+
+    README.md   get_documentation()   -> installed_version when installed
+    hacs.json   async_get_hacs_json() -> version_to_download(), which has no
+                                         `installed` branch at all
+
+A README change reaches a user when *that user upgrades*. A `hacs.json` change
+reaches every existing installation the moment a release is cut, whether or not
+anyone upgrades, because HACS resolves it against the newest published tag.
+
+The practical consequence is the `homeassistant` minimum. Raising it does not
+merely gate new installs: cutting any release afterwards applies the new floor
+to users still sitting on an older version who never asked for anything. That
+is not a defect and there is nothing here to fix, but it is worth knowing
+before that number is moved.
+
 DECLARED LIMITS
 
 Two things this cannot see. Both are stated here so the next person meets the
@@ -235,9 +256,10 @@ def displayed_roots(tracked: Iterable[str] | None = None) -> dict[str, str]:
     roots = {}
     if "hacs.json" in tracked:
         roots["hacs.json"] = (
-            "governs how HACS installs this repository. HACS reads it at the "
-            "version it is installing, so a change reaches nobody until a "
-            "release is cut."
+            "governs how HACS installs this repository, read at the version it "
+            "would download -- so a change reaches nobody until a release is "
+            "cut, and then reaches everybody at once. Unlike the README, it "
+            "does not follow the user's installed version."
         )
     for name in README_VARIANTS:
         if name in tracked:
