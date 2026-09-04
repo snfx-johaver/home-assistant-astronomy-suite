@@ -740,6 +740,44 @@ class ShallowCheckoutTests(unittest.TestCase):
         self._commit(origin, "final")
         return origin
 
+    def _catchup_merge_origin(self, tmp: Path) -> Path:
+        """History that breaks the --no-merges bound, built only with --no-ff.
+
+                P0
+              /  |  \\
+            U1   V1   S1
+              \\ /
+               A = merge(U1, V1)   <- tag v0.0.1
+                     M1 = merge(S1, U1)
+                     M2 = merge(M1, V1)
+                     M3 = merge(M2, A)   <- HEAD
+
+        A long-lived branch that forked before the tag and caught up by merging
+        the upstream branches in one at a time before merging the release --
+        what people do to take conflicts in pieces. The range holds three
+        merges and one ordinary commit, so the `--no-merges` count is 1 while
+        the walk boundary is 4.
+
+        No plumbing, no forced parents: every merge here is a plain
+        `git merge --no-ff` that a person could type.
+        """
+        origin = self._new_origin(tmp)
+        self._commit(origin, "P0", "P0.txt")
+        self._run(origin, "branch", "base")
+        self._run(origin, "checkout", "-qb", "u")
+        self._commit(origin, "U1", "U1.txt")
+        self._run(origin, "checkout", "-qb", "v", "base")
+        self._commit(origin, "V1", "V1.txt")
+        self._run(origin, "checkout", "-q", "u")
+        self._run(origin, "merge", "-q", "--no-ff", "v", "-m", "A")
+        self._run(origin, "tag", "v0.0.1")
+        self._run(origin, "checkout", "-qb", "s", "base")
+        self._commit(origin, "S1", "S1.txt")
+        self._run(origin, "merge", "-q", "--no-ff", "u~1", "-m", "M1")
+        self._run(origin, "merge", "-q", "--no-ff", "v", "-m", "M2")
+        self._run(origin, "merge", "-q", "--no-ff", "v0.0.1", "-m", "M3")
+        return origin
+
     def _asymmetric_origin(self, tmp: Path) -> Path:
         """History where the two boundaries disagree.
 
@@ -1209,17 +1247,16 @@ class ShallowCheckoutTests(unittest.TestCase):
         the target would be too and it would not be in the range. So the
         distance cannot exceed the range size, counting merges.
 
-        The counting matters and is the reason this test exists rather than a
-        sentence. The size this module reports is `--no-merges`, and that one
-        is not provably sound -- on the merge-chain shape it lands exactly on
-        the walk boundary with nothing to spare. Asserted as tight rather than
-        safe, so that if a shape is ever found where it fails, this goes red
-        rather than the claim quietly being wrong.
+        The counting matters and is the reason this test enumerates shapes
+        rather than stating a sentence. The size this module *reports* is
+        `--no-merges`, and that one is not a bound at all -- see the test
+        below, which pins the shape that breaks it.
         """
         for name, build in (
             ("linear", lambda t: self._linear_origin(t, 5)),
             ("merged", self._merged_origin),
             ("asymmetric", self._asymmetric_origin),
+            ("catchup", self._catchup_merge_origin),
         ):
             with self.subTest(shape=name):
                 with tempfile.TemporaryDirectory() as tmp:
@@ -1241,14 +1278,118 @@ class ShallowCheckoutTests(unittest.TestCase):
                         "walk boundary, which would refute the argument in "
                         "range_start's docstring",
                     )
-                    self.assertGreaterEqual(
-                        len(self._subjects(origin)) + 1,
-                        walk_at,
-                        "the --no-merges count fell below the walk boundary. "
-                        "That is not a defect in the code -- it is the "
-                        "measured-not-proven bound failing, and the docstring "
-                        "should stop mentioning it",
-                    )
+
+    def test_the_no_merges_count_is_not_a_bound(self):
+        """The claim this suite used to make, pinned as false.
+
+        An earlier version asserted (--no-merges count) + 1 >= walk boundary
+        and described it as measurably tight. It is not tight, it is wrong, and
+        the shape that breaks it is ordinary: a branch forked before the tag
+        catching up by merging the upstream branches in one at a time. Three
+        merges, one real commit, off by two.
+
+        The reason the earlier measurement looked tight is the reason this is
+        asserted in the failing direction rather than deleted: the evidence for
+        calling it tight lived in a message and was never enrolled here, so
+        nothing could contradict it. Asserting the failure means reinstating
+        the claim turns this red.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            origin = self._catchup_merge_origin(Path(tmp))
+            walk_at = self._walk_boundary(Path(tmp), origin)
+            no_merges = len(self._subjects(origin))
+            self.assertLess(
+                no_merges + 1,
+                walk_at,
+                "the --no-merges count bounded the walk boundary on the shape "
+                "built to break it, so either the fixture stopped having the "
+                "catch-up structure or the bound is sound after all",
+            )
+            # Non-vacuity: the provable bound still holds on this same shape,
+            # so the failure above is about which commits are counted rather
+            # than the argument being wrong.
+            including = len(
+                [
+                    line
+                    for line in self._run(
+                        origin, "rev-list", "v0.0.1..HEAD"
+                    ).stdout.split("\n")
+                    if line.strip()
+                ]
+            )
+            self.assertGreaterEqual(including + 1, walk_at)
+
+    def test_a_grafted_merge_is_not_a_merge_to_git_log(self):
+        """Why the count cannot see the boundary it would be used to bound.
+
+        A shallow clone rewrites its boundary commits to have no parents. A
+        merge sitting on that boundary therefore is not a merge as far as
+        `git log --no-merges` is concerned, and the filter includes it -- a
+        commit the same query excludes in a full clone.
+
+        So `--no-merges` is unsound in both directions at once: it drops real
+        commits past the boundary and adopts merges at it. On this shape the
+        two cancel, and the count reads 1 at every depth, correct and incorrect
+        alike, while the subject identities change underneath it. That is why
+        _walk_boundary compares subject lists rather than lengths, and why the
+        docstring says the observable is the list.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            origin = self._catchup_merge_origin(Path(tmp))
+            shallow = Path(tmp) / "shallow"
+            self._run(
+                Path(tmp), "clone", "-q", "--depth", "2", origin.as_uri(), str(shallow)
+            )
+            self._run(shallow, "fetch", "--tags", "-q")
+
+            boundary = self._run(shallow, "rev-parse", "HEAD^").stdout.strip()
+            self.assertEqual(
+                len(self._run(origin, "rev-list", "--parents", "-1", boundary).stdout.split())
+                - 1,
+                2,
+                "the commit on the graft boundary is not a merge upstream, so "
+                "this fixture cannot show the filter adopting one",
+            )
+            self.assertEqual(
+                len(
+                    self._run(
+                        shallow, "rev-list", "--parents", "-1", boundary
+                    ).stdout.split()
+                )
+                - 1,
+                0,
+                "the boundary commit kept its parents in the shallow clone, so "
+                "grafting did not happen and the mechanism described in "
+                "range_start's docstring is not real",
+            )
+
+            upstream = self._run(
+                origin, "rev-list", "v0.0.1..HEAD", "--no-merges"
+            ).stdout
+            local = self._run(
+                shallow, "rev-list", "v0.0.1..HEAD", "--no-merges"
+            ).stdout
+            self.assertNotIn(
+                boundary,
+                upstream,
+                "--no-merges included the merge in the full clone, so there is "
+                "no disagreement left to demonstrate",
+            )
+            self.assertIn(
+                boundary,
+                local,
+                "--no-merges excluded the grafted merge, which would mean the "
+                "filter is depth-stable after all",
+            )
+
+            # The count is the same on both sides. Only the identities differ,
+            # which is the whole point: a length cannot see this.
+            self.assertEqual(
+                len(local.split()),
+                len(upstream.split()),
+                "the counts differed, which would make this visible to a "
+                "length comparison and the docstring's warning unnecessary",
+            )
 
     def test_the_refusal_says_what_to_do_about_it(self):
         try:

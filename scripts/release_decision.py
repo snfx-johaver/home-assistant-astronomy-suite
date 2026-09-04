@@ -447,10 +447,24 @@ def range_start(last_tag: str, is_shallow: bool) -> str | None:
     general. A sound upper bound over both is (commits in the range *counting
     merges*) + 1, because every commit on a shortest path to a range commit is
     itself in the range -- if an intermediate one were an ancestor of the tag
-    the target would be too, and it would not be in the range. Note the
-    counting: the range size this module reports is `--no-merges`, and that
-    one is measurably tight rather than provably sound. All of this is pinned
-    by tests.
+    the target would be too, and it would not be in the range.
+
+    The counting is not a detail. The `--no-merges` count -- the one this
+    module reports -- does NOT bound the walk boundary, and the failure is not
+    marginal: a branch forked before the tag that catches up by merging the
+    upstream branches in one at a time, then merges the release, puts three
+    merges and one ordinary commit in the range and misses by two. A merge on
+    the path adds a generation without adding a non-merge commit, so the filter
+    subtracts exactly the commits doing the lengthening.
+
+    Worse, `--no-merges` is not stable under depth in either direction. A
+    shallow clone grafts its boundary commits to have no parents, so a merge
+    sitting on the boundary is not a merge as far as `git log` is concerned and
+    the filter *includes* it. On the shape above the count is 1 at every depth,
+    correct and incorrect alike, while the subject *identities* change
+    underneath it. So the observable is the subject list, not its length: a
+    length cannot see the boundary it would be used to bound. All of this is
+    pinned by tests, including the shape that breaks the bound.
 
     Below the describe boundary the gate does not degrade, it inverts: every
     tracked file is claimed as changed. At or above the walk boundary the
