@@ -863,25 +863,48 @@ class DsoDomeCardEditor extends HTMLElement {
 // REGISTRATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-customElements.define("night-sky-highlights-2-card", NightSkyHighlights2Card);
-customElements.define("night-sky-highlights-2-card-editor", NightSkyHighlights2CardEditor);
-customElements.define("dso-tonight-table-card", DsoTonightTableCard);
-customElements.define("dso-tonight-table-card-editor", DsoTonightTableCardEditor);
-customElements.define("dso-yard-map-card", DsoYardMapCard);
-customElements.define("dso-yard-map-card-editor", DsoYardMapCardEditor);
-customElements.define("dso-panorama-card", DsoPanoramaCard);
-customElements.define("dso-panorama-card-editor", DsoPanoramaCardEditor);
-customElements.define("dso-dome-card", DsoDomeCard);
-customElements.define("dso-dome-card-editor", DsoDomeCardEditor);
+// Both helpers are idempotent on purpose, and this bundle is the reason the
+// property is tested rather than assumed. Lovelace fetches one resource per
+// registered URL; anything that leaves two entries naming this file evaluates
+// it twice against one shared customElements registry. `customElements.define`
+// throws NotSupportedError on a name already registered, and every define
+// below runs before the customCards push -- so an unguarded second evaluation
+// costs all five cards *and* all five picker entries, not just a duplicate.
+//
+// astronomy-cards.js has always guarded this; this bundle did not. The names
+// differ from that file's `defineElement`/`registerCustomCard` deliberately:
+// the bundles are registered as `res_type: "module"` and so have separate
+// scopes today, but identically-named top-level declarations would shadow each
+// other if either were ever loaded as a classic script.
+//
+// Covered by tests/bundle-idempotency.test.mjs.
+function defineDeepskyElement(name, ctor) {
+  if (!customElements.get(name)) customElements.define(name, ctor);
+}
 
-window.customCards = window.customCards || [];
-window.customCards.push(
-  { type: "night-sky-highlights-2-card", name: "ASS Night Sky Highlights 2", description: "Enhanced night sky highlights with visibility scores.", preview: true },
-  { type: "dso-tonight-table-card", name: "ASS Deep Sky Tonight", description: "Table of best deep-sky objects visible tonight.", preview: true },
-  { type: "dso-yard-map-card", name: "ASS Sky Map", description: "Top-down polar projection of visible objects.", preview: true },
-  { type: "dso-panorama-card", name: "ASS Horizon Panorama", description: "360° horizon strip showing object positions.", preview: true },
-  { type: "dso-dome-card", name: "ASS 3D Sky Dome", description: "Interactive 3D dome view — drag to rotate.", preview: true },
-);
+function registerDeepskyCard(entry) {
+  window.customCards = window.customCards || [];
+  if (!window.customCards.some((card) => card.type === entry.type)) {
+    window.customCards.push(entry);
+  }
+}
+
+defineDeepskyElement("night-sky-highlights-2-card", NightSkyHighlights2Card);
+defineDeepskyElement("night-sky-highlights-2-card-editor", NightSkyHighlights2CardEditor);
+defineDeepskyElement("dso-tonight-table-card", DsoTonightTableCard);
+defineDeepskyElement("dso-tonight-table-card-editor", DsoTonightTableCardEditor);
+defineDeepskyElement("dso-yard-map-card", DsoYardMapCard);
+defineDeepskyElement("dso-yard-map-card-editor", DsoYardMapCardEditor);
+defineDeepskyElement("dso-panorama-card", DsoPanoramaCard);
+defineDeepskyElement("dso-panorama-card-editor", DsoPanoramaCardEditor);
+defineDeepskyElement("dso-dome-card", DsoDomeCard);
+defineDeepskyElement("dso-dome-card-editor", DsoDomeCardEditor);
+
+registerDeepskyCard({ type: "night-sky-highlights-2-card", name: "ASS Night Sky Highlights 2", description: "Enhanced night sky highlights with visibility scores.", preview: true });
+registerDeepskyCard({ type: "dso-tonight-table-card", name: "ASS Deep Sky Tonight", description: "Table of best deep-sky objects visible tonight.", preview: true });
+registerDeepskyCard({ type: "dso-yard-map-card", name: "ASS Sky Map", description: "Top-down polar projection of visible objects.", preview: true });
+registerDeepskyCard({ type: "dso-panorama-card", name: "ASS Horizon Panorama", description: "360° horizon strip showing object positions.", preview: true });
+registerDeepskyCard({ type: "dso-dome-card", name: "ASS 3D Sky Dome", description: "Interactive 3D dome view — drag to rotate.", preview: true });
 
 console.info(
   `%c  DEEPSKY-CARDS  %c  v${DEEPSKY_VERSION}  `,
