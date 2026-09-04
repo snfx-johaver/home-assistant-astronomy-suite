@@ -24,6 +24,20 @@ PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.CAMERA]
 VERSION = INTEGRATION_VERSION
 CARDS_FILENAME = "astronomy-cards.js"
 DEEPSKY_CARDS_FILENAME = "deepsky-cards.js"
+WORLD_MAP_FILENAME = "world-map.png"
+
+# Every file the integration puts in a user's ``www/``, declared once.
+#
+# These were three near-identical blocks inside ``_deploy_cards_to_www`` and a
+# fourth hand-written copy in the release tests. Anything that wants to reason
+# about what a browser receives -- the deploy itself, the shipping-set
+# derivation, the diagnostics report -- had to re-list them and could silently
+# list a different set. Order is the original deploy order.
+DEPLOYED_FILENAMES: tuple[str, ...] = (
+    CARDS_FILENAME,
+    WORLD_MAP_FILENAME,
+    DEEPSKY_CARDS_FILENAME,
+)
 def _lovelace_resources(lovelace_data: object) -> object | None:
     """The Lovelace resource collection, whatever shape ``hass.data`` holds.
 
@@ -166,37 +180,29 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unload_ok
 
 
+def deployed_dir(hass: HomeAssistant) -> Path:
+    """Where the browser-facing files are served from.
+
+    Shared with the diagnostics report so it cannot describe a directory the
+    deploy never writes to. Reading one path and reporting the answer for
+    another produces a confident, wrong measurement.
+    """
+    return Path(hass.config.path("www")) / "community" / "astronomy-cards"
+
+
 def _deploy_cards_to_www(hass: HomeAssistant) -> None:
-    """Copy astronomy-cards.js and world-map.png to config/www/community/astronomy-cards/."""
-    www_dir = Path(hass.config.path("www")) / "community" / "astronomy-cards"
+    """Copy every deployed file into ``config/www/community/astronomy-cards/``."""
+    www_dir = deployed_dir(hass)
     www_dir.mkdir(parents=True, exist_ok=True)
 
-    # Deploy JS
-    source = Path(__file__).parent / CARDS_FILENAME
-    if source.is_file():
-        dest = www_dir / CARDS_FILENAME
+    for filename in DEPLOYED_FILENAMES:
+        source = Path(__file__).parent / filename
+        if not source.is_file():
+            _LOGGER.warning("%s not found: %s", filename, source)
+            continue
+        dest = www_dir / filename
         shutil.copy2(str(source), str(dest))
-        _LOGGER.info("Deployed %s to %s", CARDS_FILENAME, dest)
-    else:
-        _LOGGER.warning("Cards JS source not found: %s", source)
-
-    # Deploy world map image
-    map_source = Path(__file__).parent / "world-map.png"
-    if map_source.is_file():
-        map_dest = www_dir / "world-map.png"
-        shutil.copy2(str(map_source), str(map_dest))
-        _LOGGER.info("Deployed world-map.png to %s", map_dest)
-    else:
-        _LOGGER.warning("world-map.png not found: %s", map_source)
-
-    # Deploy deepsky-cards.js
-    deepsky_source = Path(__file__).parent / DEEPSKY_CARDS_FILENAME
-    if deepsky_source.is_file():
-        deepsky_dest = www_dir / DEEPSKY_CARDS_FILENAME
-        shutil.copy2(str(deepsky_source), str(deepsky_dest))
-        _LOGGER.info("Deployed %s to %s", DEEPSKY_CARDS_FILENAME, deepsky_dest)
-    else:
-        _LOGGER.warning("Deepsky cards JS not found: %s", deepsky_source)
+        _LOGGER.info("Deployed %s to %s", filename, dest)
 
 
 async def _async_register_cards_resource(hass: HomeAssistant) -> None:
