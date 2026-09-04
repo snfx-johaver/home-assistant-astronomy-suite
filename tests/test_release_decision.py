@@ -48,6 +48,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "tests"))
+
+from harness import COMPONENT_DIR, load_component_module  # noqa: E402
 
 import release_decision  # noqa: E402
 from release_decision import (  # noqa: E402
@@ -55,8 +58,12 @@ from release_decision import (  # noqa: E402
     SHIPPING,
     bump_from_subjects,
     decide,
+    derived_shipping,
+    installed_roots,
     top_level,
 )
+
+package_init = load_component_module("__init__")
 
 
 class Range(tuple):
@@ -117,6 +124,24 @@ HISTORY = (
         "PR #12 (v1.11.3..45385bc) -> published v1.11.4",
         ["fix: make a version bump atomic so an aborted release cannot half-happen (#12)"],
         ["scripts/bump_version.py", "tests/test_cards_resource_version.py"],
+        should_release=False,
+        actually_did=True,
+    ),
+    Range(
+        # Found by the sibling review, and the reason `www/` changed buckets.
+        # It is the only range in the repository's history where a www/ path
+        # was the deciding vote, and the files were two TypeScript sources that
+        # nothing compiles plus a rollup config -- build machinery, which the
+        # same argument that exempts `scripts/` says cannot ship.
+        "PR #14 (v1.11.5..22c0a17) -> published v1.11.6",
+        ["fix: sweep every version literal, and stop the build eating the bundle (#14)"],
+        [
+            ".gitignore",
+            "scripts/bump_version.py",
+            "tests/test_version_literals.py",
+            "www/community/astronomy-cards/index.ts",
+            "www/community/astronomy-cards/rollup.config.mjs",
+        ],
         should_release=False,
         actually_did=True,
     ),
@@ -239,6 +264,121 @@ class ShippingPredicateTests(unittest.TestCase):
         self.assertEqual("none", bump_from_subjects(["test: check a thing"]))
         self.assertEqual("none", bump_from_subjects(["docs: write a thing"]))
         self.assertEqual("none", bump_from_subjects([]))
+
+
+class ClassificationCorrectnessTests(unittest.TestCase):
+    """Whether the classification is *right*, not merely total.
+
+    The completeness control below is a partition check: it fires when a new
+    top-level path appears in neither map, and it stays green forever on a path
+    filed in the wrong bucket -- including on the day the map is written. It
+    guards against the map rotting and cannot notice a map that shipped
+    pre-rotted, which is what happened: `www/`, `lovelace/`, `icon.png`,
+    `logo.png` and `info.md` were classified as shipping by intuition about
+    what looks like product, and none of them reaches an installation.
+
+    That is the same defect the module exists to remove, one level up. The
+    declared map was consulted; HACS's install convention and
+    `_deploy_cards_to_www` were authoritative and were never asked. So the
+    shipping set is now derived from those, and what remains hand-written is
+    only the list of things that ship nothing -- where being wrong costs a
+    release that did not happen rather than one that should not have.
+    """
+
+    def test_every_shipping_path_is_installed_or_displayed(self):
+        """A regression guard on the name, not a restatement of the derivation.
+
+        `SHIPPING` is now computed, so this cannot fail while it stays computed
+        -- and a test that cannot fail is the defect removed in PR #16. It is
+        kept because it *can* fail, on exactly one change: someone replacing
+        the derivation with a hand-written map again. Verified by mutation
+        rather than assumed -- restoring the old literal map makes this name
+        all five entries -- and that regression is worth a red test, because it
+        is the one that happened.
+        """
+        derived = derived_shipping()
+        unjustified = sorted(set(SHIPPING) - set(derived))
+        self.assertFalse(
+            unjustified,
+            "%d paths are classified as shipping but are neither installed by "
+            "HACS nor displayed by it, so a change to them alone can release a "
+            "version that reaches nobody:\n    %s"
+            % (len(unjustified), "\n    ".join(unjustified)),
+        )
+
+    def test_the_browser_facing_bundles_live_inside_an_installed_root(self):
+        """Why `www/` ships nothing, asserted instead of argued.
+
+        `_deploy_cards_to_www` copies the card bundles into a user's config
+        from `Path(__file__).parent`, the installed package directory. So the
+        bundles a browser loads are the ones under `custom_components/`, and
+        the repository's top-level `www/` copies are read by nobody.
+
+        That is the fact the derivation rests on and cannot check about
+        itself. If the integration were ever changed to deploy from somewhere
+        else, or the bundles were moved out of the package, the derived
+        shipping set would be wrong -- and this goes red rather than the
+        classification silently drifting.
+        """
+        installed = set(installed_roots())
+        deployed = [
+            package_init.CARDS_FILENAME,
+            package_init.DEEPSKY_CARDS_FILENAME,
+            "world-map.png",
+        ]
+        missing = [
+            name for name in deployed if not (COMPONENT_DIR / name).is_file()
+        ]
+        self.assertFalse(
+            missing,
+            "%d file(s) the integration deploys to a user's browser are not "
+            "inside its own package, so they must ship from somewhere the "
+            "derivation does not know about: %s"
+            % (len(missing), ", ".join(missing)),
+        )
+        self.assertIn(
+            top_level(COMPONENT_DIR.relative_to(ROOT).as_posix()),
+            installed,
+            "the package the integration deploys from is not one of the roots "
+            "HACS installs, so the derived shipping set is wrong",
+        )
+
+    def test_nothing_that_ships_is_declared_not_shipping(self):
+        """The other direction: a real shipped path filed as inert."""
+        derived = derived_shipping()
+        suppressed = sorted(set(NOT_SHIPPING) & set(derived))
+        self.assertFalse(
+            suppressed,
+            "%d paths reach a user but are declared not-shipping, so genuine "
+            "releases would be silently withheld:\n    %s"
+            % (len(suppressed), "\n    ".join(suppressed)),
+        )
+
+    def test_the_derivation_found_the_integration(self):
+        """Guards a zero.
+
+        If the manifest scan finds nothing, the shipping set is empty, every
+        change looks inert and the repository silently stops releasing
+        altogether. That failure is invisible in every other test here, all of
+        which would go green.
+        """
+        installed = installed_roots()
+        self.assertTrue(
+            installed,
+            "no manifest.json was discovered, so nothing is considered "
+            "installable and no release could ever be cut again",
+        )
+
+    def test_the_derivation_does_not_claim_everything(self):
+        """The opposite degenerate value, which would restore the old defect."""
+        derived = set(derived_shipping())
+        everything = tracked_top_level_paths()
+        self.assertNotEqual(
+            everything,
+            derived,
+            "every tracked path is considered shipping, which is the "
+            "pre-fix behaviour wearing a derivation",
+        )
 
 
 class ClassificationCompletenessTests(unittest.TestCase):
