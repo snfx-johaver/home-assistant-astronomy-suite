@@ -2,7 +2,7 @@
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=snfx-johaver&repository=home-assistant-astronomy-suite&category=integration)
 
-The most complete astronomy and space dashboard for Home Assistant. Yes, we know what the acronym spells — and no, we're not changing it. The universe has a sense of humor, and so do we. 🍑🚀
+The most complete astronomy and space dashboard for Home Assistant. Yes, I know what the acronym spells — and no, I'm not changing it. The universe has a sense of humor, and so do I 🍑🚀
 
 Fully isolated — does not modify any existing dashboards, integrations, or resources.
 
