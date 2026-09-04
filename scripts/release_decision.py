@@ -416,26 +416,51 @@ def range_start(last_tag: str, is_shallow: bool) -> str | None:
 
     The refusal covers the whole shallow space rather than only the untagged
     corner, and the reason is that a bounded depth is not wrong -- it is
-    *contingently* right, on a contingency that moves:
+    *contingently* right, on a contingency that moves. There are two depths
+    here, not one, because this module reads the range twice and the two reads
+    ask different questions:
 
-        the shallowest depth that still works is the number of commits on the
-        shortest path from HEAD to the last tagged commit, counting both ends
+        `git diff start..HEAD` compares two trees, so it needs only that the
+        tagged commit is reachable. That depth -- call it the describe
+        boundary -- is the number of commits on the shortest path from HEAD to
+        the last tagged commit, counting both ends.
 
-    On linear history that is (commits since the tag) + 1. It is NOT that in
-    general: with a merge in the range the commit count exceeds the path
-    length, and the boundary follows the path. This repository squash-merges,
-    so the two coincide here -- which is exactly why the general claim is
-    written out rather than the convenient one. Both are pinned by tests.
+        `git log start..HEAD` must visit every commit in the range, so it
+        needs the *farthest* of them present. That depth -- the walk boundary
+        -- is the greatest distance from HEAD to anything in the range.
 
-    Below the boundary the gate does not degrade, it inverts: one commit
-    shallower and every tracked file is claimed as changed. Above it the
+    The walk boundary is the larger of the two and it is the one a reader
+    needs, because the file list decides *whether* to release and the subjects
+    decide *which bump*. Between the two depths the file list is already
+    correct while the subject list is still short, so the gate publishes a
+    plausible release carrying the wrong version number -- a `feat:` sitting
+    on a long path is grafted away and a minor is published as a patch. That
+    is harder to notice than the untagged case, which claims every tracked
+    file at once.
+
+    They coincide whenever the tagged commit is the farthest thing in the
+    range, which is why linear history and most merge shapes do not show the
+    difference. A branch cut at the tag and merged after the mainline moved on
+    separates them: the tag gets a shortcut while the mainline stays long.
+
+    On linear history both are (commits since the tag) + 1. Neither is that in
+    general. A sound upper bound over both is (commits in the range *counting
+    merges*) + 1, because every commit on a shortest path to a range commit is
+    itself in the range -- if an intermediate one were an ancestor of the tag
+    the target would be too, and it would not be in the range. Note the
+    counting: the range size this module reports is `--no-merges`, and that
+    one is measurably tight rather than provably sound. All of this is pinned
+    by tests.
+
+    Below the describe boundary the gate does not degrade, it inverts: every
+    tracked file is claimed as changed. At or above the walk boundary the
     answer is byte-identical to a full clone. So any fixed `fetch-depth: N` is
-    correct only while the path stays under N, and it lengthens with every
-    commit and resets only when a release is cut -- which is the event this
-    module exists to suppress. The better this gate works, the faster someone
-    else's bounded depth expires. That is the drift this module removes, so
-    the contingent cases are refused too, including the ones that would have
-    been correct.
+    correct only while the longest path stays under N, and it lengthens with
+    every commit and resets only when a release is cut -- which is the event
+    this module exists to suppress. The better this gate works, the faster
+    someone else's bounded depth expires. That is the drift this module
+    removes, so the contingent cases are refused too, including the ones that
+    would have been correct.
 
     The boundary is described rather than illustrated on purpose. An earlier
     version of this docstring carried a table of measured depths against a

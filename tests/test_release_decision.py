@@ -740,6 +740,64 @@ class ShallowCheckoutTests(unittest.TestCase):
         self._commit(origin, "final")
         return origin
 
+    def _asymmetric_origin(self, tmp: Path) -> Path:
+        """History where the two boundaries disagree.
+
+        A(v0.0.1) - B(feat) - C - D - E - M(HEAD)
+                 \\________________________ F __/
+
+        The side branch is cut at the *tag* and merged after the mainline has
+        moved on, so the tag has a short path while the range still has a long
+        one. In the merged fixture above, the tag is the farthest thing in the
+        range, so describe-success already implies a complete walk and the two
+        boundaries cannot be told apart. Here they can.
+        """
+        origin = self._new_origin(tmp)
+        self._commit(origin, "fix: root")
+        self._run(origin, "tag", "v0.0.1")
+        self._commit(origin, "feat: on the long path", "b.txt")
+        for name in ("c", "d", "e"):
+            self._commit(origin, f"fix: {name}", f"{name}.txt")
+        self._run(origin, "checkout", "-q", "-b", "side", "v0.0.1")
+        self._commit(origin, "fix: shortcut", "f.txt")
+        self._run(origin, "checkout", "-q", "main")
+        self._run(origin, "merge", "-q", "--no-ff", "-m", "merge side", "side")
+        return origin
+
+    def _subjects(self, repo: Path, tag: str = "v0.0.1") -> list[str]:
+        out = self._run(
+            repo, "log", f"{tag}..HEAD", "--pretty=%s", "--no-merges"
+        ).stdout
+        return [line for line in out.split("\n") if line.strip()]
+
+    def _walk_boundary(self, tmp: Path, origin: Path) -> int:
+        """Shallowest depth whose subject list matches a full clone.
+
+        Distinct from _shallowest_depth_that_describes: that one answers the
+        `git diff` question, this one answers the `git log` question, and the
+        whole point is that they are not the same number.
+        """
+        truth = self._subjects(origin)
+        total = int(self._run(origin, "rev-list", "--count", "HEAD").stdout.strip())
+        for depth in range(1, total + 2):
+            clone = tmp / f"walk{depth}"
+            self._run(
+                tmp, "clone", "-q", "--depth", str(depth), origin.as_uri(), str(clone)
+            )
+            self._run(clone, "fetch", "--tags", "-q")
+            described = subprocess.run(
+                ["git", "describe", "--tags", "--abbrev=0"],
+                cwd=clone,
+                capture_output=True,
+                text=True,
+            )
+            if described.returncode == 0 and self._subjects(clone) == truth:
+                return depth
+        raise AssertionError(
+            "no depth up to the full history reproduced the full subject list, "
+            "so this probe is not measuring what it claims to"
+        )
+
     def _shortest_path_length(self, origin: Path, tag: str = "v0.0.1") -> int:
         """Commits on the shortest HEAD->tag path, counting both ends.
 
@@ -978,8 +1036,14 @@ class ShallowCheckoutTests(unittest.TestCase):
                 "describe is not sufficient after all",
             )
 
-    def test_the_boundary_follows_the_path_not_the_commit_count(self):
+    def test_the_describe_boundary_follows_the_shortest_path(self):
         """The number the docstring used to print, re-derived instead.
+
+        Named for the question it answers. This is the depth at which
+        `git describe` starts working, which is what `git diff start..HEAD`
+        needs -- and it is NOT the depth at which `git log start..HEAD` becomes
+        complete. That second boundary is measured in the test below; naming
+        this one "the boundary" was how a false claim got into the docstring.
 
         `range_start` describes the shallowest workable depth as the length of
         the shortest path from HEAD to the tagged commit. That replaced a table
@@ -1039,6 +1103,152 @@ class ShallowCheckoutTests(unittest.TestCase):
                     "formula was right and this fixture no longer separates "
                     "the two",
                 )
+
+    def test_the_walk_boundary_can_exceed_the_describe_boundary(self):
+        """Between the two depths the gate publishes the wrong version number.
+
+        This module reads the range twice. `git diff start..HEAD` compares two
+        trees and needs only the tagged commit; `git log start..HEAD` must
+        visit every commit in the range and needs the farthest one. A shallow
+        clone can satisfy the first and not the second.
+
+        The consequence is worse than the untagged case, not milder. That one
+        claims every tracked file and is obvious. This one produces the correct
+        file list -- so the release looks entirely normal -- while the subject
+        list is short by exactly the commits on the long path. A `feat:` there
+        is grafted away and a minor shipped as a patch.
+
+        The docstring in range_start once said the answer above the describe
+        boundary was byte-identical to a full clone. It is not; byte-identity
+        starts at the walk boundary, and these two are the numbers that show it.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            origin = self._asymmetric_origin(Path(tmp))
+            describe_at = self._shallowest_depth_that_describes(Path(tmp), origin)
+            walk_at = self._walk_boundary(Path(tmp), origin)
+
+            self.assertLess(
+                describe_at,
+                walk_at,
+                "this fixture no longer separates the two boundaries, so it "
+                "cannot show the failure it exists to show -- the tag has "
+                "probably stopped being reachable by a shortcut",
+            )
+
+            shallow = Path(tmp) / "at_describe"
+            self._run(
+                Path(tmp),
+                "clone",
+                "-q",
+                "--depth",
+                str(describe_at),
+                origin.as_uri(),
+                str(shallow),
+            )
+            self._run(shallow, "fetch", "--tags", "-q")
+
+            # The file list is already correct here. That is what makes this
+            # failure quiet: nothing about the diff looks wrong.
+            self.assertEqual(
+                self._run(
+                    shallow, "diff", "--name-only", "v0.0.1..HEAD"
+                ).stdout.split(),
+                self._run(
+                    origin, "diff", "--name-only", "v0.0.1..HEAD"
+                ).stdout.split(),
+                "the diff already disagreed at the describe boundary, which "
+                "would make this the loud failure rather than the quiet one",
+            )
+
+            truth = self._subjects(origin)
+            seen = self._subjects(shallow)
+            self.assertNotEqual(
+                seen,
+                truth,
+                "the subject list was already complete at the describe "
+                "boundary, so on this history the two boundaries coincide "
+                "after all and the docstring's older claim was right",
+            )
+            self.assertEqual(
+                release_decision.bump_from_subjects(truth),
+                "minor",
+                "the fixture stopped containing a feat: in the range, so it "
+                "can no longer show a bump being downgraded",
+            )
+            self.assertEqual(
+                release_decision.bump_from_subjects(seen),
+                "patch",
+                "the truncated walk did not change the bump, which is the "
+                "whole consequence this test exists to pin",
+            )
+
+            deep = Path(tmp) / "at_walk"
+            self._run(
+                Path(tmp),
+                "clone",
+                "-q",
+                "--depth",
+                str(walk_at),
+                origin.as_uri(),
+                str(deep),
+            )
+            self._run(deep, "fetch", "--tags", "-q")
+            self.assertEqual(
+                self._subjects(deep),
+                truth,
+                "the walk boundary did not actually reproduce the full walk",
+            )
+
+    def test_the_range_size_bounds_the_walk_boundary(self):
+        """A number a reader can act on without computing path lengths.
+
+        The walk boundary needs a graph walk to compute, which is not a thing
+        anyone is going to do before setting `fetch-depth`. This bound does not:
+        every commit on a shortest path to a range commit is itself in the
+        range, because if an intermediate one were an ancestor of the tag then
+        the target would be too and it would not be in the range. So the
+        distance cannot exceed the range size, counting merges.
+
+        The counting matters and is the reason this test exists rather than a
+        sentence. The size this module reports is `--no-merges`, and that one
+        is not provably sound -- on the merge-chain shape it lands exactly on
+        the walk boundary with nothing to spare. Asserted as tight rather than
+        safe, so that if a shape is ever found where it fails, this goes red
+        rather than the claim quietly being wrong.
+        """
+        for name, build in (
+            ("linear", lambda t: self._linear_origin(t, 5)),
+            ("merged", self._merged_origin),
+            ("asymmetric", self._asymmetric_origin),
+        ):
+            with self.subTest(shape=name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    origin = build(Path(tmp))
+                    walk_at = self._walk_boundary(Path(tmp), origin)
+                    including = len(
+                        [
+                            line
+                            for line in self._run(
+                                origin, "rev-list", "v0.0.1..HEAD"
+                            ).stdout.split("\n")
+                            if line.strip()
+                        ]
+                    )
+                    self.assertGreaterEqual(
+                        including + 1,
+                        walk_at,
+                        "the range size counting merges stopped bounding the "
+                        "walk boundary, which would refute the argument in "
+                        "range_start's docstring",
+                    )
+                    self.assertGreaterEqual(
+                        len(self._subjects(origin)) + 1,
+                        walk_at,
+                        "the --no-merges count fell below the walk boundary. "
+                        "That is not a defect in the code -- it is the "
+                        "measured-not-proven bound failing, and the docstring "
+                        "should stop mentioning it",
+                    )
 
     def test_the_refusal_says_what_to_do_about_it(self):
         try:
