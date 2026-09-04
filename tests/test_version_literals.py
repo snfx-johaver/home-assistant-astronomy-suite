@@ -147,6 +147,15 @@ NOT_A_PRODUCT_VERSION = {
     "tests/test_cards_resource_version.py": "docstring prose describing past drift",
     "tests/test_device_info_version.py": "docstring quoting the original stale values",
     "tests/test_version_literals.py": "this docstring, describing the same incidents",
+    "tests/test_release_decision.py": (
+        "recorded git history: the ranges and tags of releases already cut, "
+        "which are facts about the past and must not move"
+    ),
+    "scripts/release_decision.py": (
+        "docstring naming v1.11.7 and v1.11.8 as the two releases whose diff "
+        "shipped nothing; evidence for the rule, not a claim about the current "
+        "release"
+    ),
 }
 
 # Build configs are discovered rather than listed, but a glob that finds
