@@ -394,6 +394,41 @@ def changelog(commits: Iterable[Commit]) -> str:
     return "\n".join(lines)
 
 
+class ShallowCheckoutError(RuntimeError):
+    """The range cannot be determined because the history is not all here."""
+
+
+def range_start(last_tag: str, is_shallow: bool) -> str | None:
+    """Where the range begins, or None meaning "everything tracked".
+
+    `git describe` fails identically for two different worlds: a repository
+    that has never been tagged, and a repository whose tags were simply not
+    fetched. The first is a genuine first release and `ls-files` is the right
+    answer for it. The second is a shallow clone, where `ls-files` claims every
+    tracked file as new -- 25 of them shipping -- and turns a gate that has
+    suppressed five consecutive releases into an unconditional publish.
+
+    Measured on a real `--depth 1` clone before this existed:
+
+        decision: RELEASE (patch)
+        reason:   a patch bump, and 25 shipped file(s) changed
+        changed:  57 file(s), 25 of them shipped
+
+    So the two are told apart rather than guessed between, and the unanswerable
+    case is refused rather than defaulted. A release gate that cannot see the
+    history it reasons about must not fall back to publishing.
+    """
+    if is_shallow:
+        raise ShallowCheckoutError(
+            "this is a shallow clone, so an empty tag list cannot be "
+            "distinguished from tags that were never fetched. Refusing to "
+            "guess: treating it as a first release would claim every tracked "
+            "file as new and publish unconditionally. Check out with "
+            "fetch-depth: 0."
+        )
+    return last_tag or None
+
+
 def _git(*args: str) -> str:
     return subprocess.run(
         ["git", *args], cwd=ROOT, check=True, capture_output=True, text=True
@@ -419,6 +454,10 @@ def _parse_log(raw: str) -> list[Commit]:
     return commits
 
 
+def _repo_is_shallow() -> bool:
+    return _git("rev-parse", "--is-shallow-repository").strip() == "true"
+
+
 def collect() -> tuple[list[Commit], list[str], str]:
     """Read the range out of git. The only impure part of this module."""
     try:
@@ -426,7 +465,9 @@ def collect() -> tuple[list[Commit], list[str], str]:
     except subprocess.CalledProcessError:
         last_tag = ""
 
-    rev_range = f"{last_tag}..HEAD" if last_tag else "HEAD"
+    start = range_start(last_tag, _repo_is_shallow())
+
+    rev_range = f"{start}..HEAD" if start else "HEAD"
     commits = _parse_log(
         _git(
             "log",
@@ -436,8 +477,8 @@ def collect() -> tuple[list[Commit], list[str], str]:
             "--no-merges",
         )
     )
-    if last_tag:
-        paths = _git("diff", "--name-only", f"{last_tag}..HEAD").splitlines()
+    if start:
+        paths = _git("diff", "--name-only", f"{start}..HEAD").splitlines()
     else:
         paths = _git("ls-files").splitlines()
     return commits, [p for p in paths if p.strip()], last_tag

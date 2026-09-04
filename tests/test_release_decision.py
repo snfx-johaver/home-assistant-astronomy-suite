@@ -44,6 +44,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -682,6 +683,130 @@ class LogParsingTests(unittest.TestCase):
         )
 
 
+class ShallowCheckoutTests(unittest.TestCase):
+    """A gate that cannot see the history must not fall back to publishing.
+
+    `git describe` fails identically for a repository that was never tagged and
+    one whose tags were not fetched. `collect()` used to treat both as a first
+    release, and `ls-files` then claims every tracked file as new. Measured on
+    a real depth-1 clone of this repository before the fix:
+
+        decision: RELEASE (patch)
+        reason:   a patch bump, and 25 shipped file(s) changed
+
+    The gate that had suppressed five consecutive releases published.
+    """
+
+    def test_the_policy_covers_every_combination(self):
+        """Four states, enumerated, because three of them look alike."""
+        self.assertEqual(release_decision.range_start("v1.2.3", False), "v1.2.3")
+        self.assertIsNone(release_decision.range_start("", False))
+        with self.assertRaises(release_decision.ShallowCheckoutError):
+            release_decision.range_start("", True)
+        with self.assertRaises(release_decision.ShallowCheckoutError):
+            release_decision.range_start("v1.2.3", True)
+
+    def test_a_tagged_full_clone_is_unaffected(self):
+        """Non-vacuity: true before the guard existed and after it.
+
+        This is the path every real release takes. If the guard had changed it,
+        the suite would be red for the right reason and the fix would be wrong.
+        """
+        self.assertEqual(
+            release_decision.range_start("v1.11.8", False),
+            "v1.11.8",
+            "the ordinary case stopped working, which no shallow-clone guard "
+            "should be able to do",
+        )
+
+    def test_this_repository_is_not_shallow_and_the_probe_agrees(self):
+        self.assertFalse(
+            release_decision._repo_is_shallow(),
+            "the working repository reports itself shallow, so either the "
+            "probe is wrong or the fixture-bearing history is missing",
+        )
+
+    def test_git_really_does_behave_this_way_on_a_shallow_clone(self):
+        """The premise, measured rather than recalled.
+
+        The guard is only correct if a shallow clone actually reports itself as
+        one *and* loses its tags. Both are facts about git, not about this
+        repository, so they are checked against a real one built here.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            origin = Path(tmp) / "origin"
+            origin.mkdir()
+            run = lambda *a, **k: subprocess.run(  # noqa: E731
+                ["git", *a],
+                cwd=k.get("cwd", origin),
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            run("init", "-q", "-b", "main")
+            run("config", "user.email", "t@example.invalid")
+            run("config", "user.name", "t")
+            (origin / "a.txt").write_text("one", encoding="utf-8")
+            run("add", "-A")
+            run("commit", "-q", "-m", "first")
+            run("tag", "v0.0.1")
+            (origin / "a.txt").write_text("two", encoding="utf-8")
+            run("commit", "-q", "-a", "-m", "second")
+
+            clone = Path(tmp) / "clone"
+            run(
+                "clone",
+                "-q",
+                "--depth",
+                "1",
+                origin.as_uri(),
+                str(clone),
+                cwd=tmp,
+            )
+
+            shallow = run(
+                "rev-parse", "--is-shallow-repository", cwd=clone
+            ).stdout.strip()
+            self.assertEqual(
+                shallow, "true", "a --depth 1 clone did not report as shallow"
+            )
+            self.assertEqual(
+                run("tag", "--list", cwd=clone).stdout.strip(),
+                "",
+                "a --depth 1 clone kept its tags, which would make the guard "
+                "unnecessary -- and this one is not that clone",
+            )
+            described = subprocess.run(
+                ["git", "describe", "--tags", "--abbrev=0"],
+                cwd=clone,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(
+                described.returncode,
+                0,
+                "git describe succeeded on a tagless shallow clone, so the "
+                "empty-tag path this guard protects is unreachable",
+            )
+            # The end of the chain: given exactly what git reports there, the
+            # policy refuses instead of claiming a first release.
+            with self.assertRaises(release_decision.ShallowCheckoutError):
+                release_decision.range_start("", shallow == "true")
+
+    def test_the_refusal_says_what_to_do_about_it(self):
+        try:
+            release_decision.range_start("", True)
+        except release_decision.ShallowCheckoutError as err:
+            message = str(err)
+        else:
+            self.fail("the guard did not fire")
+        self.assertTrue(
+            "fetch-depth: 0" in message,
+            "the refusal does not name the fix, so whoever hits it in CI has "
+            "to come and read this module:\n" + message,
+        )
+
+
 class WorkflowWiringTests(unittest.TestCase):
     """A correct decision that nothing calls is not a fix."""
 
@@ -709,34 +834,42 @@ class WorkflowWiringTests(unittest.TestCase):
             % "\n    ".join(stale),
         )
 
-    def test_the_python_suite_runs_where_its_fixtures_exist(self):
-        """The suite's fixture is git history, so the checkout must supply it.
+    def test_every_job_that_reads_history_checks_out_all_of_it(self):
+        """The suite's fixture and the gate's input are both git history.
 
-        The changelog tests replay every tag-to-tag range rather than listing
-        ranges by hand, which makes the repository's history part of the test
-        environment. A default `actions/checkout` is shallow and has no tags,
-        so those tests fail with "no tags found" -- correct, but three steps
-        removed from the cause. This names the cause.
+        The changelog tests replay every tag-to-tag range, and `collect()`
+        resolves the range from tags. A default `actions/checkout` is shallow
+        and has neither, and the two consumers fail in opposite directions:
+        the tests go red, and the release gate publishes.
 
-        An environment a test depends on and nothing asserts is the same shape
-        as a safety property nothing asserts.
+        An earlier version of this test named `validate.yml` and stopped there,
+        which asserted one consumer of a rule that has two. The jobs are
+        discovered instead, so a third one added later is covered by the same
+        assertion rather than by remembering.
         """
-        text = (ROOT / ".github" / "workflows" / "validate.yml").read_text(
-            encoding="utf-8"
-        )
-        jobs = re.split(r"\n(?=  \w[\w-]*:\n)", text)
-        running = [j for j in jobs if "unittest discover" in j]
-        self.assertEqual(
-            len(running),
-            1,
-            "expected exactly one job to run the Python suite, found %d"
-            % len(running),
+        needs_history = ("unittest discover", "release_decision.py")
+        offenders = []
+        checked = []
+        for path in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
+            text = path.read_text(encoding="utf-8")
+            for job in re.split(r"\n(?=  \w[\w-]*:\n)", text):
+                if not any(marker in job for marker in needs_history):
+                    continue
+                name = job.strip().splitlines()[0].rstrip(":")
+                checked.append(f"{path.name}:{name}")
+                if "fetch-depth: 0" not in job:
+                    offenders.append(f"{path.name}:{name}")
+        self.assertGreaterEqual(
+            len(checked),
+            2,
+            "expected at least the test job and the release job to read "
+            "history, found %s" % checked,
         )
         self.assertTrue(
-            "fetch-depth: 0" in running[0],
-            "the job that runs the Python suite checks out shallowly, so the "
-            "release-decision tests will see no tags and their history "
-            "fixture will be empty",
+            not offenders,
+            "these jobs read git history but check out shallowly, so the "
+            "tests will see an empty fixture and the release gate will treat "
+            "every tracked file as new: %s" % ", ".join(offenders),
         )
 
     def test_the_release_body_compares_two_tags(self):
