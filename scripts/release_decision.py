@@ -201,6 +201,20 @@ class Decision(NamedTuple):
     reason: str
 
 
+class Commit(NamedTuple):
+    """One commit's subject and the paths it touched.
+
+    `decide()` deliberately does not see this. The gate reads the range as a
+    whole -- `git diff LAST_TAG..HEAD` -- because a file added in one commit
+    and removed in the next changed nothing, and the release question is about
+    the net effect. The release *notes* are a different question, asked per
+    commit, and answering it needs the association this type carries.
+    """
+
+    subject: str
+    paths: tuple[str, ...]
+
+
 def top_level(path: str) -> str:
     """The first path segment, which is the granularity the maps classify at."""
     return path.split("/", 1)[0]
@@ -339,32 +353,99 @@ def decide(subjects: Iterable[str], changed_paths: Iterable[str]) -> Decision:
     )
 
 
+def changelog(commits: Iterable[Commit]) -> str:
+    """The release-notes body, partitioned by whether a commit reaches a user.
+
+    This module already knows which paths reach an installation, and until now
+    it applied that knowledge to *whether* to release and not to *what it said*
+    when it did. The result was release notes headed "What's Changed" listing
+    changes that, by this module's own definition, changed nothing for the
+    reader. v1.11.8 is the worked example: both of its commits touched only
+    `tests/`, so its entire changelog described work no user received.
+
+    The answer is to partition rather than to filter. Dropping the internal
+    commits would make the notes an incomplete record of the tag, and silently
+    discarding things you have classified is the exact defect this repository
+    removed from the version sweep. Every commit appears exactly once; the
+    heading says which of the two it is.
+    """
+    commits = list(commits)
+    shipped = [c for c in commits if ships(c.paths)]
+    internal = [c for c in commits if not ships(c.paths)]
+
+    if shipped:
+        lines = [f"- {c.subject}" for c in shipped]
+    else:
+        # Only reachable on a SKIP, where nothing renders this. Total anyway,
+        # because a function that is correct only for its callers is a trap.
+        lines = ["_Nothing in this release reaches an installation._"]
+
+    if internal:
+        lines += [
+            "",
+            "### Also in this release",
+            "",
+            "These changed the repository without changing the integration "
+            "HACS installs, so they reach no configuration.",
+            "",
+        ]
+        lines += [f"- {c.subject}" for c in internal]
+
+    return "\n".join(lines)
+
+
 def _git(*args: str) -> str:
     return subprocess.run(
         ["git", *args], cwd=ROOT, check=True, capture_output=True, text=True
     ).stdout
 
 
-def collect() -> tuple[list[str], list[str]]:
-    """Read the two lists out of git. The only impure part of this module."""
+_RECORD = "\x1e"  # cannot occur in a commit subject
+
+
+def _parse_log(raw: str) -> list[Commit]:
+    """Split `git log --name-only` output into commits.
+
+    Kept separate from the subprocess call so the parsing can be tested against
+    recorded output instead of only against whatever this repository happens to
+    contain today.
+    """
+    commits = []
+    for chunk in raw.split(_RECORD):
+        lines = [line for line in chunk.splitlines() if line.strip()]
+        if not lines:
+            continue
+        commits.append(Commit(lines[0], tuple(lines[1:])))
+    return commits
+
+
+def collect() -> tuple[list[Commit], list[str], str]:
+    """Read the range out of git. The only impure part of this module."""
     try:
         last_tag = _git("describe", "--tags", "--abbrev=0").strip()
     except subprocess.CalledProcessError:
         last_tag = ""
 
     rev_range = f"{last_tag}..HEAD" if last_tag else "HEAD"
-    subjects = _git(
-        "log", rev_range, "--pretty=format:%s", "--no-merges"
-    ).splitlines()
+    commits = _parse_log(
+        _git(
+            "log",
+            rev_range,
+            f"--pretty=format:{_RECORD}%s",
+            "--name-only",
+            "--no-merges",
+        )
+    )
     if last_tag:
         paths = _git("diff", "--name-only", f"{last_tag}..HEAD").splitlines()
     else:
         paths = _git("ls-files").splitlines()
-    return [s for s in subjects if s.strip()], [p for p in paths if p.strip()]
+    return commits, [p for p in paths if p.strip()], last_tag
 
 
 def main() -> int:
-    subjects, paths = collect()
+    commits, paths, last_tag = collect()
+    subjects = [c.subject for c in commits]
     decision = decide(subjects, paths)
 
     print(f"decision: {'RELEASE' if decision.release else 'SKIP'} ({decision.bump})")
@@ -377,12 +458,18 @@ def main() -> int:
         # The changelog is emitted here rather than recomputed in bash so that
         # the range is resolved exactly once. Two independent walks of
         # LAST_TAG..HEAD is the same defect this module exists to remove.
-        changelog = "\n".join(f"- {s}" for s in subjects)
+        #
+        # `previous_tag` goes out for the same reason. The release body links a
+        # comparison, and the only honest endpoints for it are the tag before
+        # this release and the tag being cut. The workflow cannot name the
+        # first without re-deriving it, so it is published here instead.
+        body = changelog(commits)
         with open(output, "a", encoding="utf-8") as handle:
             handle.write(f"skip={'false' if decision.release else 'true'}\n")
             handle.write(f"bump={decision.bump}\n")
             handle.write(f"reason={decision.reason}\n")
-            handle.write(f"changelog<<RELEASE_DECISION_EOF\n{changelog}\n")
+            handle.write(f"previous_tag={last_tag}\n")
+            handle.write(f"changelog<<RELEASE_DECISION_EOF\n{body}\n")
             handle.write("RELEASE_DECISION_EOF\n")
     return 0
 

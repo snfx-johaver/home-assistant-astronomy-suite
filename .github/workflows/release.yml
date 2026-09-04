@@ -65,5 +65,5 @@ jobs:
             ${{ steps.bump.outputs.changelog }}
 
             ---
-            **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.version.outputs.tag }}...main
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.bump.outputs.previous_tag }}...${{ steps.version.outputs.tag }}
           generate_release_notes: false
