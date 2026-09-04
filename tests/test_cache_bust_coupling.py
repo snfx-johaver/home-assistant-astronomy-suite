@@ -211,6 +211,57 @@ class CacheBustCouplingTests(unittest.TestCase):
                         f"editing {name} moved {other}'s cache-bust too",
                     )
 
+    def test_a_line_ending_only_change_still_moves_the_url(self):
+        """The digest must be of the bytes served, not of their meaning.
+
+        Every other test here mutates *content*, so all of them stay green
+        under a digest that normalises before hashing -- ``read_text()``
+        instead of ``read_bytes()``, or an explicit ``\\r\\n`` -> ``\\n``
+        pass. This one does not, and it is the only thing standing between
+        the fix and that refactor.
+
+        The refactor is plausible rather than hypothetical, because there is
+        a real observation that invites it: this repository has no
+        ``.gitattributes``, so a checkout with ``core.autocrlf=true`` renders
+        the bundle with CRLF while CI renders it with LF. The same release
+        therefore has two byte-identities and two keys. That looks like an
+        inconsistency worth normalising away, and normalising it away is
+        precisely wrong -- those two renderings *are* two different responses
+        to the same URL, differing by ~3 kB, and a browser holding one of
+        them has no way to learn about the other.
+
+        The key's job is not to identify a release. It is to change whenever
+        what gets sent over the wire changes.
+        """
+        for name in BUNDLE_NAMES:
+            with self.subTest(bundle=name), tempfile.TemporaryDirectory() as scratch:
+                root = importable_copy(scratch)
+                before = urls_from(root)
+
+                target = root / "custom_components" / "nasa_astronomy" / name
+                original = target.read_bytes()
+                # Flip to whichever ending the file is not currently using.
+                # Hard-coding a direction would make this a no-op on half the
+                # platforms it runs on -- green, and measuring nothing.
+                as_lf = original.replace(b"\r\n", b"\n")
+                reflowed = as_lf if as_lf != original else as_lf.replace(b"\n", b"\r\n")
+                self.assertNotEqual(
+                    reflowed,
+                    original,
+                    f"{name} has no newlines to reflow, so this test would "
+                    "assert nothing -- it must be rewritten, not skipped",
+                )
+                target.write_bytes(reflowed)
+
+                after = urls_from(root)
+                self.assertNotEqual(
+                    url_for(after, name),
+                    url_for(before, name),
+                    f"{name} is now {len(reflowed) - len(original)} bytes "
+                    "different on the wire but its URL did not move, so the "
+                    "key is measuring the file's meaning rather than its bytes",
+                )
+
     def test_identical_bytes_produce_an_identical_url(self):
         """Non-vacuity, and the property that makes the key usable.
 
