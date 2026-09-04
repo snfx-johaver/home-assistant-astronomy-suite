@@ -64,6 +64,24 @@ hand-written is only the list of paths that ship *nothing*, where being wrong
 withholds a release rather than publishing an empty one, and where a mistake is
 caught by `test_nothing_that_ships_is_declared_not_shipping`.
 
+WHY `README.md` COUNTS AS SHIPPING
+
+It looks like documentation, so it is worth stating the mechanism. HACS fetches
+the rendered README from the ref of the version it is showing --
+`HacsRepository.get_documentation` in hacs/integration resolves that to the
+installed version for an installed repository, and to the latest release tag
+otherwise. It never reads the default branch. So a README change on `main`
+reaches nobody until a release is cut, which is exactly the test this module
+applies to everything else.
+
+Which file it renders comes from a hardcoded list of README spellings, not from
+`hacs.json`. An earlier version of this module gated the README on the
+`render_readme` key, which is still accepted by HACS's schema and no longer
+consulted by its renderer -- the same defect again, this time inside the fix
+for it: turning that key off would have silently stopped documentation
+releasing while every user carried on seeing the change. It is also why
+`info.md` renders nowhere however it is configured.
+
 DECLARED LIMITS
 
 Two things this cannot see. Both are stated here so the next person meets the
@@ -86,7 +104,6 @@ boundary instead of trusting the coverage:
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import subprocess
@@ -95,6 +112,19 @@ from pathlib import Path
 from typing import Iterable, NamedTuple
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# The spellings HACS will render, in the order it tries them. Taken from
+# `HacsRepository.get_info_md_content` in hacs/integration, where the list is
+# built from a hardcoded `name: str = "readme"` -- not from `render_readme`,
+# which its schema still accepts and its renderer no longer consults.
+README_VARIANTS: tuple[str, ...] = (
+    "README.md",
+    "readme.md",
+    "readme.MD",
+    "README.MD",
+    "README",
+    "readme",
+)
 
 # Top-level paths that cannot reach a user's installation. Hand-written,
 # unlike SHIPPING, because "this ships nothing" is not derivable -- but a wrong
@@ -179,20 +209,46 @@ def installed_roots() -> dict[str, str]:
     return roots
 
 
-def displayed_roots() -> dict[str, str]:
-    """Top-level paths HACS renders to a user who has not installed anything.
+def displayed_roots(tracked: Iterable[str] | None = None) -> dict[str, str]:
+    """Top-level paths HACS renders, for an installed and for a browsing user.
 
-    Read from the *root* `hacs.json`. There is a second `hacs.json` nested
-    under `www/`, which describes a Lovelace plugin that this repository does
-    not publish as one; anchoring to the root file explicitly is the difference
-    between reading the configuration and finding a file with the right name.
+    Nothing here reads the *content* of `hacs.json`. An earlier version gated
+    the README on its `render_readme` key, which reproduced this module's own
+    defect: HACS's renderer picks from a hardcoded list of README spellings and
+    has not consulted that key for some time, so a repository could switch it
+    off and silently stop releasing its documentation while every user kept
+    seeing the change.
+
+    `hacs.json` is matched at the repository root exactly. There is a second
+    one nested under `www/`, describing a Lovelace plugin this repository does
+    not publish as one; matching the exact path rather than the filename is the
+    difference between reading the configuration and finding a file with the
+    right name.
+
+    `tracked` exists so a test can ask what this would decide about a
+    repository other than the one it is standing in.
     """
-    config = json.loads((ROOT / "hacs.json").read_text(encoding="utf-8"))
-    roots = {
-        "hacs.json": "governs how HACS installs this repository into every install"
-    }
-    if config.get("render_readme"):
-        roots["README.md"] = "hacs.json sets render_readme, so HACS shows it in its UI"
+    if tracked is None:
+        tracked = _tracked()
+    tracked = set(tracked)
+
+    roots = {}
+    if "hacs.json" in tracked:
+        roots["hacs.json"] = (
+            "governs how HACS installs this repository. HACS reads it at the "
+            "version it is installing, so a change reaches nobody until a "
+            "release is cut."
+        )
+    for name in README_VARIANTS:
+        if name in tracked:
+            roots[name] = (
+                "HACS renders it in the store listing, and fetches it from the "
+                "ref of the version being shown -- the installed version for an "
+                "installed repository, otherwise the latest release tag. It "
+                "never reads the default branch, so a change here reaches no "
+                "user until a release is cut."
+            )
+            break
     return roots
 
 
