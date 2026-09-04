@@ -11,10 +11,15 @@ measures the files a browser receives:
   unpacked zip -- leaves it untouched. HACS then reports "up to date" and is
   correct about its own history while being wrong about the artefact.
 
-A real install has been observed in exactly that state: ``manifest.json``
-saying ``1.10.4`` with HACS agreeing, while both card bundles on disk were a
-later release's, written eleven hours after the install. Nothing in the
-system could see it. It took reading the files over SMB.
+A real install has been observed in exactly that state: ``manifest.json`` and
+HACS agreeing on a version whose bundles were nine releases old, while both
+card bundles on disk were a later release's, written eleven hours after the
+install. Nothing in the system could see it. It took reading the files over
+SMB.
+
+(Deliberately described rather than quoted. A version-shaped literal in a
+shipped file reads as authoritative even inside a docstring, and the repo's
+literal sweep is right to refuse one -- it caught this paragraph.)
 
 This report measures the bytes instead, so the same question is answerable
 from a diagnostics download.
