@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -31,7 +35,52 @@ jobs:
 
       - name: Determine version bump from commits
         id: bump
-        run: python scripts/release_decision.py
+        run: |
+          # Get commits since last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            COMMITS=$(git log --pretty=format:"%s" --no-merges)
+          else
+            COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" --no-merges)
+          fi
+
+          # No new commits since tag? Skip.
+          if [ -z "$COMMITS" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Determine bump type from conventional commits
+          BUMP="none"
+          if echo "$COMMITS" | grep -qiE "^.*!:|BREAKING.CHANGE"; then
+            BUMP="major"
+          elif echo "$COMMITS" | grep -qiE "^feat(\(|:)"; then
+            BUMP="minor"
+          elif echo "$COMMITS" | grep -qiE "^(fix|perf|refactor)(\(|:)"; then
+            BUMP="patch"
+          fi
+
+          if [ "$BUMP" = "none" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "skip=false" >> $GITHUB_OUTPUT
+          echo "bump=$BUMP" >> $GITHUB_OUTPUT
+
+          # Generate changelog
+          CHANGELOG=""
+          if [ -n "$LAST_TAG" ]; then
+            CHANGELOG=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s" --no-merges)
+          else
+            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges | head -20)
+          fi
+          # Write multiline to output
+          {
+            echo "changelog<<EOF"
+            echo "$CHANGELOG"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
 
       - name: Bump version
         if: steps.bump.outputs.skip != 'true'
@@ -48,10 +97,10 @@ jobs:
         if: steps.bump.outputs.skip != 'true'
         run: |
           git add -A
-          git commit --amend -m "release: v${{ steps.version.outputs.version }} [skip ci]"
-          git tag -f "v${{ steps.version.outputs.version }}"
-          git push --force-with-lease
-          git push --tags --force
+          git commit -m "release: v${{ steps.version.outputs.version }} [skip ci]"
+          git tag "v${{ steps.version.outputs.version }}"
+          git push
+          git push --tags
 
       - name: Create GitHub Release
         if: steps.bump.outputs.skip != 'true'
@@ -65,5 +114,5 @@ jobs:
             ${{ steps.bump.outputs.changelog }}
 
             ---
-            **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.bump.outputs.previous_tag }}...${{ steps.version.outputs.tag }}
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.version.outputs.tag }}...main
           generate_release_notes: false

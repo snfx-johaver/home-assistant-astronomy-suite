@@ -2244,10 +2244,13 @@ class IssTrackerCardEditor extends AstroEditorBase {
     super.setConfig({
       entity: "sensor.astronomy_space_suite_iss_position",
       title: "ISS Tracker",
-      stream_url: "https://www.youtube.com/watch?v=uwXgcTc8oY8",
+      stream_url: "https://www.youtube.com/nasa/live",
       show_map: true,
       show_trail: true,
       show_stream_button: true,
+      map_zoom: 3,
+      trail_hours: 2,
+      trail_max_points: 24,
       ...config,
     });
   }
@@ -2257,6 +2260,9 @@ class IssTrackerCardEditor extends AstroEditorBase {
       <ha-entity-picker id="entity" label="ISS position entity"></ha-entity-picker>
       <div class="astro-input-wrap"><label for="title">Card title</label><input type="text" id="title" placeholder="Leave empty for default" /></div>
       <div class="astro-input-wrap"><label for="stream_url">ISS livestream URL</label><input type="text" id="stream_url" /></div>
+      <div class="astro-input-wrap"><label for="map_zoom">Map zoom level (1-18)</label><input type="number" id="map_zoom" min="1" max="18" /></div>
+      <div class="astro-input-wrap"><label for="trail_hours">Trail history (hours)</label><input type="number" id="trail_hours" min="1" max="24" /></div>
+      <div class="astro-input-wrap"><label for="trail_max_points">Max trail points</label><input type="number" id="trail_max_points" min="5" max="100" /></div>
       <label class="switch-row"><span>Show map</span><ha-switch id="show_map"></ha-switch></label>
       <label class="switch-row"><span>Show trail</span><ha-switch id="show_trail"></ha-switch></label>
       <label class="switch-row"><span>Show stream button</span><ha-switch id="show_stream_button"></ha-switch></label>
@@ -2267,13 +2273,19 @@ class IssTrackerCardEditor extends AstroEditorBase {
     this._bindPicker("entity", "entity");
     this._bindText("title", "title", (value) => value.trim());
     this._bindText("stream_url", "stream_url", (value) => value.trim());
+    this._bindText("map_zoom", "map_zoom", (value) => clamp(parseInt(value, 10) || 3, 1, 18));
+    this._bindText("trail_hours", "trail_hours", (value) => clamp(parseInt(value, 10) || 2, 1, 24));
+    this._bindText("trail_max_points", "trail_max_points", (value) => clamp(parseInt(value, 10) || 24, 5, 100));
     ["show_map", "show_trail", "show_stream_button"].forEach((key) => this._bindSwitch(key, key));
   }
 
   _syncValues() {
     setPickerValue(this.shadowRoot, "entity", this._hass, this._config.entity || "sensor.astronomy_space_suite_iss_position");
     setTextValue(this.shadowRoot, "title", this._config.title || "ISS Tracker");
-    setTextValue(this.shadowRoot, "stream_url", this._config.stream_url || "https://www.youtube.com/watch?v=uwXgcTc8oY8");
+    setTextValue(this.shadowRoot, "stream_url", this._config.stream_url || "https://www.youtube.com/nasa/live");
+    setTextValue(this.shadowRoot, "map_zoom", String(this._config.map_zoom ?? 3));
+    setTextValue(this.shadowRoot, "trail_hours", String(this._config.trail_hours ?? 2));
+    setTextValue(this.shadowRoot, "trail_max_points", String(this._config.trail_max_points ?? 24));
     setSwitchValue(this.shadowRoot, "show_map", this._config.show_map !== false);
     setSwitchValue(this.shadowRoot, "show_trail", this._config.show_trail !== false);
     setSwitchValue(this.shadowRoot, "show_stream_button", this._config.show_stream_button !== false);
@@ -2288,6 +2300,10 @@ class IssTrackerCard extends HTMLElement {
     this._trail = [];
     this._trailKey = "";
     this._lastTrailStamp = "";
+    this._leafletReady = false;
+    this._map = null;
+    this._issMarker = null;
+    this._trailLayer = null;
   }
 
   static getConfigElement() { return document.createElement("iss-tracker-card-editor"); }
@@ -2295,10 +2311,13 @@ class IssTrackerCard extends HTMLElement {
     return {
       entity: "sensor.astronomy_space_suite_iss_position",
       title: "ISS Tracker",
-      stream_url: "https://www.youtube.com/watch?v=uwXgcTc8oY8",
+      stream_url: "https://www.youtube.com/nasa/live",
       show_map: true,
       show_trail: true,
       show_stream_button: true,
+      map_zoom: 3,
+      trail_hours: 2,
+      trail_max_points: 24,
     };
   }
 
@@ -2320,14 +2339,13 @@ class IssTrackerCard extends HTMLElement {
       latitude = parts[0];
       longitude = parts[1];
     }
-    // Unix timestamp (seconds) → convert to ms for JS Date
     let ts = attrs.timestamp || stateObj?.last_changed || stateObj?.last_updated || "";
     if (typeof ts === "number" && ts < 9999999999) ts = ts * 1000;
     return {
       latitude,
       longitude,
       timestamp: ts,
-      liveStreamUrl: this._config.stream_url || attrs.live_stream_url || "https://www.youtube.com/watch?v=uwXgcTc8oY8",
+      liveStreamUrl: this._config.stream_url || attrs.live_stream_url || "https://www.youtube.com/nasa/live",
     };
   }
 
@@ -2340,16 +2358,27 @@ class IssTrackerCard extends HTMLElement {
     if (this._trailKey === key) return;
     this._trailKey = key;
     this._lastTrailStamp = "";
+    const maxPoints = this._config.trail_max_points || 24;
     try {
       const parsed = JSON.parse(localStorage.getItem(key) || "[]");
       this._trail = safeArray(parsed)
         .filter((item) => Number.isFinite(item?.latitude) && Number.isFinite(item?.longitude))
-        .slice(-12);
+        .slice(-maxPoints);
       const latest = this._trail[this._trail.length - 1];
       this._lastTrailStamp = latest?.stamp || "";
     } catch (_error) {
       this._trail = [];
     }
+  }
+
+  _pruneTrail() {
+    const hours = this._config.trail_hours || 2;
+    const cutoff = Date.now() - hours * 3600000;
+    const maxPoints = this._config.trail_max_points || 24;
+    this._trail = this._trail.filter((item) => {
+      if (!item.time) return true;
+      return item.time > cutoff;
+    }).slice(-maxPoints);
   }
 
   _updateTrail(position) {
@@ -2362,29 +2391,38 @@ class IssTrackerCard extends HTMLElement {
       latitude: position.latitude,
       longitude: position.longitude,
       stamp,
-    }].slice(-12);
+      time: Date.now(),
+    }];
+    this._pruneTrail();
     try {
       localStorage.setItem(this._trailKey, JSON.stringify(this._trail));
-    } catch (_error) {
-      // Ignore storage quota issues.
-    }
+    } catch (_error) {}
     return this._trail;
   }
 
-  _project(latitude, longitude) {
-    return {
-      x: clamp(((longitude + 180) / 360) * 100, 0, 100),
-      y: clamp(((90 - latitude) / 180) * 100, 0, 100),
-    };
+  async _ensureLeaflet() {
+    if (this._leafletReady) return true;
+    if (window.L) { this._leafletReady = true; return true; }
+    // Load Leaflet CSS + JS
+    return new Promise((resolve) => {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      document.head.appendChild(link);
+      const script = document.createElement("script");
+      script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+      script.onload = () => { this._leafletReady = true; resolve(true); };
+      script.onerror = () => resolve(false);
+      document.head.appendChild(script);
+    });
   }
 
-  _render() {
+  async _render() {
     if (!this._hass) return;
     const stateObj = getState(this._hass, this._config.entity);
     const position = this._parsePosition(stateObj);
     const posValid = Number.isFinite(position.latitude) && Number.isFinite(position.longitude);
 
-    // Cache last known good position in localStorage
     const cacheKey = `astronomy-cards:iss-last-pos:${this._config.entity || "default"}`;
     if (posValid) {
       try { localStorage.setItem(cacheKey, JSON.stringify({ latitude: position.latitude, longitude: position.longitude, timestamp: position.timestamp })); } catch (_) {}
@@ -2393,7 +2431,6 @@ class IssTrackerCard extends HTMLElement {
     let displayPos = position;
     let isStale = false;
     if (!posValid) {
-      // Try cached position
       try {
         const cached = JSON.parse(localStorage.getItem(cacheKey) || "null");
         if (cached && Number.isFinite(cached.latitude) && Number.isFinite(cached.longitude)) {
@@ -2409,127 +2446,137 @@ class IssTrackerCard extends HTMLElement {
     }
 
     const trail = this._updateTrail(displayPos);
-    const projected = this._project(displayPos.latitude, displayPos.longitude);
-    const trailDots = this._config.show_trail !== false
-      ? trail.slice(0, -1).map((item, index, items) => {
-        const point = this._project(item.latitude, item.longitude);
-        const opacity = ((index + 1) / Math.max(items.length, 1)) * 0.7;
-        const size = 4 + ((index + 1) / Math.max(items.length, 1)) * 6;
-        return `<div class="iss-trail-dot" style="left:${point.x.toFixed(2)}%;top:${point.y.toFixed(2)}%;width:${size.toFixed(1)}px;height:${size.toFixed(1)}px;background:rgba(255,107,107,${opacity.toFixed(2)});"></div>`;
-      }).join("")
-      : "";
 
-    // Orbital path line (SVG polyline connecting trail + current position)
-    let pathLine = "";
-    if (this._config.show_trail !== false && trail.length > 1) {
-      const allPoints = [...trail, { latitude: position.latitude, longitude: position.longitude }];
-      const svgPoints = allPoints.map(p => {
-        const pt = this._project(p.latitude, p.longitude);
-        return `${pt.x.toFixed(2)},${pt.y.toFixed(2)}`;
-      });
-      // Only draw line segments between consecutive points that aren't too far apart (avoid wrapping lines)
-      let segments = "";
-      for (let i = 1; i < svgPoints.length; i++) {
-        const [x1] = svgPoints[i-1].split(",").map(Number);
-        const [x2] = svgPoints[i].split(",").map(Number);
-        if (Math.abs(x2 - x1) < 40) { // skip wrap-around segments
-          segments += `<line x1="${svgPoints[i-1].split(",")[0]}" y1="${svgPoints[i-1].split(",")[1]}" x2="${svgPoints[i].split(",")[0]}" y2="${svgPoints[i].split(",")[1]}" stroke="rgba(255,107,107,0.6)" stroke-width="1.5" stroke-dasharray="4,3"/>`;
-        }
-      }
-      pathLine = `<svg class="iss-path-svg" viewBox="0 0 100 100" preserveAspectRatio="none">${segments}</svg>`;
+    // Only do full DOM rebuild if structure doesn't exist yet
+    if (!this.shadowRoot.querySelector(".astro-card")) {
+      this.shadowRoot.innerHTML = `
+        <style>
+          ${BASE_STYLES}
+          .iss-body { padding: 0 12px 14px; display: flex; flex-direction: column; gap: 12px; }
+          .iss-map-container {
+            border-radius: 18px;
+            overflow: hidden;
+            height: 300px;
+            position: relative;
+            box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06);
+          }
+          .iss-map-container .leaflet-container { width: 100%; height: 100%; }
+          .iss-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+          .iss-stat {
+            border-radius: 14px;
+            padding: 12px;
+            background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
+          }
+          .iss-stat-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: ${ASTRO.text2}; }
+          .iss-stat-value { margin-top: 4px; font-size: 1rem; font-weight: 700; color: ${ASTRO.text1}; }
+          .iss-footer { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+          .iss-time { font-size: 0.75rem; color: ${ASTRO.text2}; }
+          .iss-button {
+            display: inline-flex; align-items: center; gap: 6px; padding: 9px 14px;
+            border-radius: 999px; text-decoration: none;
+            background: rgba(var(--rgb-error-color, 244,67,54), 0.12);
+            color: ${ASTRO.error}; font-size: 0.78rem; font-weight: 700;
+          }
+          .iss-stale-banner {
+            padding: 6px 12px; border-radius: 8px; font-size: 0.75rem; font-weight: 500;
+            background: rgba(var(--rgb-warning-color, 255,152,0), 0.12);
+            color: var(--warning-color, #ff9800); text-align: center;
+          }
+        </style>
+        <ha-card class="astro-card">
+          <div class="astro-header">
+            <ha-icon icon="mdi:space-station"></ha-icon>
+            <span class="astro-title">${esc(this._config.title || "ISS Tracker")}</span>
+            <span class="astro-badge iss-badge"></span>
+          </div>
+          <div class="iss-body">
+            <div class="iss-stale-banner" style="display:none"></div>
+            ${this._config.show_map !== false ? `<div class="iss-map-container"><div id="iss-map-el"></div></div>` : ""}
+            <div class="iss-grid">
+              <div class="iss-stat"><div class="iss-stat-label">Latitude</div><div class="iss-stat-value iss-lat"></div></div>
+              <div class="iss-stat"><div class="iss-stat-label">Longitude</div><div class="iss-stat-value iss-lon"></div></div>
+            </div>
+            <div class="iss-footer">
+              <div class="iss-time"></div>
+              ${this._config.show_stream_button !== false ? `<a class="iss-button iss-stream-link" href="${esc(displayPos.liveStreamUrl)}" target="_blank" rel="noopener">Live Stream ↗</a>` : ""}
+            </div>
+          </div>
+        </ha-card>
+      `;
     }
 
-    this.shadowRoot.innerHTML = `
-      <style>
-        ${BASE_STYLES}
-        .iss-body { padding: 0 12px 14px; display: flex; flex-direction: column; gap: 12px; }
-        .iss-map {
-          border-radius: 18px;
-          overflow: hidden;
-          position: relative;
-          background: #f8f9fa;
-          box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06);
+    // Update dynamic values
+    const badge = this.shadowRoot.querySelector(".iss-badge");
+    if (badge) badge.textContent = isStale ? "Last known" : "Live orbit";
+
+    const staleBanner = this.shadowRoot.querySelector(".iss-stale-banner");
+    if (staleBanner) {
+      staleBanner.style.display = isStale ? "block" : "none";
+      staleBanner.textContent = isStale ? "⚠ Position data unavailable — showing last known location" : "";
+    }
+
+    const latEl = this.shadowRoot.querySelector(".iss-lat");
+    const lonEl = this.shadowRoot.querySelector(".iss-lon");
+    if (latEl) latEl.textContent = `${displayPos.latitude.toFixed(4)}°`;
+    if (lonEl) lonEl.textContent = `${displayPos.longitude.toFixed(4)}°`;
+
+    const timeEl = this.shadowRoot.querySelector(".iss-time");
+    if (timeEl) timeEl.textContent = isStale ? "⚠ Last known position" : `Updated ${formatDateTime(displayPos.timestamp)}`;
+
+    // Initialize or update Leaflet map
+    if (this._config.show_map !== false) {
+      await this._ensureLeaflet();
+      if (window.L) {
+        const mapEl = this.shadowRoot.querySelector("#iss-map-el");
+        if (mapEl && !this._map) {
+          mapEl.style.width = "100%";
+          mapEl.style.height = "100%";
+          this._map = L.map(mapEl, { zoomControl: false, attributionControl: false }).setView([displayPos.latitude, displayPos.longitude], this._config.map_zoom || 3);
+          L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+            maxZoom: 19,
+          }).addTo(this._map);
+          L.control.attribution({ prefix: false, position: "bottomright" }).addTo(this._map);
+          this._trailLayer = L.layerGroup().addTo(this._map);
+
+          // ISS icon
+          const issIcon = L.divIcon({
+            html: '<svg width="32" height="32" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="rgba(33,150,243,0.2)" stroke="#2196f3" stroke-width="1.5"/><path fill="#2196f3" d="M11.38 2l-1.75 5.25h4.75L12.62 2h-1.24m1.24 22l1.76-5.25H9.62L11.38 24h1.24M2 11.38v1.24l5.25 1.76V9.62L2 11.38m20 1.24v-1.24l-5.25-1.76v4.76L22 12.62M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 1.5a2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 1-2.5 2.5A2.5 2.5 0 0 1 9.5 12 2.5 2.5 0 0 1 12 9.5Z"/></svg>',
+            className: "",
+            iconSize: [32, 32],
+            iconAnchor: [16, 16],
+          });
+          this._issMarker = L.marker([displayPos.latitude, displayPos.longitude], { icon: issIcon }).addTo(this._map);
         }
-        .iss-map img.iss-world { display: block; width: 100%; height: auto; }
-        .iss-marker {
-          position: absolute;
-          transform: translate(-50%, -50%);
-          pointer-events: none;
+
+        // Update position
+        if (this._issMarker) {
+          this._issMarker.setLatLng([displayPos.latitude, displayPos.longitude]);
+          this._map.panTo([displayPos.latitude, displayPos.longitude], { animate: true, duration: 1 });
         }
-        .iss-trail-dot {
-          position: absolute;
-          border-radius: 50%;
-          transform: translate(-50%, -50%);
-          pointer-events: none;
+
+        // Update trail dots (HA-style fading dots)
+        if (this._trailLayer && this._config.show_trail !== false) {
+          this._trailLayer.clearLayers();
+          const trailPoints = trail.slice(0, -1);
+          trailPoints.forEach((item, index) => {
+            const progress = (index + 1) / Math.max(trailPoints.length, 1);
+            const opacity = 0.2 + progress * 0.6;
+            const radius = 3 + progress * 3;
+            L.circleMarker([item.latitude, item.longitude], {
+              radius: radius,
+              fillColor: "#2196f3",
+              fillOpacity: opacity,
+              color: "#1565c0",
+              weight: 1,
+              opacity: opacity * 0.8,
+            }).addTo(this._trailLayer);
+          });
         }
-        .iss-path-svg {
-          position: absolute;
-          top: 0; left: 0; width: 100%; height: 100%;
-          pointer-events: none;
-        }
-        .iss-icon-svg { filter: drop-shadow(0 1px 3px rgba(0,0,0,0.4)); }
-        .iss-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
-        .iss-stat {
-          border-radius: 14px;
-          padding: 12px;
-          background: rgba(var(--rgb-primary-text-color, 0,0,0), 0.04);
-        }
-        .iss-stat-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: ${ASTRO.text2}; }
-        .iss-stat-value { margin-top: 4px; font-size: 1rem; font-weight: 700; color: ${ASTRO.text1}; }
-        .iss-footer { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
-        .iss-time { font-size: 0.75rem; color: ${ASTRO.text2}; }
-        .iss-button {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 9px 14px;
-          border-radius: 999px;
-          text-decoration: none;
-          background: rgba(var(--rgb-error-color, 244,67,54), 0.12);
-          color: ${ASTRO.error};
-          font-size: 0.78rem;
-          font-weight: 700;
-        }
-        .iss-dot-core { fill: #ff5252; }
-        .iss-dot-pulse { fill: rgba(255,82,82,0.35); transform-origin: center; animation: iss-pulse 2s ease-out infinite; }
-        @keyframes iss-pulse {
-          0% { transform: scale(0.8); opacity: 0.9; }
-          100% { transform: scale(2.4); opacity: 0; }
-        }
-      </style>
-      <ha-card class="astro-card">
-        <div class="astro-header">
-          <ha-icon icon="mdi:space-station"></ha-icon>
-          <span class="astro-title">${esc(this._config.title || "ISS Tracker")}</span>
-          <span class="astro-badge">${isStale ? "Last known" : "Live orbit"}</span>
-        </div>
-        <div class="iss-body">
-          ${this._config.show_map !== false ? `
-            <div class="iss-map">
-              <img class="iss-world" src="/local/community/astronomy-cards/world-map.png" alt="World map" />
-              ${pathLine}
-              ${trailDots}
-              <div class="iss-marker" style="left:${projected.x.toFixed(2)}%;top:${projected.y.toFixed(2)}%;">
-                <svg class="iss-icon-svg" width="28" height="28" viewBox="0 0 24 24">
-                  <path fill="#000000" d="M11.38 2l-1.75 5.25h4.75L12.62 2h-1.24m1.24 22l1.76-5.25H9.62L11.38 24h1.24M2 11.38v1.24l5.25 1.76V9.62L2 11.38m20 1.24v-1.24l-5.25-1.76v4.76L22 12.62M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 1.5a2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 1-2.5 2.5A2.5 2.5 0 0 1 9.5 12 2.5 2.5 0 0 1 12 9.5Z"/>
-                </svg>
-              </div>
-            </div>
-          ` : ""}
-          <div class="iss-grid">
-            <div class="iss-stat"><div class="iss-stat-label">Latitude</div><div class="iss-stat-value">${displayPos.latitude}°</div></div>
-            <div class="iss-stat"><div class="iss-stat-label">Longitude</div><div class="iss-stat-value">${displayPos.longitude}°</div></div>
-          </div>
-          <div class="iss-footer">
-            <div class="iss-time">${isStale ? "⚠ Last known position" : `Updated ${esc(formatDateTime(displayPos.timestamp))}`}</div>
-            ${this._config.show_stream_button !== false ? `<a class="iss-button" href="${esc(position.liveStreamUrl)}" target="_blank" rel="noopener">Live Stream ↗</a>` : ""}
-          </div>
-        </div>
-      </ha-card>
-    `;
+      }
+    }
   }
 
-  getCardSize() { return this._config.show_map === false ? 3 : 5; }
+  getCardSize() { return this._config.show_map === false ? 3 : 6; }
 }
 
 class EarthObservationCardEditor extends AstroEditorBase {
