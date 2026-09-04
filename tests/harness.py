@@ -39,6 +39,23 @@ class _SensorStateClass:
     TOTAL_INCREASING = "total_increasing"
 
 
+class _CoordinatorEntity(_StubBase):
+    """Stand-in for ``CoordinatorEntity``, which is generic *and* stateful.
+
+    The real base class assigns ``self.coordinator`` in ``__init__``. This
+    integration reads ``self.coordinator`` in 37 places and assigns it in
+    none, so a stub that accepted the argument and dropped it would make
+    every entity property raise ``AttributeError`` under test while working
+    correctly in production -- a false red aimed at code that is right, and
+    the kind a test author papers over by assigning the attribute in the
+    test rather than in the stub.
+    """
+
+    def __init__(self, coordinator=None, context=None):
+        self.coordinator = coordinator
+        self.coordinator_context = context
+
+
 def _register(name, **attrs):
     module = types.ModuleType(name)
     for key, value in attrs.items():
@@ -108,7 +125,7 @@ def install_homeassistant_stubs():
     _register("homeassistant.helpers.entity_platform", AddEntitiesCallback=_StubBase)
     _register(
         "homeassistant.helpers.update_coordinator",
-        CoordinatorEntity=type("CoordinatorEntity", (_StubBase,), {}),
+        CoordinatorEntity=_CoordinatorEntity,
         DataUpdateCoordinator=type("DataUpdateCoordinator", (_StubBase,), {}),
         UpdateFailed=type("UpdateFailed", (Exception,), {}),
     )
@@ -159,6 +176,18 @@ def load_component_module(module_name, *, subpackage=None):
 
     spec = importlib.util.spec_from_file_location(qualified, path)
     module = importlib.util.module_from_spec(spec)
+    # Registering before execution is required: ``from .const import DOMAIN``
+    # resolves against ``sys.modules`` while the module is still running. But
+    # a failure after this point must not leave the half-built module behind,
+    # because the cache hit above would then hand it to every later caller --
+    # who sees an empty module and no error at all. That is not a missing
+    # answer, it is a confident wrong one: the first caller gets the real
+    # exception and everyone after gets silence, or ``AttributeError: module
+    # has no attribute X`` pointing at the wrong module entirely.
     sys.modules[qualified] = module
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        del sys.modules[qualified]
+        raise
     return module
