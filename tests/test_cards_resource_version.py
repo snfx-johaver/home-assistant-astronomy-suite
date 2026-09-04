@@ -65,7 +65,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from harness import COMPONENT_DIR, load_component_module
+from harness import COMPONENT_DIR, deployed_urls, load_component_module
 
 package_init = load_component_module("__init__")
 
@@ -134,17 +134,16 @@ def manifest_version():
 
 
 def versioned_urls():
-    """Every module-level string constant carrying a ``?v=`` cache-bust."""
-    found = {}
-    for name in dir(package_init):
-        if name.startswith("__"):
-            continue
-        value = getattr(package_init, name)
-        if isinstance(value, str):
-            match = CACHE_BUST.search(value)
-            if match:
-                found[name] = match.group("version")
-    return found
+    """The cache-bust key of every bundle URL, keyed by filename.
+
+    The URLs are built from a deployed install rather than read off the
+    module: the key names the served copy under ``config/www``, so there is
+    no module constant left to inspect.
+    """
+    return {
+        name: CACHE_BUST.search(url).group("version")
+        for name, url in deployed_urls(package_init).items()
+    }
 
 
 VERSIONED_URLS = versioned_urls()
@@ -305,11 +304,10 @@ class ReleaseScriptTests(unittest.TestCase):
             probe = (
                 "import sys, json;"
                 "sys.path.insert(0, sys.argv[1]);"
-                "from harness import load_component_module;"
+                "from harness import load_component_module, deployed_urls;"
                 "m = load_component_module('__init__');"
                 "print(json.dumps({'version': m.VERSION,"
-                " 'cards': m.CARDS_LOCAL_URL,"
-                " 'deepsky': m.DEEPSKY_CARDS_LOCAL_URL}))"
+                " 'urls': deployed_urls(m)}))"
             )
             probed = subprocess.run(
                 [sys.executable, "-c", probe, str(copy / "tests")],
@@ -324,10 +322,11 @@ class ReleaseScriptTests(unittest.TestCase):
 
             bumped = manifest["version"]
             self.assertEqual(resolved["version"], bumped)
-            for key in ("cards", "deepsky"):
+            self.assertGreaterEqual(len(resolved["urls"]), 2, resolved["urls"])
+            for name, url in resolved["urls"].items():
                 self.assertTrue(
-                    names_release(CACHE_BUST.search(resolved[key]).group("version"), bumped),
-                    resolved[key],
+                    names_release(CACHE_BUST.search(url).group("version"), bumped),
+                    f"{name}: {url}",
                 )
 
 

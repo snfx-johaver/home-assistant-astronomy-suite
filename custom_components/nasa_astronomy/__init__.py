@@ -82,25 +82,55 @@ def _cache_bust_for(path: Path) -> str:
     because it is what a human reads in the resource list, and because the
     release apparatus already guards that half.
 
-    Falls back to the version alone if the bundle cannot be read, matching
-    ``_deploy_cards_to_www``, which warns and carries on rather than failing
-    setup over a missing card file.
+    Falls back to a *visibly degraded* key if the bundle cannot be read,
+    matching ``_deploy_cards_to_www``, which warns and carries on rather than
+    failing setup over a missing card file. The marker earns its place: the
+    bare version is byte-identical to the key format used before the digest
+    existed, so a degraded key would be indistinguishable from unfixed code --
+    in a resource list, in a diagnostics report, and in a browser's network
+    tab. A fallback that impersonates the thing it replaced cannot be
+    diagnosed.
     """
     try:
         digest = hashlib.sha256(path.read_bytes()).hexdigest()[:12]
     except OSError:
-        return VERSION
+        return f"{VERSION}-unreadable"
     return f"{VERSION}-{digest}"
 
 
-CARDS_LOCAL_URL = (
-    f"/local/community/astronomy-cards/{CARDS_FILENAME}"
-    f"?v={_cache_bust_for(Path(__file__).parent / CARDS_FILENAME)}"
+# The bundles a browser imports as modules, and so the files that need a
+# Lovelace resource. Derived from DEPLOYED_FILENAMES rather than listed again:
+# a second membership declaration is a second thing to forget.
+BUNDLE_FILENAMES: tuple[str, ...] = tuple(
+    name for name in DEPLOYED_FILENAMES if name.endswith(".js")
 )
-DEEPSKY_CARDS_LOCAL_URL = (
-    f"/local/community/astronomy-cards/{DEEPSKY_CARDS_FILENAME}"
-    f"?v={_cache_bust_for(Path(__file__).parent / DEEPSKY_CARDS_FILENAME)}"
-)
+
+
+def resource_url(hass: HomeAssistant, filename: str) -> str:
+    """The Lovelace resource URL for one bundle, keyed to the bytes it serves.
+
+    Built at setup time rather than import time, which is forced rather than
+    stylistic. The key has to describe the *served* copy; that copy lives under
+    ``config/www`` and does not exist until ``_deploy_cards_to_www`` has run. A
+    module-level constant is evaluated before any of that, so the only copy it
+    can reach is the one inside the integration directory -- the *input* of
+    ``shutil.copy2``, never its output.
+
+    Hashing that input looks equivalent, because the two copies agree on every
+    healthy install. They diverge in exactly the case the key exists for: when
+    the source is missing the deploy warns and leaves the served file
+    untouched, so the served bytes stand still while a source-derived key moves
+    anyway. That advertises a fresh URL for a stale bundle and, at
+    ``max-age=2678400``, pins it there for 31 days -- strictly worse than not
+    busting at all.
+
+    The remedy is structural, not vigilance: ``served`` below is one path
+    object, and it is both the thing hashed and the thing addressed. The URL
+    cannot name a file other than the one it describes.
+    """
+    served = deployed_dir(hass) / filename
+    relative = served.relative_to(Path(hass.config.path("www")))
+    return f"/local/{relative.as_posix()}?v={_cache_bust_for(served)}"
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -207,6 +237,7 @@ def _deploy_cards_to_www(hass: HomeAssistant) -> None:
 
 async def _async_register_cards_resource(hass: HomeAssistant) -> None:
     """Register or update astronomy-cards.js as a Lovelace resource with cache-bust version."""
+    wanted_url = resource_url(hass, CARDS_FILENAME)
     # First try the HA API approach
     try:
         lovelace_data = hass.data.get("lovelace")
@@ -216,18 +247,18 @@ async def _async_register_cards_resource(hass: HomeAssistant) -> None:
                 for resource in resources.async_items():
                     url = resource.get("url", "")
                     if _resource_is_bundle(url, CARDS_FILENAME):
-                        if url != CARDS_LOCAL_URL:
+                        if url != wanted_url:
                             # Update URL with new version cache-bust
                             await resources.async_update_item(
                                 resource["id"],
-                                {"url": CARDS_LOCAL_URL, "res_type": "module"},
+                                {"url": wanted_url, "res_type": "module"},
                             )
-                            _LOGGER.info("Updated Lovelace resource URL to: %s", CARDS_LOCAL_URL)
+                            _LOGGER.info("Updated Lovelace resource URL to: %s", wanted_url)
                         return
                 await resources.async_create_item(
-                    {"res_type": "module", "url": CARDS_LOCAL_URL}
+                    {"res_type": "module", "url": wanted_url}
                 )
-                _LOGGER.info("Registered Lovelace resource via API: %s", CARDS_LOCAL_URL)
+                _LOGGER.info("Registered Lovelace resource via API: %s", wanted_url)
                 return
     except Exception as err:
         # Not debug: this path failing silently is how the integration spent
@@ -248,6 +279,7 @@ def _register_resource_via_storage(hass: HomeAssistant) -> None:
     """Fallback: register or update resource by editing .storage/lovelace_resources."""
     import json
 
+    wanted_url = resource_url(hass, CARDS_FILENAME)
     storage_path = Path(hass.config.path(".storage")) / "lovelace_resources"
     if not storage_path.is_file():
         # Create the storage file with our resource
@@ -258,7 +290,7 @@ def _register_resource_via_storage(hass: HomeAssistant) -> None:
             "data": {
                 "items": [
                     {
-                        "url": CARDS_LOCAL_URL,
+                        "url": wanted_url,
                         "type": "module",
                         "id": "astronomy_space_suite_cards",
                     }
@@ -276,25 +308,26 @@ def _register_resource_via_storage(hass: HomeAssistant) -> None:
     # Check if already registered — update URL if version changed
     for item in items:
         if _resource_is_bundle(item.get("url", ""), CARDS_FILENAME):
-            if item["url"] != CARDS_LOCAL_URL:
-                item["url"] = CARDS_LOCAL_URL
+            if item["url"] != wanted_url:
+                item["url"] = wanted_url
                 storage_path.write_text(json.dumps(content, indent=2))
-                _LOGGER.info("Updated Lovelace resource URL in storage: %s", CARDS_LOCAL_URL)
+                _LOGGER.info("Updated Lovelace resource URL in storage: %s", wanted_url)
             return
 
     # Add our resource
     items.append({
-        "url": CARDS_LOCAL_URL,
+        "url": wanted_url,
         "type": "module",
         "id": "astronomy_space_suite_cards",
     })
     content["data"]["items"] = items
     storage_path.write_text(json.dumps(content, indent=2))
-    _LOGGER.info("Registered Lovelace resource via storage: %s", CARDS_LOCAL_URL)
+    _LOGGER.info("Registered Lovelace resource via storage: %s", wanted_url)
 
 
 async def _async_register_deepsky_cards_resource(hass: HomeAssistant) -> None:
     """Register deepsky-cards.js as a Lovelace resource."""
+    wanted_url = resource_url(hass, DEEPSKY_CARDS_FILENAME)
     try:
         lovelace_data = hass.data.get("lovelace")
         if lovelace_data is not None:
@@ -303,17 +336,17 @@ async def _async_register_deepsky_cards_resource(hass: HomeAssistant) -> None:
                 for resource in resources.async_items():
                     url = resource.get("url", "")
                     if _resource_is_bundle(url, DEEPSKY_CARDS_FILENAME):
-                        if url != DEEPSKY_CARDS_LOCAL_URL:
+                        if url != wanted_url:
                             await resources.async_update_item(
                                 resource["id"],
-                                {"url": DEEPSKY_CARDS_LOCAL_URL, "res_type": "module"},
+                                {"url": wanted_url, "res_type": "module"},
                             )
-                            _LOGGER.info("Updated deepsky-cards resource URL to: %s", DEEPSKY_CARDS_LOCAL_URL)
+                            _LOGGER.info("Updated deepsky-cards resource URL to: %s", wanted_url)
                         return
                 await resources.async_create_item(
-                    {"res_type": "module", "url": DEEPSKY_CARDS_LOCAL_URL}
+                    {"res_type": "module", "url": wanted_url}
                 )
-                _LOGGER.info("Registered deepsky-cards Lovelace resource: %s", DEEPSKY_CARDS_LOCAL_URL)
+                _LOGGER.info("Registered deepsky-cards Lovelace resource: %s", wanted_url)
                 return
     except Exception as err:
         _LOGGER.warning(
@@ -331,6 +364,7 @@ def _register_deepsky_resource_via_storage(hass: HomeAssistant) -> None:
     """Fallback: register deepsky-cards.js resource via .storage/lovelace_resources."""
     import json
 
+    wanted_url = resource_url(hass, DEEPSKY_CARDS_FILENAME)
     storage_path = Path(hass.config.path(".storage")) / "lovelace_resources"
     if not storage_path.is_file():
         return  # Main resource registration creates the file
@@ -340,17 +374,17 @@ def _register_deepsky_resource_via_storage(hass: HomeAssistant) -> None:
 
     for item in items:
         if _resource_is_bundle(item.get("url", ""), DEEPSKY_CARDS_FILENAME):
-            if item["url"] != DEEPSKY_CARDS_LOCAL_URL:
-                item["url"] = DEEPSKY_CARDS_LOCAL_URL
+            if item["url"] != wanted_url:
+                item["url"] = wanted_url
                 storage_path.write_text(json.dumps(content, indent=2))
-                _LOGGER.info("Updated deepsky-cards URL in storage: %s", DEEPSKY_CARDS_LOCAL_URL)
+                _LOGGER.info("Updated deepsky-cards URL in storage: %s", wanted_url)
             return
 
     items.append({
-        "url": DEEPSKY_CARDS_LOCAL_URL,
+        "url": wanted_url,
         "type": "module",
         "id": "astronomy_space_suite_deepsky_cards",
     })
     content["data"]["items"] = items
     storage_path.write_text(json.dumps(content, indent=2))
-    _LOGGER.info("Registered deepsky-cards via storage: %s", DEEPSKY_CARDS_LOCAL_URL)
+    _LOGGER.info("Registered deepsky-cards via storage: %s", wanted_url)

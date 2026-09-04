@@ -100,7 +100,7 @@ class ReportTests(unittest.TestCase):
         self.package_dir, self.www_dir = write_fixture(self._tmp.name)
 
     def report(self):
-        return diagnostics.build_report(self.package_dir, self.www_dir)
+        return diagnostics.build_report(self.package_dir, self.www_dir, [])
 
     def test_the_report_covers_every_deployed_file(self):
         """Enumerated from the deploy list, so a fourth file cannot be forgotten."""
@@ -246,7 +246,12 @@ class WiringTests(unittest.TestCase):
                 diagnostics.async_get_config_entry_diagnostics(hass, None)
             )
             expected = diagnostics.build_report(
-                Path(package_init.__file__).parent, package_init.deployed_dir(hass)
+                Path(package_init.__file__).parent,
+                package_init.deployed_dir(hass),
+                [
+                    package_init.resource_url(hass, name)
+                    for name in package_init.BUNDLE_FILENAMES
+                ],
             )
         self.assertEqual(report, expected)
         for name, entry in report["files"].items():
@@ -255,16 +260,24 @@ class WiringTests(unittest.TestCase):
                 self.assertTrue(entry["served_matches_installed"])
 
     def test_the_report_lists_every_resource_url_the_integration_registers(self):
-        """Discovered from the package, so a third bundle cannot be omitted."""
-        registered = {
-            value
-            for name, value in vars(package_init).items()
-            if name.endswith("_LOCAL_URL") and isinstance(value, str)
-        }
-        self.assertGreaterEqual(len(registered), 2, registered)
+        """Discovered from the package, so a third bundle cannot be omitted.
+
+        The URLs and the report have to describe *one* install. Both are now
+        functions of ``hass``, so building them from separate directories
+        would compare the keys of one set of bytes against the report of
+        another and call the disagreement a defect.
+        """
         with tempfile.TemporaryDirectory() as tmp:
-            package_dir, www_dir = write_fixture(tmp)
-            report = diagnostics.build_report(package_dir, www_dir)
+            hass = FakeHass(tmp)
+            package_init._deploy_cards_to_www(hass)
+            registered = {
+                package_init.resource_url(hass, name)
+                for name in package_init.BUNDLE_FILENAMES
+            }
+            report = asyncio.run(
+                diagnostics.async_get_config_entry_diagnostics(hass, None)
+            )
+        self.assertGreaterEqual(len(registered), 2, registered)
         self.assertEqual(set(report["resource_urls"]), registered)
 
 
