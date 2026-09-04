@@ -147,6 +147,11 @@ NOT_A_PRODUCT_VERSION = {
     "tests/test_cards_resource_version.py": "docstring prose describing past drift",
     "tests/test_device_info_version.py": "docstring quoting the original stale values",
     "tests/test_version_literals.py": "this docstring, describing the same incidents",
+    "tests/test_resource_registration.py": (
+        "an illustrative ``?v=1.2.3`` cache-bust shape, a ``0.0.1`` sentinel "
+        "chosen so every discovered URL starts stale, and a third-party "
+        "bundle's version in a fixture -- none is a claim about this release"
+    ),
     "tests/test_release_decision.py": (
         "recorded git history: the ranges and tags of releases already cut, "
         "which are facts about the past and must not move"

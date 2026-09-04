@@ -28,6 +28,24 @@ DEEPSKY_CARDS_LOCAL_URL = f"/local/community/astronomy-cards/deepsky-cards.js?v=
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
+def _resource_is_bundle(url: str, filename: str) -> bool:
+    """True when a Lovelace resource URL points at ``filename``.
+
+    Both bundles are served out of the same ``astronomy-cards`` directory, so
+    testing a substring of the whole URL cannot tell them apart::
+
+        "astronomy-cards" in "/local/community/astronomy-cards/deepsky-cards.js"
+        # -> True, on the directory name
+
+    A registrar that matched that way would claim the deep-sky resource,
+    rewrite its URL to its own bundle and return -- leaving the real astronomy
+    resource unvisited and therefore stale for good, and leaving two resources
+    pointing at one bundle. Compare the file the URL actually ends in, ignoring
+    the ``?v=`` cache-bust.
+    """
+    return url.split("?", 1)[0].rsplit("/", 1)[-1] == filename
+
+
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the Astronomy Space Suite component."""
     # Copy JS cards to www/ so they're served at /local/community/astronomy-cards/
@@ -128,7 +146,7 @@ async def _async_register_cards_resource(hass: HomeAssistant) -> None:
             if resources is not None:
                 for resource in resources.async_items():
                     url = resource.get("url", "")
-                    if "astronomy-cards" in url:
+                    if _resource_is_bundle(url, CARDS_FILENAME):
                         if url != CARDS_LOCAL_URL:
                             # Update URL with new version cache-bust
                             await resources.async_update_item(
@@ -180,7 +198,7 @@ def _register_resource_via_storage(hass: HomeAssistant) -> None:
 
     # Check if already registered — update URL if version changed
     for item in items:
-        if "astronomy-cards" in item.get("url", ""):
+        if _resource_is_bundle(item.get("url", ""), CARDS_FILENAME):
             if item["url"] != CARDS_LOCAL_URL:
                 item["url"] = CARDS_LOCAL_URL
                 storage_path.write_text(json.dumps(content, indent=2))
@@ -207,7 +225,7 @@ async def _async_register_deepsky_cards_resource(hass: HomeAssistant) -> None:
             if resources is not None:
                 for resource in resources.async_items():
                     url = resource.get("url", "")
-                    if "deepsky-cards" in url:
+                    if _resource_is_bundle(url, DEEPSKY_CARDS_FILENAME):
                         if url != DEEPSKY_CARDS_LOCAL_URL:
                             await resources.async_update_item(
                                 resource["id"],
@@ -239,7 +257,7 @@ def _register_deepsky_resource_via_storage(hass: HomeAssistant) -> None:
     items = content.get("data", {}).get("items", [])
 
     for item in items:
-        if "deepsky-cards" in item.get("url", ""):
+        if _resource_is_bundle(item.get("url", ""), DEEPSKY_CARDS_FILENAME):
             if item["url"] != DEEPSKY_CARDS_LOCAL_URL:
                 item["url"] = DEEPSKY_CARDS_LOCAL_URL
                 storage_path.write_text(json.dumps(content, indent=2))

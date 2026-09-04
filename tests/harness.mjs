@@ -43,13 +43,36 @@ class StubElement {
   }
 }
 
-function makeSandbox() {
+/**
+ * Build the globals a bundle sees.
+ *
+ * `customElements.define` throws on a name that is already registered, which
+ * is what the browser does (`NotSupportedError`, per the custom elements
+ * spec). An earlier version of this stub was `registry.set`, i.e. silently
+ * idempotent -- more forgiving than the real thing, and forgiving in exactly
+ * the direction that hides an unguarded registration block. Every test in this
+ * suite passed against a bundle that would have thrown on its first duplicate
+ * define in a real browser. A stub may be incomplete; it must not be *kinder*
+ * than production, because then the suite reports on the stub.
+ */
+export function makeSandbox() {
   const registry = new Map();
   const sandbox = {
     HTMLElement: StubElement,
     customElements: {
       get: (name) => registry.get(name),
-      define: (name, ctor) => registry.set(name, ctor),
+      define: (name, ctor) => {
+        if (registry.has(name)) {
+          const err = new Error(
+            `Failed to execute 'define' on 'CustomElementRegistry': the name "${name}" has already been used with this registry`,
+          );
+          err.name = "NotSupportedError";
+          throw err;
+        }
+        registry.set(name, ctor);
+      },
+      // Not part of the DOM API -- the tests need to see what got registered.
+      _names: () => [...registry.keys()],
     },
     document: { createElement: () => new StubElement() },
     console: { info() {}, warn() {}, error() {} },
@@ -62,6 +85,23 @@ function makeSandbox() {
   };
   sandbox.window = sandbox;
   sandbox.self = sandbox;
+  return sandbox;
+}
+
+/**
+ * Evaluate a bundle against an existing sandbox, so a caller can evaluate the
+ * same file twice against one shared `customElements` registry -- the state a
+ * browser is in when two Lovelace resources resolve to the same bundle.
+ *
+ * @param {object} sandbox from `makeSandbox()`
+ * @param {string} file absolute path to the bundle
+ */
+export function evaluateBundleInto(sandbox, file) {
+  const source = readFileSync(file, "utf8");
+  const keys = Object.keys(sandbox);
+  // eslint-disable-next-line no-new-func
+  const factory = new Function(...keys, source);
+  factory(...keys.map((key) => sandbox[key]));
   return sandbox;
 }
 
