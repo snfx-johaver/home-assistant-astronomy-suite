@@ -455,6 +455,36 @@ class ClassificationCompletenessTests(unittest.TestCase):
         )
         self.assertFalse(silent, f"classified with no stated reason: {silent}")
 
+    def test_the_developer_paths_stay_suppressed(self):
+        """The three paths whose suppression is the release trigger policy.
+
+        `tests/`, `.github/` and `scripts/` are why a test-only change does not
+        publish a user-facing release. That is a deliberate decision, taken in
+        preference to a separate allowlist of shipping prefixes -- a second
+        mechanism is a second thing to disagree with the first -- and in
+        preference to an opt-in release trailer, which fails toward *not*
+        releasing. That is the worse direction: a spurious release is visible
+        and can be reasoned about, a missed one is silent.
+
+        Naming them individually is the point. `test_every_tracked_path_is_
+        classified` requires each to be in *some* map and would stay green if
+        one moved to SHIPPING; `test_nothing_that_ships_is_declared_not_
+        shipping` only checks the derivation does not contradict the map. So
+        the policy itself -- these three, suppressed -- was asserted nowhere,
+        and could have eroded one entry at a time without a red test.
+
+        It is a floor, not an inventory: adding a fourth developer path is
+        fine, dropping one of these is not.
+        """
+        for path in ("tests", ".github", "scripts"):
+            with self.subTest(path=path):
+                self.assertIn(
+                    path,
+                    NOT_SHIPPING,
+                    f"{path!r} is no longer suppressed, so a change touching "
+                    "only it would publish a user-facing release",
+                )
+
 
 class ChangelogTests(unittest.TestCase):
     """The notes describe the release, so they answer the same question it did.
