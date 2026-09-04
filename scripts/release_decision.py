@@ -404,32 +404,44 @@ def range_start(last_tag: str, is_shallow: bool) -> str | None:
     `git describe` fails identically for two different worlds: a repository
     that has never been tagged, and a repository where the last tagged commit
     is outside the shallow history. The first is a genuine first release and
-    `ls-files` is the right answer for it. The second turns a gate that has
-    suppressed six consecutive releases into an unconditional publish.
+    `ls-files` is the right answer for it. The second turns the gate into an
+    unconditional publish, claiming every tracked file as new.
 
     The mechanism is commit reachability, not whether tag refs were fetched.
-    A `--depth 1` clone of this repository followed by `git fetch --tags` has
-    all 36 tags present as refs and `describe` still exits 128, because it
+    A shallow clone of this repository followed by `git fetch --tags` has
+    every tag present as a ref and `describe` still exits 128, because it
     walks ancestors from HEAD and the graft boundary is in the way. So "the
     tags are here" is not a safe proxy for "the range is computable", and the
     tag list is not what this function is allowed to look at.
 
     The refusal covers the whole shallow space rather than only the untagged
     corner, and the reason is that a bounded depth is not wrong -- it is
-    *contingently* right. Measured against this repository, whose HEAD was
-    then six commits past v1.11.8, with the guard below neutralised:
+    *contingently* right, on a contingency that moves:
 
-        depth  1  describe=EXIT128   RELEASE (patch)  57 file(s), 25 shipped
-        depth  3  describe=EXIT128   RELEASE (patch)  57 file(s), 25 shipped
-        depth  6  describe=EXIT128   RELEASE (patch)  57 file(s), 25 shipped
-        depth 10  describe=v1.11.8   SKIP (none)       5 file(s),  0 shipped
+        the shallowest depth that still works is the number of commits on the
+        shortest path from HEAD to the last tagged commit, counting both ends
 
-    Above the boundary the answer is byte-identical to a full clone; one
-    commit below it, the gate publishes everything. It does not degrade, it
-    inverts -- and the boundary is the distance from HEAD to the last tag,
-    which grows with every commit and resets with every release. A gate whose
-    correctness depends on a number that moves on its own is the drift this
-    module exists to remove, so the contingent cases are refused too.
+    On linear history that is (commits since the tag) + 1. It is NOT that in
+    general: with a merge in the range the commit count exceeds the path
+    length, and the boundary follows the path. This repository squash-merges,
+    so the two coincide here -- which is exactly why the general claim is
+    written out rather than the convenient one. Both are pinned by tests.
+
+    Below the boundary the gate does not degrade, it inverts: one commit
+    shallower and every tracked file is claimed as changed. Above it the
+    answer is byte-identical to a full clone. So any fixed `fetch-depth: N` is
+    correct only while the path stays under N, and it lengthens with every
+    commit and resets only when a release is cut -- which is the event this
+    module exists to suppress. The better this gate works, the faster someone
+    else's bounded depth expires. That is the drift this module removes, so
+    the contingent cases are refused too, including the ones that would have
+    been correct.
+
+    The boundary is described rather than illustrated on purpose. An earlier
+    version of this docstring carried a table of measured depths against a
+    named tag; it was accurate when written and began decaying immediately,
+    because the boundary it described moves. The numbers live in the tests,
+    where they are re-derived and can go red. See ShallowCheckoutTests.
 
     What this deliberately does NOT claim: that a bounded depth produces a
     wrong range. It does not. If `describe` succeeds the tag is reachable and

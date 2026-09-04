@@ -697,6 +697,119 @@ class ShallowCheckoutTests(unittest.TestCase):
     The gate that had suppressed five consecutive releases published.
     """
 
+    def _run(self, cwd, *args):
+        return subprocess.run(
+            ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
+        )
+
+    def _new_origin(self, tmp: Path) -> Path:
+        origin = tmp / "origin"
+        origin.mkdir()
+        self._run(origin, "init", "-q", "-b", "main")
+        self._run(origin, "config", "user.email", "t@example.invalid")
+        self._run(origin, "config", "user.name", "t")
+        return origin
+
+    def _commit(self, origin: Path, message: str, name: str = "a.txt") -> None:
+        (origin / name).write_text(message, encoding="utf-8")
+        self._run(origin, "add", "-A")
+        self._run(origin, "commit", "-q", "-m", message)
+
+    def _linear_origin(self, tmp: Path, gap: int) -> Path:
+        origin = self._new_origin(tmp)
+        self._commit(origin, "root")
+        self._run(origin, "tag", "v0.0.1")
+        for n in range(gap):
+            self._commit(origin, f"c{n}")
+        assert (
+            self._run(origin, "rev-list", "--count", "v0.0.1..HEAD").stdout.strip()
+            == str(gap)
+        ), "the fixture did not build the gap it says it did"
+        return origin
+
+    def _merged_origin(self, tmp: Path) -> Path:
+        """History where the commit count and the path length disagree."""
+        origin = self._new_origin(tmp)
+        self._commit(origin, "first")
+        self._run(origin, "tag", "v0.0.1")
+        self._run(origin, "checkout", "-q", "-b", "side")
+        self._commit(origin, "side work", "s.txt")
+        self._run(origin, "checkout", "-q", "main")
+        self._commit(origin, "after the tag")
+        self._run(origin, "merge", "-q", "--no-ff", "-m", "merge side", "side")
+        self._commit(origin, "final")
+        return origin
+
+    def _shortest_path_length(self, origin: Path, tag: str = "v0.0.1") -> int:
+        """Commits on the shortest HEAD->tag path, counting both ends.
+
+        This is the thing that generates the boundary. The docstring used to
+        print an observed depth, then a formula that happened to match it on
+        linear history. Computing the generator means the test says the same
+        thing on every history shape instead of on the one it was written
+        against.
+        """
+        target = self._run(origin, "rev-parse", f"{tag}^{{commit}}").stdout.strip()
+        parents = {}
+        for line in self._run(origin, "rev-list", "--parents", "HEAD").stdout.split("\n"):
+            shas = line.split()
+            if shas:
+                parents[shas[0]] = shas[1:]
+        head = self._run(origin, "rev-parse", "HEAD").stdout.strip()
+        frontier, seen, distance = [head], {head}, 1
+        while frontier:
+            if target in frontier:
+                return distance
+            nxt = []
+            for sha in frontier:
+                for parent in parents.get(sha, []):
+                    if parent not in seen:
+                        seen.add(parent)
+                        nxt.append(parent)
+            frontier, distance = nxt, distance + 1
+        raise AssertionError(
+            f"{tag} is not an ancestor of HEAD in this fixture, so there is no "
+            "path whose length could be the boundary"
+        )
+
+    def _shallowest_depth_that_describes(self, tmp: Path, origin: Path) -> int:
+        """Probe for the real boundary instead of assuming a formula for it.
+
+        Both callers used to pick a depth from a formula. One of those formulas
+        was wrong for merged history and the test still passed, because it had
+        chosen a depth above the boundary rather than on it. Measuring removes
+        the assumption from the test that exists to check the assumption.
+        """
+        total = int(
+            self._run(origin, "rev-list", "--count", "HEAD").stdout.strip()
+        )
+        for depth in range(1, total + 2):
+            clone = tmp / f"probe{depth}"
+            self._run(
+                tmp,
+                "clone",
+                "-q",
+                "--depth",
+                str(depth),
+                origin.as_uri(),
+                str(clone),
+            )
+            self._run(clone, "fetch", "--tags", "-q")
+            if (
+                subprocess.run(
+                    ["git", "describe", "--tags", "--abbrev=0"],
+                    cwd=clone,
+                    capture_output=True,
+                    text=True,
+                ).returncode
+                == 0
+            ):
+                return depth
+        raise AssertionError(
+            "no depth up to the full history could describe the tag, so this "
+            "probe is not measuring what it claims to"
+        )
+
     def test_the_policy_covers_every_combination(self):
         """Four states, enumerated, because three of them look alike."""
         self.assertEqual(release_decision.range_start("v1.2.3", False), "v1.2.3")
@@ -811,44 +924,32 @@ class ShallowCheckoutTests(unittest.TestCase):
         docstring: below the boundary the gate does not degrade, it inverts.
         """
         with tempfile.TemporaryDirectory() as tmp:
-            origin = Path(tmp) / "origin"
-            origin.mkdir()
-            run = lambda *a, **k: subprocess.run(  # noqa: E731
-                ["git", *a],
-                cwd=k.get("cwd", origin),
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            run("init", "-q", "-b", "main")
-            run("config", "user.email", "t@example.invalid")
-            run("config", "user.name", "t")
+            origin = self._merged_origin(Path(tmp))
 
-            def commit(message: str, name: str = "a.txt") -> None:
-                (origin / name).write_text(message, encoding="utf-8")
-                run("add", "-A")
-                run("commit", "-q", "-m", message)
-
-            commit("first")
-            run("tag", "v0.0.1")
-            # A merge, because a second parent is the obvious way a bounded
-            # walk could go wrong and it is worth ruling out rather than
-            # assuming.
-            run("checkout", "-q", "-b", "side")
-            commit("side work", "s.txt")
-            run("checkout", "-q", "main")
-            commit("after the tag")
-            run("merge", "-q", "--no-ff", "-m", "merge side", "side")
-            commit("final")
-
-            truth = run(
-                "log", "v0.0.1..HEAD", "--pretty=%s", "--no-merges"
+            truth = self._run(
+                origin, "log", "v0.0.1..HEAD", "--pretty=%s", "--no-merges"
             ).stdout.split("\n")
             truth = [line for line in truth if line.strip()]
 
             clone = Path(tmp) / "clone"
-            run("clone", "-q", "--depth", "20", origin.as_uri(), str(clone), cwd=tmp)
-            run("fetch", "--tags", "-q", cwd=clone)
+            # Measured, not derived. The first version hardcoded 20 against
+            # five commits -- safe, but safe by margin. The second derived
+            # gap + 1, which is the wrong formula for this fixture precisely
+            # because it contains a merge, and the test still passed because
+            # gap + 1 lands above the boundary rather than on it. So the depth
+            # is probed, and the clone sits exactly at the shallowest depth
+            # that can see the tag.
+            depth = self._shallowest_depth_that_describes(Path(tmp), origin)
+            self._run(
+                Path(tmp),
+                "clone",
+                "-q",
+                "--depth",
+                str(depth),
+                origin.as_uri(),
+                str(clone),
+            )
+            self._run(clone, "fetch", "--tags", "-q")
 
             described = subprocess.run(
                 ["git", "describe", "--tags", "--abbrev=0"],
@@ -862,12 +963,12 @@ class ShallowCheckoutTests(unittest.TestCase):
                 "a clone deep enough to contain the tag could not describe it, "
                 "so this test is no longer measuring the case it names",
             )
-            walked = run(
+            walked = self._run(
+                clone,
                 "log",
                 f"{described.stdout.strip()}..HEAD",
                 "--pretty=%s",
                 "--no-merges",
-                cwd=clone,
             ).stdout.split("\n")
             self.assertEqual(
                 [line for line in walked if line.strip()],
@@ -876,6 +977,68 @@ class ShallowCheckoutTests(unittest.TestCase):
                 "range than the full history, which would mean a successful "
                 "describe is not sufficient after all",
             )
+
+    def test_the_boundary_follows_the_path_not_the_commit_count(self):
+        """The number the docstring used to print, re-derived instead.
+
+        `range_start` describes the shallowest workable depth as the length of
+        the shortest path from HEAD to the tagged commit. That replaced a table
+        of measured depths against a named tag, which was accurate when written
+        and started decaying on the next commit.
+
+        The first replacement was itself too strong: it said
+        (commits since the tag) + 1, which is true only on linear history. With
+        a merge in the range the commit count exceeds the path length and the
+        boundary follows the path. So the assertion here is against the
+        generator -- the shortest path, computed by walking parents -- and the
+        merge case additionally pins that the convenient formula is wrong, so
+        nobody restores it.
+        """
+        for gap in (1, 2, 5):
+            with self.subTest(shape="linear", gap=gap):
+                with tempfile.TemporaryDirectory() as tmp:
+                    origin = self._linear_origin(Path(tmp), gap)
+                    found = self._shallowest_depth_that_describes(Path(tmp), origin)
+                    self.assertEqual(
+                        found,
+                        self._shortest_path_length(origin),
+                        "the shallowest depth that can see the tag is not the "
+                        "length of the shortest path to it",
+                    )
+                    # Non-vacuity for the merge case below: on linear history
+                    # the two formulas agree, so this passes whichever one is
+                    # in force and shows the merge failure is discriminating.
+                    self.assertEqual(
+                        found,
+                        gap + 1,
+                        f"on linear history with {gap} commit(s) since the tag "
+                        f"the boundary should be {gap + 1}",
+                    )
+
+        with self.subTest(shape="merge"):
+            with tempfile.TemporaryDirectory() as tmp:
+                origin = self._merged_origin(Path(tmp))
+                count = int(
+                    self._run(
+                        origin, "rev-list", "--count", "v0.0.1..HEAD"
+                    ).stdout.strip()
+                )
+                found = self._shallowest_depth_that_describes(Path(tmp), origin)
+                self.assertEqual(
+                    found,
+                    self._shortest_path_length(origin),
+                    "the boundary stopped following the shortest path once a "
+                    "merge was in the range, which is what the docstring in "
+                    "range_start claims it does",
+                )
+                self.assertNotEqual(
+                    found,
+                    count + 1,
+                    "the boundary matched (commits since the tag) + 1 even "
+                    "with a merge in the range, which would mean the simpler "
+                    "formula was right and this fixture no longer separates "
+                    "the two",
+                )
 
     def test_the_refusal_says_what_to_do_about_it(self):
         try:
