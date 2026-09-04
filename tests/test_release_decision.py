@@ -326,11 +326,7 @@ class ClassificationCorrectnessTests(unittest.TestCase):
         classification silently drifting.
         """
         installed = set(installed_roots())
-        deployed = [
-            package_init.CARDS_FILENAME,
-            package_init.DEEPSKY_CARDS_FILENAME,
-            "world-map.png",
-        ]
+        deployed = list(package_init.DEPLOYED_FILENAMES)
         missing = [
             name for name in deployed if not (COMPONENT_DIR / name).is_file()
         ]

@@ -151,6 +151,27 @@ def _ensure_package_alias():
     sys.modules[PACKAGE_ALIAS] = package
 
 
+def _populate_package_alias(module):
+    """Make ``from . import X`` resolve, the way it does in a real package.
+
+    ``__init__.py`` is loaded under a qualified name so it can be cached and
+    reloaded like any other module, which leaves ``sys.modules`` holding an
+    *empty* package alias. Real integrations import from their own package --
+    ``diagnostics.py`` does -- and against an empty alias that raises
+    ``ImportError`` for a name that exists perfectly well in production.
+
+    Worth stating plainly, because the opposite mistake was made here before:
+    a stub is a claim about production. One that is *kinder* than production
+    manufactures coverage; one that is *harsher* invents failures and pushes
+    the code towards contortions that exist only to satisfy the harness.
+    Mirror the executed namespace onto the alias so neither happens.
+    """
+    package = sys.modules[PACKAGE_ALIAS]
+    for name, value in vars(module).items():
+        if not name.startswith("__"):
+            setattr(package, name, value)
+
+
 def load_component_module(module_name, *, subpackage=None):
     """Import one module from ``custom_components/nasa_astronomy``.
 
@@ -190,4 +211,6 @@ def load_component_module(module_name, *, subpackage=None):
     except BaseException:
         del sys.modules[qualified]
         raise
+    if parent == PACKAGE_ALIAS and module_name == "__init__":
+        _populate_package_alias(module)
     return module
