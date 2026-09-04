@@ -2,16 +2,38 @@
 
 Run with: python -m unittest discover -s tests -p "test_*.py"
 
-``__init__.py`` builds its Lovelace resource URLs with a version query string::
+``__init__.py`` builds its Lovelace resource URLs with a query string::
 
-    CARDS_LOCAL_URL = f"/local/community/astronomy-cards/astronomy-cards.js?v={VERSION}"
+    CARDS_LOCAL_URL = f".../astronomy-cards.js?v={_cache_bust_for(...)}"
 
 and ``_async_register_cards_resource`` decides whether to rewrite a registered
-resource by comparing ``resource["url"] != CARDS_LOCAL_URL``. So ``VERSION`` is
-not cosmetic: if it stops tracking the release, the URL stops changing, the
-comparison finds them equal, the resource is left alone, and browsers keep
-serving the previous card bundle from cache. The integration reports itself as
-updated while the dashboard is running old code, with nothing in the log.
+resource by comparing ``resource["url"] != CARDS_LOCAL_URL``. So the key is
+not cosmetic: if it stops tracking what is being served, the URL stops
+changing, the comparison finds them equal, the resource is left alone, and
+browsers keep serving the previous card bundle from cache. The integration
+reports itself as updated while the dashboard is running old code, with
+nothing in the log.
+
+That failure mode has two causes and this file can only ever see one
+--------------------------------------------------------------------
+The paragraph above was written when the key was ``VERSION`` alone, and it
+described the danger correctly. But "the key stops tracking what is served"
+can happen two ways:
+
+1. ``VERSION`` drifts from the release. Guarded here.
+2. The *bytes* drift from ``VERSION`` -- the bundle is replaced without a
+   release, so the file changes underneath a key that does not. Nothing here
+   could ever have caught that, because every observable in this file comes
+   from ``manifest.json`` and the copy that installs the bundle
+   (``shutil.copy2``) never touches it.
+
+Cause 2 was found live on a real install: the manifest said ``1.10.4`` while
+the deployed bundle's banner said ``1.11.0``. Since Home Assistant serves
+``/local/`` with ``Cache-Control: max-age=2678400``, the ETag is never
+consulted and a changed URL is the only thing that can dislodge the stale
+copy. So the key is now ``{release}-{digest of the bytes}``, and this file
+asserts the first half while ``test_cache_bust_coupling.py`` asserts the
+second.
 
 Why this file exists even though the value is currently correct
 --------------------------------------------------------------
@@ -55,8 +77,21 @@ MANIFEST_PATH = COMPONENT_DIR / "manifest.json"
 # the terminal it happens to be running under.
 CHILD_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8"}
 
-# Matches the ``?v=1.2.3`` cache-bust these URLs are built with.
+# Matches the ``?v=`` cache-bust these URLs are built with. The key names the
+# release and then the bytes -- ``1.2.3-9f86d081884c`` -- so that it also moves
+# when a bundle is replaced without a release. This file guards the first half;
+# ``test_cache_bust_coupling.py`` guards the second.
 CACHE_BUST = re.compile(r"\?v=(?P<version>[^&]+)$")
+
+
+def names_release(key, expected):
+    """Whether a cache-bust key names ``expected`` as its release.
+
+    A prefix test rather than ``key.split("-")[0]``: splitting would quietly
+    truncate a prerelease version such as ``1.2.3-rc1`` into agreement with
+    ``1.2.3``, turning a real disagreement into a pass.
+    """
+    return key == expected or key.startswith(f"{expected}-")
 
 # The version constant inside a card bundle. Bundles name it differently
 # (``VERSION``, ``DEEPSKY_VERSION``), so match the suffix rather than listing.
@@ -129,12 +164,32 @@ class CardResourceVersionTests(unittest.TestCase):
     def test_module_version_is_the_manifest_version(self):
         self.assertEqual(package_init.VERSION, manifest_version())
 
+    def test_the_release_predicate_still_rejects_a_wrong_release(self):
+        """Pin ``names_release`` itself, because it relaxed an equality test.
+
+        The two assertions below used to demand the key *equal* the manifest
+        version. They now accept a ``{release}-{digest}`` suffix, which is a
+        strictly weaker demand -- and a predicate that answered ``True``
+        unconditionally would make both of them vacuous without either going
+        red. So state directly what it must reject.
+        """
+        self.assertTrue(names_release("1.2.3", "1.2.3"))
+        self.assertTrue(names_release("1.2.3-9f86d081884c", "1.2.3"))
+        # A different release, however it is dressed up.
+        self.assertFalse(names_release("1.2.4", "1.2.3"))
+        self.assertFalse(names_release("1.2.4-9f86d081884c", "1.2.3"))
+        # The digest must not be able to smuggle the release in after the fact.
+        self.assertFalse(names_release("9f86d081884c-1.2.3", "1.2.3"))
+        # A prefix of a longer release is not that release.
+        self.assertFalse(names_release("1.2.30", "1.2.3"))
+        self.assertFalse(names_release("", "1.2.3"))
+
     def test_every_versioned_url_carries_the_manifest_version(self):
         expected = manifest_version()
         wrong = {
             name: version
             for name, version in VERSIONED_URLS.items()
-            if version != expected
+            if not names_release(version, expected)
         }
         self.assertEqual(wrong, {}, f"manifest.json says {expected!r}")
 
@@ -270,9 +325,8 @@ class ReleaseScriptTests(unittest.TestCase):
             bumped = manifest["version"]
             self.assertEqual(resolved["version"], bumped)
             for key in ("cards", "deepsky"):
-                self.assertEqual(
-                    CACHE_BUST.search(resolved[key]).group("version"),
-                    bumped,
+                self.assertTrue(
+                    names_release(CACHE_BUST.search(resolved[key]).group("version"), bumped),
                     resolved[key],
                 )
 
