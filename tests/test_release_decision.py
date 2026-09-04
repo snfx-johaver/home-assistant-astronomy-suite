@@ -41,6 +41,7 @@ wired up, leaving the inline bash as a second, silent decider.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 import unittest
@@ -56,10 +57,13 @@ import release_decision  # noqa: E402
 from release_decision import (  # noqa: E402
     NOT_SHIPPING,
     SHIPPING,
+    Commit,
     bump_from_subjects,
+    changelog,
     decide,
     derived_shipping,
     installed_roots,
+    ships,
     top_level,
 )
 
@@ -455,6 +459,229 @@ class ClassificationCompletenessTests(unittest.TestCase):
         self.assertFalse(silent, f"classified with no stated reason: {silent}")
 
 
+class ChangelogTests(unittest.TestCase):
+    """The notes describe the release, so they answer the same question it did.
+
+    The module decides whether a change reaches a user and then writes a
+    changelog headed "What's Changed". Until now those two used different
+    rules: the decision consulted the diff, and the notes listed everything.
+    v1.11.8 shipped nothing at all and still published a two-item changelog.
+
+    These tests are written against `changelog()` as a function of commits
+    rather than against the emitted text of any one release, so they stay true
+    when the repository's history grows and cannot be satisfied by editing a
+    fixture to match the output.
+    """
+
+    HEADING = "### Also in this release"
+
+    def _ranges(self):
+        """Every tag-to-tag range in the repository, plus the open one.
+
+        Discovered rather than listed. The failure mode being guarded against
+        is a commit shape nobody thought to write down, so the fixture is the
+        actual history.
+        """
+        tags = release_decision._git(
+            "tag", "--list", "--sort=v:refname"
+        ).split()
+        self.assertGreater(len(tags), 10, "no tags found -- the fixture is empty")
+        pairs = list(zip(tags, tags[1:])) + [(tags[-1], "HEAD")]
+        for older, newer in pairs:
+            raw = release_decision._git(
+                "log",
+                f"{older}..{newer}",
+                f"--pretty=format:{release_decision._RECORD}%s",
+                "--name-only",
+                "--no-merges",
+            )
+            yield f"{older}..{newer}", release_decision._parse_log(raw)
+
+    def test_every_commit_in_every_real_range_appears_exactly_once(self):
+        """Partition, not filter. Dropping a commit would be the silent skip."""
+        checked = 0
+        for label, commits in self._ranges():
+            if not commits:
+                continue
+            checked += 1
+            body = changelog(commits)
+            for commit in commits:
+                self.assertEqual(
+                    body.count(f"- {commit.subject}"),
+                    1,
+                    f"{label}: {commit.subject!r} appears "
+                    f"{body.count(f'- {commit.subject}')} times in the notes, "
+                    "so the changelog either dropped a commit or listed it twice",
+                )
+        self.assertGreater(checked, 5, "too few non-empty ranges to be evidence")
+
+    def test_a_commit_is_filed_under_the_heading_exactly_when_it_ships_nothing(self):
+        """The notes and the gate must not be able to disagree.
+
+        This is the assertion the old renderer cannot satisfy: it had no second
+        section, so every non-shipping commit sat under a heading claiming it
+        changed something for the reader.
+        """
+        misfiled = []
+        for label, commits in self._ranges():
+            if not commits:
+                continue
+            body = changelog(commits)
+            head, _, tail = body.partition(self.HEADING)
+            for commit in commits:
+                entry = f"- {commit.subject}"
+                internal = entry in tail
+                if bool(ships(commit.paths)) == internal:
+                    misfiled.append(
+                        f"{label}: {commit.subject!r} touched "
+                        f"{sorted(commit.paths)} -> ships="
+                        f"{bool(ships(commit.paths))} but the notes filed it "
+                        f"as {'internal' if internal else 'shipping'}"
+                    )
+        self.assertTrue(
+            not misfiled,
+            "the changelog files commits differently from the release gate:\n    "
+            + "\n    ".join(misfiled),
+        )
+
+    def test_the_heading_is_absent_when_every_commit_ships(self):
+        """An empty section is noise, and noise is what this test suite is for."""
+        body = changelog(
+            [
+                Commit("fix: a real change", ("custom_components/x/sensor.py",)),
+                Commit("feat: another", ("custom_components/x/camera.py",)),
+            ]
+        )
+        self.assertTrue(
+            self.HEADING not in body,
+            "the changelog printed an 'also in this release' heading with "
+            "nothing under it:\n" + body,
+        )
+
+    def test_a_mixed_release_separates_the_two(self):
+        commits = [
+            Commit("fix: the shipping one", ("custom_components/x/sensor.py",)),
+            Commit("test: the internal one", ("tests/test_x.py",)),
+        ]
+        body = changelog(commits)
+        head, sep, tail = body.partition(self.HEADING)
+        self.assertTrue(sep, "a mixed release produced no separation:\n" + body)
+        self.assertTrue(
+            "- fix: the shipping one" in head,
+            "the shipping commit was not listed above the heading:\n" + body,
+        )
+        self.assertTrue(
+            "- test: the internal one" in tail,
+            "the internal commit was not listed below the heading:\n" + body,
+        )
+
+    def test_the_notes_name_every_subject(self):
+        """Non-vacuity. This passed before the partition existed and after it.
+
+        A reviewer looking at a uniformly red suite cannot tell a discriminating
+        test from a broken import, so at least one assertion here has to be
+        indifferent to the change being made.
+        """
+        for label, commits in self._ranges():
+            for commit in commits:
+                self.assertTrue(
+                    commit.subject in changelog(commits),
+                    f"{label}: {commit.subject!r} is missing from the notes "
+                    "entirely, which no version of this renderer should do",
+                )
+
+    def test_v1_11_8_is_the_worked_example(self):
+        """The defect, measured on the release that actually published it.
+
+        Recorded because it is the reason this exists: v1.11.8's two commits
+        touched only `tests/`, and its published notes said "What's Changed".
+        """
+        raw = release_decision._git(
+            "log",
+            "v1.11.7..v1.11.8",
+            f"--pretty=format:{release_decision._RECORD}%s",
+            "--name-only",
+            "--no-merges",
+        )
+        commits = [
+            c
+            for c in release_decision._parse_log(raw)
+            if not c.subject.startswith("release:")
+        ]
+        self.assertEqual(len(commits), 2, "the recorded range changed shape")
+        self.assertFalse(
+            [c for c in commits if ships(c.paths)],
+            "v1.11.8 is recorded here as a release that shipped nothing; if "
+            "that is no longer true the example needs replacing",
+        )
+        body = changelog(commits)
+        self.assertTrue(
+            self.HEADING in body,
+            "the release that shipped nothing still renders as though it did:\n"
+            + body,
+        )
+
+
+class LogParsingTests(unittest.TestCase):
+    """`--name-only` output is a format, so it is tested as one."""
+
+    def test_a_recorded_log_splits_into_commits_and_paths(self):
+        raw = (
+            "\x1edocs: one (#21)\nscripts/release_decision.py\n\n"
+            "\x1efix: two (#20)\nscripts/release_decision.py\n"
+            "tests/test_release_decision.py\n"
+        )
+        self.assertEqual(
+            release_decision._parse_log(raw),
+            [
+                Commit("docs: one (#21)", ("scripts/release_decision.py",)),
+                Commit(
+                    "fix: two (#20)",
+                    ("scripts/release_decision.py", "tests/test_release_decision.py"),
+                ),
+            ],
+        )
+
+    def test_a_commit_touching_nothing_keeps_its_subject(self):
+        parsed = release_decision._parse_log("\x1echore: empty\n")
+        self.assertEqual(parsed, [Commit("chore: empty", ())])
+
+    def test_an_empty_range_parses_to_nothing(self):
+        self.assertEqual(release_decision._parse_log(""), [])
+
+    def test_the_subjects_match_the_plain_log_for_the_open_range(self):
+        """The parser must not change what the gate sees.
+
+        `decide()` is fed subjects from this walk. If the parse disagrees with
+        `git log --pretty=format:%s` then moving to `--name-only` silently
+        altered the release decision, which is the one thing this change was
+        not allowed to do.
+        """
+        last_tag = release_decision._git(
+            "describe", "--tags", "--abbrev=0"
+        ).strip()
+        plain = [
+            s
+            for s in release_decision._git(
+                "log", f"{last_tag}..HEAD", "--pretty=format:%s", "--no-merges"
+            ).splitlines()
+            if s.strip()
+        ]
+        raw = release_decision._git(
+            "log",
+            f"{last_tag}..HEAD",
+            f"--pretty=format:{release_decision._RECORD}%s",
+            "--name-only",
+            "--no-merges",
+        )
+        self.assertEqual(
+            [c.subject for c in release_decision._parse_log(raw)],
+            plain,
+            "the --name-only walk yields different subjects from the plain "
+            "walk, so the release gate now sees a different range",
+        )
+
+
 class WorkflowWiringTests(unittest.TestCase):
     """A correct decision that nothing calls is not a fix."""
 
@@ -480,6 +707,57 @@ class WorkflowWiringTests(unittest.TestCase):
             "the inline bash bump logic is still present, so there are two "
             "deciders and the pipeline consults the wrong one:\n    %s"
             % "\n    ".join(stale),
+        )
+
+    def test_the_release_body_compares_two_tags(self):
+        """The published link must span the release, not start at it.
+
+        Every release so far linked `compare/<this tag>...main`. On the day it
+        is cut those are the same commit, so the link is empty; afterwards it
+        shows the work that came next. It never once showed what was in the
+        release it was attached to.
+        """
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+            encoding="utf-8"
+        )
+        compare = [
+            line.strip() for line in workflow.splitlines() if "/compare/" in line
+        ]
+        self.assertEqual(len(compare), 1, "expected exactly one comparison link")
+        link = compare[0]
+        self.assertFalse(
+            link.endswith("main"),
+            "the release body compares the new tag against main, which is the "
+            "same commit at publication time and a growing list of later work "
+            "afterwards:\n    " + link,
+        )
+        self.assertTrue(
+            "previous_tag" in link,
+            "the comparison does not start at the previous tag, so it cannot "
+            "describe this release:\n    " + link,
+        )
+
+    def test_every_output_the_workflow_reads_is_one_the_module_writes(self):
+        """A template referencing an output nobody sets renders as empty.
+
+        GitHub Actions does not fail on an unknown `steps.*.outputs.*`; it
+        substitutes nothing. So the failure mode for a typo here is a release
+        note with a hole in it, which nobody sees until it is published.
+        """
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+            encoding="utf-8"
+        )
+        source = (ROOT / "scripts" / "release_decision.py").read_text(
+            encoding="utf-8"
+        )
+        read = set(re.findall(r"steps\.bump\.outputs\.([A-Za-z_]+)", workflow))
+        written = set(re.findall(r'handle\.write\(f?"([a-z_]+)[=<]', source))
+        self.assertTrue(read, "the workflow reads no outputs from the decider")
+        missing = sorted(read - written)
+        self.assertTrue(
+            not missing,
+            "the workflow reads decider outputs that the module never writes, "
+            "so they render as empty strings: %s" % ", ".join(missing),
         )
 
 
