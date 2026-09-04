@@ -35,6 +35,11 @@ on Linux while measuring nothing about what users receive. That is not a
 hypothetical: it is exactly the confusion that produced a published digest
 belonging to a rendering rather than to a release.
 
+The blob is read from the *index*, which is the same universe
+``tracked_files()`` enumerates. Reading ``HEAD`` instead made the two
+disagree for any file staged but not yet committed -- enumerated, then
+missing -- which is a crash rather than a measurement.
+
 Known limit, stated rather than implied: ``test_the_probe_reads_the_blob``
 can only *prove* the distinction on a checkout where the two renderings
 differ. On a LF checkout the two are equal and it degrades to a tautology.
@@ -48,10 +53,21 @@ from pathlib import Path
 from test_version_literals import ROOT, is_declared_binary, tracked_files
 
 
-def blob_bytes(relative_path, ref="HEAD"):
-    """The bytes git would hand a consumer, independent of this checkout."""
+def blob_bytes(relative_path):
+    """The bytes git would hand a consumer, independent of this checkout.
+
+    Reads the *index* (``:path``) rather than ``HEAD:path``, because the
+    enumeration and the content have to come from one universe.
+    ``tracked_files()`` lists the index, so a file staged but not yet
+    committed is enumerated while ``HEAD`` has never heard of it -- the sweep
+    then dies with ``CalledProcessError`` on the one file most likely to be
+    the reason someone is running the tests.
+
+    The index is also the better answer on its own terms: it is what the next
+    commit will contain, and therefore what a consumer is about to receive.
+    """
     result = subprocess.run(
-        ["git", "cat-file", "-p", f"{ref}:{relative_path}"],
+        ["git", "cat-file", "-p", f":{relative_path}"],
         cwd=ROOT,
         capture_output=True,
         check=True,

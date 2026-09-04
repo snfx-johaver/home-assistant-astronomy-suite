@@ -55,10 +55,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from . import (
-    CARDS_LOCAL_URL,
-    DEEPSKY_CARDS_LOCAL_URL,
+    BUNDLE_FILENAMES,
     DEPLOYED_FILENAMES,
     deployed_dir,
+    resource_url,
 )
 from .const import INTEGRATION_VERSION
 
@@ -99,11 +99,15 @@ def describe(path: Path) -> dict[str, Any]:
     }
 
 
-def build_report(package_dir: Path, www_dir: Path) -> dict[str, Any]:
-    """The report, as a plain function of two directories.
+def build_report(
+    package_dir: Path, www_dir: Path, resource_urls: list[str]
+) -> dict[str, Any]:
+    """The report, as a plain function of two directories and the URLs.
 
     Takes paths rather than ``hass`` so it can be exercised against fixtures
-    on disk without standing up a Home Assistant.
+    on disk without standing up a Home Assistant. The URLs are passed in for
+    the same reason, and because building them is the caller's job: they are a
+    function of the served directory, not of this report.
     """
     files: dict[str, Any] = {}
     for filename in DEPLOYED_FILENAMES:
@@ -126,7 +130,7 @@ def build_report(package_dir: Path, www_dir: Path) -> dict[str, Any]:
     return {
         "integration_version": INTEGRATION_VERSION,
         "deployed_directory": str(www_dir),
-        "resource_urls": [CARDS_LOCAL_URL, DEEPSKY_CARDS_LOCAL_URL],
+        "resource_urls": resource_urls,
         "files": files,
     }
 
@@ -137,8 +141,15 @@ async def async_get_config_entry_diagnostics(
     """Return diagnostics for a config entry.
 
     The report reads several files, including a half-megabyte image, so it
-    runs in the executor rather than on the event loop.
+    runs in the executor rather than on the event loop. Building the URLs
+    hashes the served bundles, so that happens in the executor too.
     """
-    return await hass.async_add_executor_job(
-        build_report, Path(__file__).parent, deployed_dir(hass)
-    )
+
+    def report() -> dict[str, Any]:
+        return build_report(
+            Path(__file__).parent,
+            deployed_dir(hass),
+            [resource_url(hass, name) for name in BUNDLE_FILENAMES],
+        )
+
+    return await hass.async_add_executor_job(report)

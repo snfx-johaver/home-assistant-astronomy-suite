@@ -68,18 +68,18 @@ CACHE_BUST = re.compile(r"\?v=(?P<key>[^&]+)$")
 # behaviour rather than the console they happen to run under.
 CHILD_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8"}
 
-# Imports the package the way Home Assistant would and reports every
-# module-level string carrying a cache-bust. Deliberately reads the *URLs*
-# rather than any helper: the helper is an implementation detail, the URL is
-# what a browser is asked to fetch.
+# Imports the package the way Home Assistant would, deploys as setup does, and
+# reports the URL of every bundle. Deliberately reads the *URLs* rather than
+# any helper: the helper is an implementation detail, the URL is what a browser
+# is asked to fetch. Deploying first is not ceremony -- the key names the copy
+# under ``config/www``, so a probe that skipped the deploy would be reading the
+# absence of the bundles.
 PROBE = (
     "import sys, json;"
     "sys.path.insert(0, sys.argv[1]);"
-    "from harness import load_component_module;"
+    "from harness import load_component_module, deployed_urls;"
     "m = load_component_module('__init__');"
-    "print(json.dumps({n: getattr(m, n) for n in dir(m)"
-    " if not n.startswith('__') and isinstance(getattr(m, n), str)"
-    " and '?v=' in getattr(m, n)}))"
+    "print(json.dumps(deployed_urls(m)))"
 )
 
 

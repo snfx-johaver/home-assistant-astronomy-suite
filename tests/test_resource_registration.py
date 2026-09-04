@@ -52,7 +52,7 @@ import unittest
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from harness import load_component_module
+from harness import deployed_urls, load_component_module
 
 package_init = load_component_module("__init__")
 
@@ -65,15 +65,15 @@ STALE = "0.0.1"
 
 
 def bundle_urls():
-    """Every module-level Lovelace resource URL, discovered not listed."""
-    found = {}
-    for name in dir(package_init):
-        if name.startswith("__"):
-            continue
-        value = getattr(package_init, name)
-        if isinstance(value, str) and CACHE_BUST.search(value):
-            found[name] = value
-    return found
+    """Every Lovelace resource URL, discovered not listed.
+
+    A URL is no longer a module constant: it names the copy under
+    ``config/www`` -- the bytes a browser is actually served -- so obtaining
+    one means standing up a deployed install. The path and the key are the
+    same for any install deploying the same bundles, so the URLs the harness
+    computes here are the ones every fixture below will see.
+    """
+    return deployed_urls(package_init)
 
 
 def async_registrars():
@@ -96,7 +96,6 @@ def storage_registrars():
     }
 
 
-BUNDLE_URLS = bundle_urls()
 ASYNC_REGISTRARS = async_registrars()
 STORAGE_REGISTRARS = storage_registrars()
 
@@ -200,6 +199,24 @@ class FakeHass:
         return func(*args)
 
 
+def deployed_hass(root, resources=None, shape="dataclass"):
+    """A ``hass`` whose ``www/`` has been populated, exactly as setup does.
+
+    ``async_setup_entry`` deploys before it registers, so a fixture that
+    registers against an empty ``www/`` exercises a state the integration
+    never reaches. That distinction used to be cosmetic and is now
+    load-bearing: the resource key is taken from the served bytes, so an
+    undeployed fixture measures the absence of the bundles rather than the
+    behaviour of the registrars.
+    """
+    hass = FakeHass(root, resources, shape=shape)
+    package_init._deploy_cards_to_www(hass)
+    return hass
+
+
+BUNDLE_URLS = bundle_urls()
+
+
 class DiscoveryTests(unittest.TestCase):
     """Non-vacuity: every loop below must have something to iterate."""
 
@@ -249,7 +266,7 @@ class ApiPathTests(unittest.TestCase):
         scratch = tempfile.TemporaryDirectory()
         self.addCleanup(scratch.cleanup)
         resources = FakeResources([stale(url) for url in order])
-        hass = FakeHass(scratch.name, resources, shape=shape)
+        hass = deployed_hass(scratch.name, resources, shape=shape)
         for registrar in registrars:
             asyncio.run(registrar(hass))
         fell_back = (Path(scratch.name) / ".storage" / "lovelace_resources").exists()
@@ -393,7 +410,7 @@ class StoragePathTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        hass = FakeHass(scratch.name)  # no lovelace data -> storage fallback
+        hass = deployed_hass(scratch.name)  # no lovelace data -> storage fallback
         for registrar in registrars:
             asyncio.run(registrar(hass))
         return [i["url"] for i in json.loads(path.read_text(encoding="utf-8"))["data"]["items"]]
@@ -452,7 +469,7 @@ class StoragePathTests(unittest.TestCase):
             json.dumps({"data": {"items": [{"url": foreign, "type": "module", "id": "x"}]}}),
             encoding="utf-8",
         )
-        hass = FakeHass(scratch.name)
+        hass = deployed_hass(scratch.name)
         for name in sorted(ASYNC_REGISTRARS):
             asyncio.run(ASYNC_REGISTRARS[name](hass))
         urls = [i["url"] for i in json.loads(path.read_text(encoding="utf-8"))["data"]["items"]]

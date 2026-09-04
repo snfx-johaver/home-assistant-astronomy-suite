@@ -13,7 +13,10 @@ real ``const.py`` without executing the package ``__init__.py``.
 """
 
 import importlib.util
+import atexit
+import shutil
 import sys
+import tempfile
 import types
 from pathlib import Path
 
@@ -214,3 +217,47 @@ def load_component_module(module_name, *, subpackage=None):
     if parent == PACKAGE_ALIAS and module_name == "__init__":
         _populate_package_alias(module)
     return module
+
+
+class _MinimalConfig:
+    def __init__(self, root):
+        self.root = Path(root)
+
+    def path(self, *parts):
+        return str(self.root.joinpath(*parts))
+
+
+class MinimalHass:
+    """Just enough ``hass`` to deploy the shipped files and build their URLs.
+
+    ``config.path`` is the only Home Assistant surface either of those touches,
+    so this stub stays deliberately this small; a richer one would be a second
+    account of their requirements, free to drift from the first.
+    """
+
+    def __init__(self, root):
+        self.config = _MinimalConfig(root)
+        self.data = {}
+
+    async def async_add_executor_job(self, func, *args):
+        return func(*args)
+
+
+def deployed_urls(module, root=None):
+    """Every bundle URL the component would register, keyed by filename.
+
+    A resource URL is a function of ``hass`` rather than a module constant,
+    because its cache-bust names the copy under ``config/www`` -- the bytes a
+    browser is actually served. Obtaining one therefore means deploying first,
+    which is also the order ``async_setup_entry`` runs in.
+
+    Creates and cleans up a scratch directory when ``root`` is omitted.
+    """
+    if root is None:
+        root = tempfile.mkdtemp()
+        atexit.register(shutil.rmtree, root, True)
+    hass = MinimalHass(root)
+    module._deploy_cards_to_www(hass)
+    return {
+        name: module.resource_url(hass, name) for name in module.BUNDLE_FILENAMES
+    }
