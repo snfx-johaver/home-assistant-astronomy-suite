@@ -98,7 +98,7 @@ jobs:
         run: |
           git add -A
           git diff --cached --quiet && echo "No changes to commit" || git commit -m "release: v${{ steps.version.outputs.version }} [skip ci]"
-          git tag "v${{ steps.version.outputs.version }}"
+          git tag -f "v${{ steps.version.outputs.version }}"
           git push
           git push --tags
 
