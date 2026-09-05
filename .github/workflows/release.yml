@@ -97,7 +97,7 @@ jobs:
         if: steps.bump.outputs.skip != 'true'
         run: |
           git add -A
-          git commit -m "release: v${{ steps.version.outputs.version }} [skip ci]"
+          git diff --cached --quiet && echo "No changes to commit" || git commit -m "release: v${{ steps.version.outputs.version }} [skip ci]"
           git tag "v${{ steps.version.outputs.version }}"
           git push
           git push --tags
