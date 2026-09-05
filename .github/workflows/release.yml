@@ -14,6 +14,28 @@ env:
 permissions:
   contents: write
 
+# One release at a time. Every step below is a read-modify-write of shared
+# remote state: `bump_version.py` reads `version.json` and writes the successor,
+# then the push step runs `git commit --amend`, `git tag -f` and
+# `git push --tags --force`. None of that is atomic, and the force flags mean a
+# loser does not fail -- it silently overwrites.
+#
+# Two pushes to `main` in quick succession is the ordinary case, not a rare one:
+# merging two PRs back to back is enough. Both runs read the same
+# `version.json`, both compute the same successor, and both force-push that one
+# tag. The tag ends up on whichever commit finished last, so a published release
+# can point at a tree that never contained the change its notes describe --
+# and nothing anywhere reports an error.
+#
+# `cancel-in-progress: false` is the load-bearing half. Cancelling would abort a
+# run that may already have pushed its tag but not yet created its release,
+# leaving a tag with no release behind it. Queue instead: the second run then
+# re-reads `version.json` *after* the first has written it, and computes the
+# next version rather than colliding on the same one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
