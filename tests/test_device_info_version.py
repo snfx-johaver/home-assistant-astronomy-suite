@@ -34,8 +34,8 @@ The platforms are *discovered*, not listed. The failure mode being guarded
 against is precisely a module somebody forgot about, so a hand-written list
 would have the same blind spot as the defect.
 
-A note on running the perturbation control
-------------------------------------------
+The perturbation control, which this module runs
+------------------------------------------------
 Perturbing ``manifest.json`` alone does **not** turn this suite red, and that
 is correct rather than a gap: once the version is single-sourced the platforms
 follow the manifest, so bumping it is a release, not a defect. To exercise the
@@ -46,17 +46,39 @@ bump the manifest. In that configuration
 values do agree) while ``test_every_platform_reports_the_manifest_version``
 fails, which is the whole reason both assertions exist.
 
+That paragraph used to be the whole of it -- a description of a control nobody
+ran. A described control is worth nothing: it makes exactly the same claim
+whether or not the assertion it describes still works, and an assertion that
+cannot fail is indistinguishable from one that passes. ``PerturbationControl``
+below now *performs* it, on a throwaway copy of the component, in a subprocess.
+
+Both halves are asserted, because either alone would be satisfiable by a broken
+instrument. A run that reported failure for any reason at all -- a syntax error
+in the rewritten copy, a missing fixture, an import that never resolved -- would
+satisfy "the manifest assertion fails" while proving nothing about the
+assertion. So the control requires the *specific* pairing the design predicts:
+the agreement test green and the manifest test red, in the same run, over a full
+complement of discovered platforms. Only that combination distinguishes a
+working assertion from a broken harness.
+
 ``INTEGRATION_VERSION`` is also resolved once at ``const`` import and never
 re-read, so a manifest-perturbation test written against the *fixed* code is
 order-dependent: perturb before ``const`` is imported and the platforms follow
 the new value, perturb after and they keep the old one and go red. That is
 correct for production -- editing a manifest under a running Home Assistant
 should not retroactively change what entities report -- but it will look like
-flakiness to anyone who writes such a test without knowing.
+flakiness to anyone who writes such a test without knowing. The subprocess
+sidesteps it entirely: the perturbed tree is complete before any component
+module is imported, so there is no ordering to get wrong.
 """
 
 import ast
 import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -348,6 +370,169 @@ class DeviceIdentityTests(unittest.TestCase):
                 claims = {label: payload.get(field) for label, payload in PAYLOADS}
                 distinct = {repr(value) for value in claims.values()}
                 self.assertEqual(len(distinct), 1, f"{field} differs: {claims}")
+
+
+def _perturbed_component(destination):
+    """Rebuild the pre-fix defect in a copy: hand-synced literals, stale.
+
+    Two edits, in this order, because each alone is insufficient:
+
+    1. Replace every ``INTEGRATION_VERSION`` reference in a ``sw_version``
+       position with a *literal* holding the manifest's current value. This
+       un-does the single-sourcing -- the platforms stop tracking the manifest
+       and start carrying their own copies, which is precisely the pre-fix
+       arrangement.
+    2. Bump ``manifest.json``. Now the literals are stale.
+
+    Doing only (1) leaves the literals correct, so nothing goes red and the
+    control would conclude the assertion works when it had never been tested.
+    Doing only (2) leaves the platforms following the manifest, so they move
+    with it and again nothing goes red. The defect exists only in the
+    conjunction, which is exactly why it survived in production: each half
+    looks harmless.
+
+    Returns the stale version the literals were pinned to, so the caller can
+    assert the failure names it rather than accepting any failure at all.
+    """
+    shutil.copytree(COMPONENT_DIR, destination, dirs_exist_ok=True)
+
+    stale = json.loads((destination / "manifest.json").read_text(encoding="utf-8"))["version"]
+
+    rewritten = 0
+    for path in sorted(destination.rglob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        if '"sw_version": INTEGRATION_VERSION' not in source:
+            continue
+        rewritten += source.count('"sw_version": INTEGRATION_VERSION')
+        path.write_text(
+            source.replace(
+                '"sw_version": INTEGRATION_VERSION',
+                f'"sw_version": "{stale}"',
+            ),
+            encoding="utf-8",
+        )
+
+    if rewritten < KNOWN_PAYLOAD_COUNT:
+        # A rewrite that matched nothing would produce an unperturbed copy, and
+        # an unperturbed copy passes -- which the control would read as "the
+        # assertion did not fire". That is the broken-instrument reading of a
+        # green result, so refuse it here where the cause is still visible.
+        raise AssertionError(
+            f"perturbation rewrote only {rewritten} sw_version sites; "
+            f"expected at least {KNOWN_PAYLOAD_COUNT}. The source spelling "
+            "has changed and this control is no longer perturbing anything."
+        )
+
+    manifest_path = destination / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    major, minor, patch = (int(part) for part in stale.split("."))
+    manifest["version"] = f"{major}.{minor}.{patch + 1}"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    return stale, manifest["version"]
+
+
+class PerturbationControl(unittest.TestCase):
+    """Run the counterfactual this module used to only describe.
+
+    The assertions here are about *this test file*, not about the component:
+    they establish that ``test_every_platform_reports_the_manifest_version``
+    can still fail. Nothing else in the suite can establish that, because the
+    tree it runs against does not have the defect.
+    """
+
+    def test_hand_synced_literals_are_caught_by_the_manifest_comparison(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            component = Path(tmp) / "nasa_astronomy"
+            stale, bumped = _perturbed_component(component)
+
+            environment = dict(os.environ)
+            environment["NASA_ASTRONOMY_COMPONENT_DIR"] = str(component)
+            # `manifest_version()` in the child must read the perturbed
+            # manifest, and the modules it imports must come from the perturbed
+            # tree. Both follow from the one variable, so there is no way for
+            # the child to half-perturb itself.
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "unittest",
+                    "-v",
+                    "test_device_info_version.DeviceInfoVersionTests",
+                ],
+                cwd=str(Path(__file__).resolve().parent),
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+
+            report = completed.stderr
+
+            # The pairing is the whole assertion. A child that failed for an
+            # unrelated reason -- a syntax error in the rewritten copy, an
+            # import that never resolved, a fixture that vanished -- would
+            # produce a red run that says nothing about the assertion under
+            # test. Requiring one specific test red *and* another specific test
+            # green in the same run excludes that: a broken harness cannot
+            # selectively pass the agreement check.
+            self.assertIn(
+                "test_all_platforms_report_the_same_version",
+                report,
+                f"the child did not run the expected tests:\n{report}",
+            )
+            # `unittest -v` prints the test id, then the docstring summary on
+            # the FOLLOWING line, then the verdict -- so the verdict is not on
+            # the name's line and a single-line regex silently never matches.
+            # `[\s\S]*?` is a non-greedy any-character span including newlines;
+            # `.` would not cross the line break even with DOTALL off, which is
+            # exactly the trap. Anchoring on the next test id keeps the span
+            # from running past this result into a later one.
+            self.assertRegex(
+                report,
+                r"test_all_platforms_report_the_same_version[\s\S]*?\.\.\. ok",
+                "ten identically stale literals must still AGREE -- if this "
+                "went red the perturbation broke something other than the "
+                f"version, and the control proves nothing:\n{report}",
+            )
+            self.assertRegex(
+                report,
+                r"test_every_platform_reports_the_manifest_version[\s\S]*?\.\.\. FAIL",
+                "the manifest comparison did NOT catch hand-synced stale "
+                f"literals; it is no longer load-bearing:\n{report}",
+            )
+            # Name the values, so the failure is the drift this guards against
+            # and not some other difference that happens to be red.
+            self.assertIn(bumped, report, f"failure did not cite the manifest version:\n{report}")
+            self.assertIn(stale, report, f"failure did not cite the stale literal:\n{report}")
+
+    def test_the_unperturbed_tree_passes_the_same_child_run(self):
+        """Must-find control for the control.
+
+        The test above reads a FAIL out of a subprocess. A subprocess that
+        failed *unconditionally* -- wrong cwd, unimportable module, missing
+        harness -- would satisfy it while testing nothing, and would look
+        identical in the log. Run the same child against the untouched tree and
+        require green. Together the two pin the child from both sides: red only
+        when the defect is present, green when it is not.
+        """
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "unittest",
+                "test_device_info_version.DeviceInfoVersionTests",
+            ],
+            cwd=str(Path(__file__).resolve().parent),
+            env={k: v for k, v in os.environ.items() if k != "NASA_ASTRONOMY_COMPONENT_DIR"},
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            "the unperturbed tree must pass; if this is red the subprocess "
+            f"fails for reasons unrelated to the perturbation:\n{completed.stderr}",
+        )
 
 
 if __name__ == "__main__":
