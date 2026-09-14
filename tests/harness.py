@@ -14,6 +14,7 @@ real ``const.py`` without executing the package ``__init__.py``.
 
 import importlib.util
 import atexit
+import os
 import shutil
 import sys
 import tempfile
@@ -21,7 +22,25 @@ import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-COMPONENT_DIR = ROOT / "custom_components" / "nasa_astronomy"
+
+# The component tree under test. Overridable so a test can point the loader at
+# a *perturbed copy* of the component and observe what the suite does against
+# it. That is the only way to run a counterfactual control here: the defects
+# these tests guard against are ones the current tree does not have, so the
+# only way to show an assertion can still catch them is to rebuild the defect
+# somewhere safe and watch the assertion go red.
+#
+# It is an environment variable rather than an argument because the module
+# graph is resolved at import time, through `from .const import ...`, so the
+# choice has to be made before any component module is imported -- which in
+# practice means before this module's importers run, i.e. in a subprocess.
+# Defaults to the real tree, so nothing changes for an ordinary run.
+COMPONENT_DIR = Path(
+    os.environ.get(
+        "NASA_ASTRONOMY_COMPONENT_DIR",
+        ROOT / "custom_components" / "nasa_astronomy",
+    )
+).resolve()
 
 PACKAGE_ALIAS = "nasa_astronomy_under_test"
 

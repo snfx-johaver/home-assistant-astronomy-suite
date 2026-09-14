@@ -9,6 +9,8 @@ Consumes existing ephemeris sensors for planet/sun/moon overlays.
 """
 from __future__ import annotations
 
+from .const import DOMAIN, INTEGRATION_VERSION
+
 import logging
 import math
 from datetime import datetime, timedelta, timezone
@@ -26,8 +28,6 @@ from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
 )
-
-from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -380,7 +380,7 @@ class DeepSkySensor(CoordinatorEntity, SensorEntity):
             "name": "Astronomy Space Suite",
             "manufacturer": "NASA",
             "model": "Open APIs",
-            "sw_version": "1.8.1",
+            "sw_version": INTEGRATION_VERSION,
         }
         self.entity_id = f"sensor.nasa_astronomy_deepsky_{obj_key}_{sensor_key}"
 
@@ -430,7 +430,7 @@ class DeepSkyBestTonightSensor(CoordinatorEntity, SensorEntity):
             "name": "Astronomy Space Suite",
             "manufacturer": "NASA",
             "model": "Open APIs",
-            "sw_version": "1.8.1",
+            "sw_version": INTEGRATION_VERSION,
         }
         self.entity_id = "sensor.nasa_astronomy_deepsky_best_tonight"
 

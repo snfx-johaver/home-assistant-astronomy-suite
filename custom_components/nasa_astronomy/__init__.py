@@ -12,14 +12,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import DOMAIN, CONF_UPDATE_INTERVAL, CONF_ROCKET_API_KEY
+from .const import DOMAIN, CONF_UPDATE_INTERVAL, CONF_ROCKET_API_KEY, INTEGRATION_VERSION
 from .coordinator import NasaDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.CAMERA]
 
-VERSION = "1.11.0"
+VERSION = INTEGRATION_VERSION
 CARDS_FILENAME = "astronomy-cards.js"
 DEEPSKY_CARDS_FILENAME = "deepsky-cards.js"
 CARDS_LOCAL_URL = f"/local/community/astronomy-cards/astronomy-cards.js?v={VERSION}"
