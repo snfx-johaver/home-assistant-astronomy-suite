@@ -176,6 +176,13 @@ NOT_SHIPPING: dict[str, str] = {
         "unsupported since HACS 2.0, which always renders README.md. Kept in "
         "the tree for older forks; rendered to nobody by this repository."
     ),
+    "icon.png": (
+        "referenced by nothing. The brand images HACS and Home Assistant use "
+        "are inside the package, at custom_components/nasa_astronomy/brand/."
+    ),
+    "logo.png": (
+        "referenced by nothing; see icon.png. Both are repository decoration."
+    ),
     "CONTRIBUTING.md": "instructions for contributors, not for users",
     "LICENSE": "not installed by HACS into the user's config",
     ".gitignore": "git metadata",
