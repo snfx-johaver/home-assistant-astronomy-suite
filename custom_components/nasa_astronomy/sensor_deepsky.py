@@ -80,7 +80,11 @@ DSO_OBJECT_SENSORS = [
 
 def _julian_date(dt: datetime) -> float:
     """Compute Julian Date from a datetime (converts to UTC first)."""
-    utc = dt.astimezone(timezone.utc)
+    utc = (
+        dt.replace(tzinfo=timezone.utc)
+        if dt.tzinfo is None
+        else dt.astimezone(timezone.utc)
+    )
     a = (14 - utc.month) // 12
     y = utc.year + 4800 - a
     m = utc.month + 12 * a - 3

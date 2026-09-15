@@ -112,6 +112,12 @@ VERSION_SHAPED = re.compile(r"(?<![\d.])\d+\.\d+\.\d+(?![\d.])")
 # somebody else's package rather than a claim about this one.
 DEPENDENCY_RANGE = re.compile(r"[\^~]|>=?|<=?")
 
+# A version embedded in a third-party CDN package URL is a pinned dependency,
+# not this integration's release version.
+THIRD_PARTY_CDN_VERSION = re.compile(
+    r"https://[^\"']+@(?P<version>\d+\.\d+\.\d+)(?:/|[\"'])"
+)
+
 # Files the sweep is allowed not to read, by declaration rather than by
 # accident. Skipping on decode failure instead would make a corrupted or
 # missing text file indistinguishable from an image.
@@ -207,6 +213,11 @@ def version_literals_in(relative_path):
         for match in VERSION_SHAPED.finditer(line):
             prefix = line[max(0, match.start() - 2):match.start()]
             if DEPENDENCY_RANGE.search(prefix):
+                continue
+            if any(
+                dependency.group("version") == match.group(0)
+                for dependency in THIRD_PARTY_CDN_VERSION.finditer(line)
+            ):
                 continue
             yield lineno, match.group(0), line.strip()
 

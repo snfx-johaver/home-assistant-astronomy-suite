@@ -227,9 +227,11 @@ class ReferencedAssetTests(unittest.TestCase):
             % (len(missing), ", ".join(sorted(missing))),
         )
 
-    def test_the_scan_found_a_reference(self):
-        """Non-vacuity: an empty scan is a subset of anything."""
-        self.assertGreaterEqual(len(self.referenced()), 1)
+    def test_the_scan_examines_the_shipped_bundles(self):
+        """Non-vacuity: the asset scan must inspect real bundle files."""
+        component_dir = Path(package_init.__file__).parent
+        scanned = sorted(path.name for path in component_dir.glob("*.js"))
+        self.assertEqual(scanned, sorted(package_init.BUNDLE_FILENAMES))
 
 
 class WiringTests(unittest.TestCase):
