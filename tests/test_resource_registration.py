@@ -112,30 +112,57 @@ def stale(url):
 class FakeResources:
     """Stands in for Home Assistant's Lovelace resource collection."""
 
-    def __init__(self, urls):
-        self.items = [
+    def __init__(self, urls=(), *, items=None, lazy=False):
+        initial = items or [
             {"id": f"id-{index}", "url": url, "type": "module"}
             for index, url in enumerate(urls)
         ]
+        self._stored_items = [dict(item) for item in initial]
+        self.items = [] if lazy else [dict(item) for item in initial]
+        self.loaded = not lazy
+        self.get_info_calls = 0
         self.updated = []
         self.created = []
+        self.deleted = []
+
+    async def async_get_info(self):
+        """Mirror ResourceStorageCollection's public lazy-load entry point."""
+        self.get_info_calls += 1
+        if not self.loaded:
+            self.items = [dict(item) for item in self._stored_items]
+            self.loaded = True
+        return {"resources": len(self.items)}
 
     def async_items(self):
         return list(self.items)
 
     async def async_update_item(self, item_id, updates):
+        await self.async_get_info()
         for item in self.items:
             if item["id"] == item_id:
                 self.updated.append((item_id, item["url"], updates.get("url")))
-                item.update({k: v for k, v in updates.items() if k == "url"})
+                if "url" in updates:
+                    item["url"] = updates["url"]
+                if "res_type" in updates:
+                    item["type"] = updates["res_type"]
                 return
         raise KeyError(item_id)
 
     async def async_create_item(self, item):
+        await self.async_get_info()
         new = {"id": f"id-new-{len(self.created)}", **item}
         self.items.append(new)
         self.created.append(new["url"])
         return new
+
+    async def async_delete_item(self, item_id):
+        await self.async_get_info()
+        for index, item in enumerate(self.items):
+            if item["id"] == item_id:
+                self.deleted.append(item_id)
+                self.items.pop(index)
+                return
+        raise KeyError(item_id)
 
     def urls(self):
         return [item["url"] for item in self.items]
@@ -379,6 +406,106 @@ class ApiPathTests(unittest.TestCase):
         )
 
 
+class DuplicateMigrationTests(unittest.TestCase):
+    """Regression coverage for issue #54 and HA's lazy resource storage."""
+
+    def _run_registrars(self, resources):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        hass = deployed_hass(scratch.name, resources)
+        asyncio.run(package_init._async_register_cards_resource(hass))
+        asyncio.run(package_init._async_register_deepsky_cards_resource(hass))
+        return resources
+
+    def _duplicate_items(self):
+        current = {filename_of(url): url for url in BUNDLE_URLS.values()}
+        astronomy = current["astronomy-cards.js"]
+        deepsky = current["deepsky-cards.js"]
+        return [
+            {
+                "id": "astronomy-original",
+                "url": stale(astronomy),
+                "type": "javascript",
+            },
+            {
+                "id": "unrelated-same-filename",
+                "url": "/local/community/another-integration/astronomy-cards.js?v=old",
+                "type": "module",
+            },
+            {
+                "id": "astronomy-duplicate",
+                "url": astronomy,
+                "type": "module",
+            },
+            {
+                "id": "near-match",
+                "url": (
+                    "/local/community/astronomy-cards/"
+                    "deepsky-cards.js.backup?v=old"
+                ),
+                "type": "module",
+            },
+            {
+                "id": "deepsky-original",
+                "url": stale(deepsky),
+                "type": "module",
+            },
+            {
+                "id": "deepsky-duplicate",
+                "url": deepsky,
+                "type": "module",
+            },
+        ]
+
+    def test_lazy_collection_is_loaded_before_duplicate_migration(self):
+        resources = self._run_registrars(
+            FakeResources(items=self._duplicate_items(), lazy=True)
+        )
+
+        self.assertGreater(resources.get_info_calls, 0)
+        self.assertEqual(resources.created, [])
+        self.assertEqual(
+            resources.deleted,
+            ["astronomy-duplicate", "deepsky-duplicate"],
+        )
+        by_id = {item["id"]: item for item in resources.items}
+        self.assertEqual(
+            by_id["astronomy-original"]["url"],
+            BUNDLE_URLS["astronomy-cards.js"],
+        )
+        self.assertEqual(by_id["astronomy-original"]["type"], "module")
+        self.assertEqual(
+            by_id["deepsky-original"]["url"],
+            BUNDLE_URLS["deepsky-cards.js"],
+        )
+        self.assertIn("unrelated-same-filename", by_id)
+        self.assertIn("near-match", by_id)
+
+    def test_repeated_restart_is_idempotent_and_preserves_resource_ids(self):
+        first = self._run_registrars(
+            FakeResources(items=self._duplicate_items(), lazy=True)
+        )
+        after_first = [dict(item) for item in first.items]
+
+        second = self._run_registrars(
+            FakeResources(items=after_first, lazy=True)
+        )
+
+        self.assertEqual(second.items, after_first)
+        self.assertEqual(second.created, [])
+        self.assertEqual(second.updated, [])
+        self.assertEqual(second.deleted, [])
+        self.assertEqual(
+            {item["id"] for item in second.items},
+            {
+                "astronomy-original",
+                "deepsky-original",
+                "unrelated-same-filename",
+                "near-match",
+            },
+        )
+
+
 class StoragePathTests(unittest.TestCase):
     """The ``.storage/lovelace_resources`` fallback, which had the same test.
 
@@ -474,6 +601,69 @@ class StoragePathTests(unittest.TestCase):
             asyncio.run(ASYNC_REGISTRARS[name](hass))
         urls = [i["url"] for i in json.loads(path.read_text(encoding="utf-8"))["data"]["items"]]
         self.assertIn(foreign, urls)
+
+    def test_duplicates_are_removed_by_exact_path_and_primary_ids_survive(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        storage_dir = Path(scratch.name) / ".storage"
+        storage_dir.mkdir(parents=True)
+        path = storage_dir / "lovelace_resources"
+        current = {filename_of(url): url for url in BUNDLE_URLS.values()}
+        items = [
+            {
+                "id": "astronomy-original",
+                "url": stale(current["astronomy-cards.js"]),
+                "type": "module",
+            },
+            {
+                "id": "astronomy-duplicate",
+                "url": current["astronomy-cards.js"],
+                "type": "module",
+            },
+            {
+                "id": "deepsky-original",
+                "url": stale(current["deepsky-cards.js"]),
+                "type": "module",
+            },
+            {
+                "id": "deepsky-duplicate",
+                "url": current["deepsky-cards.js"],
+                "type": "module",
+            },
+            {
+                "id": "unrelated",
+                "url": "/local/elsewhere/astronomy-cards.js?v=old",
+                "type": "module",
+            },
+        ]
+        path.write_text(
+            json.dumps({"data": {"items": items}}),
+            encoding="utf-8",
+        )
+        hass = deployed_hass(scratch.name)
+
+        for _ in range(2):
+            asyncio.run(package_init._async_register_cards_resource(hass))
+            asyncio.run(package_init._async_register_deepsky_cards_resource(hass))
+
+        stored = json.loads(path.read_text(encoding="utf-8"))["data"]["items"]
+        by_id = {item["id"]: item for item in stored}
+        self.assertEqual(
+            set(by_id),
+            {"astronomy-original", "deepsky-original", "unrelated"},
+        )
+        self.assertEqual(
+            by_id["astronomy-original"]["url"],
+            current["astronomy-cards.js"],
+        )
+        self.assertEqual(
+            by_id["deepsky-original"]["url"],
+            current["deepsky-cards.js"],
+        )
+        self.assertEqual(
+            by_id["unrelated"]["url"],
+            "/local/elsewhere/astronomy-cards.js?v=old",
+        )
 
 
 if __name__ == "__main__":

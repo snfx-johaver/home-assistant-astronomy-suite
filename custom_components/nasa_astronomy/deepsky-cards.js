@@ -875,13 +875,17 @@ customElements.get("dso-dome-card") || customElements.define("dso-dome-card", Ds
 customElements.get("dso-dome-card-editor") || customElements.define("dso-dome-card-editor", DsoDomeCardEditor);
 
 window.customCards = window.customCards || [];
-window.customCards.push(
+for (const card of [
   { type: "night-sky-highlights-2-card", name: "ASS Night Sky Highlights 2", description: "Enhanced night sky highlights with visibility scores.", preview: true },
   { type: "dso-tonight-table-card", name: "ASS Deep Sky Tonight", description: "Table of best deep-sky objects visible tonight.", preview: true },
   { type: "dso-yard-map-card", name: "ASS Sky Map", description: "Top-down polar projection of visible objects.", preview: true },
   { type: "dso-panorama-card", name: "ASS Horizon Panorama", description: "360° horizon strip showing object positions.", preview: true },
   { type: "dso-dome-card", name: "ASS 3D Sky Dome", description: "Interactive 3D dome view — drag to rotate.", preview: true },
-);
+]) {
+  if (!window.customCards.some((registered) => registered.type === card.type)) {
+    window.customCards.push(card);
+  }
+}
 
 console.info(
   `%c  DEEPSKY-CARDS  %c  v${DEEPSKY_VERSION}  `,
