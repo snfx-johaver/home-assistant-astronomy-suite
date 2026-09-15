@@ -13,6 +13,8 @@ A complete astronomy dashboard suite for Home Assistant powered by NASA APIs and
 - **Earth Observation** — EPIC, GOES-16, SDO, SOHO camera feeds
 - **Sun Horizon Arc** — Sun position with Dawn/Noon/Dusk labels
 - **Lunar Phase** — Moon phase visualization
+- **Night Sky Highlights** — Planet and observing-condition summaries
+- **Deep-Sky Toolkit** — Tonight table, Sky Map, panorama, and interactive 3D dome
 
 ## Custom Cards Included
 
@@ -26,6 +28,12 @@ All cards are bundled and auto-deployed:
 - custom:earth-observation-card
 - custom:astro-horizon-card
 - custom:astro-lunar-card
+- custom:night-sky-highlights-card
+- custom:night-sky-highlights-2-card
+- custom:dso-tonight-table-card
+- custom:dso-yard-map-card
+- custom:dso-panorama-card
+- custom:dso-dome-card
 
 The current appearance remains the default. Add `glass_mode: true` to any
 Astronomy Space Suite card for an optional translucent glass treatment.
@@ -34,7 +42,7 @@ Astronomy Space Suite card for an optional translucent glass treatment.
 
 - Home Assistant 2024.1+
 - NASA API key (free at https://api.nasa.gov)
-- Existing integrations: Sun, Moon
+- Optional built-in integrations for the Horizon and Lunar cards: Sun, Moon
 
 ## Installation
 
@@ -42,4 +50,5 @@ Astronomy Space Suite card for an optional translucent glass treatment.
 2. Restart Home Assistant
 3. Add integration: Settings → Devices & Services → Add Integration → "Astronomy Space Suite"
 4. Enter your NASA API key
-5. Cards and dashboard are auto-configured
+5. The card resources are auto-configured
+6. Optionally import `lovelace/astronomy-dashboard.yaml` as a separate dashboard
