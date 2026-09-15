@@ -272,6 +272,17 @@ def paths_the_release_script_writes():
     return {path for path, _count in _release_script_plan().items()}
 
 
+def _release_surface_read():
+    """Map maintained paths to the number of surfaces the release gate reads."""
+    import bump_version
+
+    counts = {}
+    for surface in bump_version.get_version_surfaces():
+        path = surface.split(":", 1)[0]
+        counts[path] = counts.get(path, 0) + 1
+    return counts
+
+
 SENTINEL = "9.9.9"
 
 
@@ -513,6 +524,20 @@ class ReleaseMaintainedVersionTests(unittest.TestCase):
                     f"{name} is classified as release-maintained but the "
                     "release script never writes it, so it will drift on the "
                     "next release",
+                )
+
+    def test_the_release_gate_reads_every_maintained_version_literal(self):
+        """The pre-bump check must cover the same surfaces the release owns."""
+        read = _release_surface_read()
+        for name in sorted(RELEASE_MAINTAINED):
+            with self.subTest(path=name):
+                expected = len(list(version_literals_in(name)))
+                self.assertEqual(
+                    read.get(name),
+                    expected,
+                    f"{name} has {expected} maintained version literal(s), but "
+                    f"the release gate reads {read.get(name, 0)}; drift there "
+                    "could be mistaken for a consistent pre-bump",
                 )
 
     def test_release_maintained_files_actually_contain_a_version(self):
