@@ -18,12 +18,22 @@ PNG = b"\x89PNG\r\n\x1a\nmeteosat"
 
 
 class FakeResponse:
-    def __init__(self, body=PNG, *, status=200, content_type="image/png"):
+    def __init__(
+        self,
+        body=PNG,
+        *,
+        status=200,
+        content_type="image/png",
+        enter_delay=0,
+    ):
         self.body = body
         self.status = status
         self.headers = {"Content-Type": content_type}
+        self.enter_delay = enter_delay
 
     async def __aenter__(self):
+        if self.enter_delay:
+            await asyncio.sleep(self.enter_delay)
         return self
 
     async def __aexit__(self, exc_type, exc, traceback):
@@ -49,7 +59,9 @@ def make_camera():
         SimpleNamespace(data={}),
         SimpleNamespace(entry_id="entry"),
     )
-    entity.hass = object()
+    entity.hass = SimpleNamespace(
+        async_create_task=lambda coro, name: asyncio.create_task(coro, name=name)
+    )
     return entity
 
 
@@ -162,6 +174,27 @@ class MeteosatCameraTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(first, PNG)
         self.assertEqual(second, PNG)
+        self.assertEqual(len(session.calls), 1)
+
+    async def test_concurrent_failed_first_requests_share_one_result(self):
+        entity = make_camera()
+        session = FakeSession(
+            [
+                FakeResponse(
+                    b"temporarily unavailable",
+                    status=503,
+                    content_type="text/plain",
+                    enter_delay=0.01,
+                )
+            ]
+        )
+        with patch.object(camera, "async_get_clientsession", return_value=session):
+            results = await asyncio.gather(
+                entity.async_camera_image(),
+                entity.async_camera_image(),
+                entity.async_camera_image(),
+            )
+        self.assertEqual(results, [None, None, None])
         self.assertEqual(len(session.calls), 1)
 
 

@@ -2822,7 +2822,16 @@ class EarthObservationCard extends HTMLElement {
           letter-spacing: 0.05em;
           white-space: nowrap;
         }
-        .earth-tab-row { display: flex; gap: 8px; }
+        .earth-tab-row {
+          display: flex;
+          gap: 8px;
+          flex: 1;
+          min-width: 0;
+          overflow-x: auto;
+          overscroll-behavior-x: contain;
+          scrollbar-width: thin;
+          padding-bottom: 2px;
+        }
         .earth-tab-divider {
           width: 1px;
           align-self: stretch;

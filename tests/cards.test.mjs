@@ -490,6 +490,16 @@ test("Earth observation uses a square black contain frame without cropping", () 
   assert.match(rule[0], /background:\s*#000/);
 });
 
+test("Earth observation tab rows scroll within narrow section cards", () => {
+  const source = readFileSync(BUNDLES.astronomy, "utf8");
+  const rule = source.match(/\.earth-tab-row \{[^}]*\}/);
+  assert.ok(rule, ".earth-tab-row rule not found");
+  assert.match(rule[0], /flex:\s*1/);
+  assert.match(rule[0], /min-width:\s*0/);
+  assert.match(rule[0], /overflow-x:\s*auto/);
+  assert.match(rule[0], /overscroll-behavior-x:\s*contain/);
+});
+
 test("Live Sun thumbnails still avoid forced cropping", () => {
   const source = readFileSync(BUNDLES.astronomy, "utf8");
   const rule = source.match(/\.live-sun-card img \{[^}]*\}/);

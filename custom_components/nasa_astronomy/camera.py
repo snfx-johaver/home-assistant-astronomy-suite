@@ -248,7 +248,7 @@ class Meteosat12EarthCamera(CoordinatorEntity[NasaDataCoordinator], Camera):
             "sw_version": INTEGRATION_VERSION,
         }
         self._cached_image: bytes | None = None
-        self._refresh_lock = asyncio.Lock()
+        self._refresh_task: asyncio.Task[bytes | None] | None = None
 
     async def async_added_to_hass(self) -> None:
         """Start the independent EUMETSAT refresh lifecycle."""
@@ -269,48 +269,59 @@ class Meteosat12EarthCamera(CoordinatorEntity[NasaDataCoordinator], Camera):
         """Refresh the cached image on the ten-minute source cadence."""
         await self._async_refresh()
 
-    async def _async_refresh(self, *, force: bool = True) -> bytes | None:
+    async def _async_refresh(self) -> bytes | None:
+        """Share one in-flight refresh and return its result to every caller."""
+        if self._refresh_task is None:
+            self._refresh_task = self.hass.async_create_task(
+                self._async_download(),
+                "Meteosat-12 image refresh",
+            )
+        task = self._refresh_task
+        try:
+            return await asyncio.shield(task)
+        finally:
+            if task.done() and self._refresh_task is task:
+                self._refresh_task = None
+
+    async def _async_download(self) -> bytes | None:
         """Download and validate one PNG, retaining the previous good image."""
-        async with self._refresh_lock:
-            if self._cached_image is not None and not force:
-                return self._cached_image
-            try:
-                session = async_get_clientsession(self.hass)
-                timeout = aiohttp.ClientTimeout(total=25)
-                async with session.get(METEOSAT12_EARTH_URL, timeout=timeout) as resp:
-                    if resp.status != 200:
-                        _LOGGER.warning(
-                            "Meteosat-12 image refresh failed with HTTP status %s",
-                            resp.status,
-                        )
-                        return self._cached_image
+        try:
+            session = async_get_clientsession(self.hass)
+            timeout = aiohttp.ClientTimeout(total=25)
+            async with session.get(METEOSAT12_EARTH_URL, timeout=timeout) as resp:
+                if resp.status != 200:
+                    _LOGGER.warning(
+                        "Meteosat-12 image refresh failed with HTTP status %s",
+                        resp.status,
+                    )
+                    return self._cached_image
 
-                    content_type = resp.headers.get("Content-Type", "").lower()
-                    image = await resp.read()
-                    if (
-                        not content_type.startswith("image/png")
-                        or not image.startswith(b"\x89PNG\r\n\x1a\n")
-                    ):
-                        _LOGGER.warning(
-                            "Meteosat-12 image refresh returned invalid PNG content "
-                            "(content type: %s, bytes: %s)",
-                            content_type or "missing",
-                            len(image),
-                        )
-                        return self._cached_image
+                content_type = resp.headers.get("Content-Type", "").lower()
+                image = await resp.read()
+                if (
+                    not content_type.startswith("image/png")
+                    or not image.startswith(b"\x89PNG\r\n\x1a\n")
+                ):
+                    _LOGGER.warning(
+                        "Meteosat-12 image refresh returned invalid PNG content "
+                        "(content type: %s, bytes: %s)",
+                        content_type or "missing",
+                        len(image),
+                    )
+                    return self._cached_image
 
-                    self._cached_image = image
-                    return image
-            except (aiohttp.ClientError, TimeoutError) as err:
-                _LOGGER.warning("Meteosat-12 image refresh failed: %s", err)
-                return self._cached_image
+                self._cached_image = image
+                return image
+        except (aiohttp.ClientError, TimeoutError) as err:
+            _LOGGER.warning("Meteosat-12 image refresh failed: %s", err)
+            return self._cached_image
 
     async def async_camera_image(
         self, width: int | None = None, height: int | None = None
     ) -> bytes | None:
         """Serve cached bytes, fetching synchronously only before the first refresh."""
         if self._cached_image is None:
-            return await self._async_refresh(force=False)
+            return await self._async_refresh()
         return self._cached_image
 
     @property
