@@ -568,6 +568,8 @@ class ISSPositionSensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
             "latitude": float(pos.get("latitude", 0)),
             "longitude": float(pos.get("longitude", 0)),
             "timestamp": iss.get("timestamp"),
+            "source": iss.get("source"),
+            "stale": iss.get("stale", False),
             "live_stream_url": ISS_STREAM_URL,
         }
 

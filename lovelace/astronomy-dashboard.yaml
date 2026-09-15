@@ -9,6 +9,13 @@
 #   - Mushroom cards (HACS)
 #   - astronomy-cards.js resource loaded
 #   - deepsky-cards.js resource loaded
+#
+# Appearance:
+#   - Current card appearance remains the default.
+#   - Set glass_mode: true on any Astronomy Space Suite custom card to opt in.
+#   - Theme authors can globally customize --astronomy-card-background,
+#     --astronomy-card-backdrop-filter, --astronomy-card-border and
+#     --astronomy-card-box-shadow.
 # ═══════════════════════════════════════════════════════════════════════════════
 title: 🔭 Astronomy Space Suite
 views: 
@@ -87,6 +94,9 @@ views:
             show_map: true
             show_trail: true
             show_stream_button: true
+            map_zoom: 0
+            trail_hours: 6
+            glass_mode: false
             type: "custom:iss-tracker-card"
           - entity_prefix: sensor.astronomy_space_suite_rocket_launch
             max_launches: 5
@@ -156,9 +166,18 @@ views:
       - type: grid
         cards: 
           - type: heading
-            heading: New section
+            heading: Deep Sky
+            heading_style: subtitle
+          - type: "custom:dso-tonight-table-card"
+            title: Deep Sky Tonight
+            entity: sensor.nasa_astronomy_deepsky_best_tonight
+            show_magnitude: true
+            sort_by: score
+            max_magnitude: 10
+            glass_mode: false
           - type: "custom:night-sky-highlights-2-card"
             title: Night Sky Highlights 2
+            glass_mode: false
             entities: 
               best_planet: sensor.best_planet_tonight
               best_dso: sensor.best_dso_tonight
@@ -246,8 +265,11 @@ views:
       - entity: sensor.astronomy_space_suite_iss_position
         title: International Space Station
         show_map: true
-        show_trail: false
+        show_trail: true
         show_stream_button: true
+        map_zoom: 0
+        trail_hours: 6
+        glass_mode: false
         type: "custom:iss-tracker-card"
       - type: "custom:mushroom-entity-card"
         entity: sensor.astronomy_space_suite_iss_position
@@ -362,6 +384,5 @@ views:
         show_elevation: true
         show_azimuth: true
         show_times: true
-
 
 

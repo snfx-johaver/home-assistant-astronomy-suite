@@ -57,7 +57,11 @@ TECHTRANSFER_URL = f"{BASE_URL}/techtransfer/patent/"
 ROCKET_LAUNCH_URL = "https://fdo.rocketlaunch.live/json/launches/next/5"
 
 # New no-auth sources
-ISS_POSITION_URL = "http://api.open-notify.org/iss-now.json"
+ISS_POSITION_URL = "https://api.wheretheiss.at/v1/satellites/25544"
+ISS_ORBIT_ELEMENTS_URL = (
+    "https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=json"
+)
+ISS_LEGACY_POSITION_URL = "http://api.open-notify.org/iss-now.json"
 ISS_STREAM_URL = "https://www.youtube.com/watch?v=86YLFOog4GM"
 EPIC_EARTH_URL = "https://epic.gsfc.nasa.gov/api/natural"
 EPIC_IMAGE_BASE_URL = "https://epic.gsfc.nasa.gov/archive/natural"

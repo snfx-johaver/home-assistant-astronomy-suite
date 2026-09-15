@@ -7,7 +7,7 @@ A complete astronomy dashboard suite for Home Assistant powered by NASA APIs and
 - **APOD** — NASA Astronomy Picture of the Day
 - **Near-Earth Objects** — Real-time NEO tracking with threat assessment
 - **Solar Activity** — CMEs, solar flares, geomagnetic storms, KP index
-- **ISS Tracker** — Live position on a real world map with livestream link
+- **ISS Tracker** — Live position and history trail on Home Assistant's native map, with last-known fallback and livestream link
 - **Solar System Orrery** — Interactive heliocentric planet visualization with zoom
 - **Rocket Launches** — Upcoming launch schedule with countdown
 - **Earth Observation** — EPIC, GOES-16, SDO, SOHO camera feeds
@@ -26,6 +26,9 @@ All cards are bundled and auto-deployed:
 - custom:earth-observation-card
 - custom:astro-horizon-card
 - custom:astro-lunar-card
+
+The current appearance remains the default. Add `glass_mode: true` to any
+Astronomy Space Suite card for an optional translucent glass treatment.
 
 ## Requirements
 

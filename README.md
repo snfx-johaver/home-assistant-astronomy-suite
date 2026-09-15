@@ -21,7 +21,7 @@ Fully isolated — does not modify any existing dashboards, integrations, or res
 | Earth Events (EONET) | NASA | API key |
 | Tech Transfer Patents | NASA | API key |
 | Rocket Launch 1–5 | RocketLaunch.Live | Optional |
-| ISS Position (lat/lon) | Open Notify | None |
+| ISS Position (lat/lon) | Where The ISS At + CelesTrak/SGP4 fallback | None |
 | Planetary KP Index (aurora) | NOAA SWPC | None |
 | **Ephemeris: Sun** (alt, az, RA, dec, twilight times) | Local calc | None |
 | **Ephemeris: Moon** (alt, az, phase, illumination) | Local calc | None |
@@ -52,7 +52,7 @@ All cards are prefixed **"ASS"** in the card picker for easy discovery.
 | `astro-lunar-card` | astronomy-cards.js | Moon phase visualization |
 | `solar-system-card` | astronomy-cards.js | Real-time heliocentric orrery (orbital mechanics) |
 | `rocket-launch-card` | astronomy-cards.js | Next 5 launches with countdown timers |
-| `iss-tracker-card` | astronomy-cards.js | SVG world map with ISS + orbital path + live stream |
+| `iss-tracker-card` | astronomy-cards.js | Native Home Assistant map with ISS history trail + live stream |
 | `earth-observation-card` | astronomy-cards.js | Multi-source satellite imagery (EPIC, GOES, SDO, SOHO) |
 | `night-sky-highlights-card` | astronomy-cards.js | Best visible planets tonight with ephemeris data |
 | `night-sky-highlights-2-card` | deepsky-cards.js | Auto-detecting highlights tile grid (planets, DSO, NEO, ISS, KP, flares) |
@@ -161,8 +161,14 @@ type: custom:iss-tracker-card
 entity: sensor.astronomy_space_suite_iss_position
 show_map: true
 show_trail: true
+trail_hours: 6
+map_zoom: 0
 show_stream_button: true
+glass_mode: false
 ```
+
+The map uses Home Assistant's native map renderer and keeps the last known
+position visible during a temporary upstream outage.
 
 ### ASS Earth Observation Card
 ```yaml
@@ -187,7 +193,19 @@ No entity configuration needed — auto-detects all Astronomy Space Suite sensor
 type: custom:dso-tonight-table-card
 title: Deep Sky Tonight
 entity: sensor.nasa_astronomy_deepsky_best_tonight
+show_magnitude: true
+sort_by: score # score, magnitude, or altitude
+max_magnitude: 10 # optional
+glass_mode: false
 ```
+
+### Optional Glass Appearance
+
+The current card appearance remains the default. Set `glass_mode: true` on any
+Astronomy Space Suite custom card to opt in per card. Themes can customize the
+global glass treatment with `--astronomy-card-background`,
+`--astronomy-card-backdrop-filter`, `--astronomy-card-border`, and
+`--astronomy-card-box-shadow`.
 
 ### ASS Sky Map (Polar Projection)
 ```yaml
@@ -250,7 +268,7 @@ home-assistant-astronomy-suite/
 | NASA EONET | eonet.gsfc.nasa.gov/api/v3 | None | 10 min |
 | NASA EPIC | epic.gsfc.nasa.gov/api/natural | None | 10 min |
 | RocketLaunch.Live | fdo.rocketlaunch.live | Optional | 10 min |
-| ISS Position | api.open-notify.org/iss-now.json | None | 10 min |
+| ISS Position | api.wheretheiss.at + cached CelesTrak/SGP4 fallback | None | 10 min |
 | NOAA SWPC KP | services.swpc.noaa.gov | None | 10 min |
 | GOES-16/18 | cdn.star.nesdis.noaa.gov | None | Camera |
 | Himawari-8 | himawari8.nict.go.jp | None | Camera |
@@ -258,6 +276,13 @@ home-assistant-astronomy-suite/
 | ESA/NASA SOHO | soho.nascom.nasa.gov | None | Camera |
 | Deep-Sky Objects | Local calculation (no API) | None | 5 min |
 | Ephemeris | Local calculation (no API) | None | Configurable |
+
+ISS positions use the HTTPS Where The ISS At endpoint first. The integration
+also refreshes CelesTrak orbital elements no more than once every two hours and
+can propagate the ISS position locally with SGP4 when the primary service is
+unavailable. Open Notify remains only as a final compatibility fallback, and
+the last valid position is retained briefly with `stale: true` if every
+provider fails.
 
 ---
 

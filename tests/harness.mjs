@@ -22,6 +22,7 @@ export const BUNDLES = {
 class StubElement {
   constructor() {
     this.shadowRoot = null;
+    this._attributes = new Set();
   }
 
   attachShadow() {
@@ -37,6 +38,17 @@ class StubElement {
   addEventListener() {}
 
   dispatchEvent() {}
+
+  toggleAttribute(name, force) {
+    const enabled = force === undefined ? !this._attributes.has(name) : Boolean(force);
+    if (enabled) this._attributes.add(name);
+    else this._attributes.delete(name);
+    return enabled;
+  }
+
+  hasAttribute(name) {
+    return this._attributes.has(name);
+  }
 
   get isConnected() {
     return false;
