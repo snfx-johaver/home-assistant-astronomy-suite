@@ -487,20 +487,9 @@ class ClassificationCompletenessTests(unittest.TestCase):
 
 
 class ChangelogTests(unittest.TestCase):
-    """The notes describe the release, so they answer the same question it did.
+    """Release notes prioritize changes that can reach a HACS installation."""
 
-    The module decides whether a change reaches a user and then writes a
-    changelog headed "What's Changed". Until now those two used different
-    rules: the decision consulted the diff, and the notes listed everything.
-    v1.11.8 shipped nothing at all and still published a two-item changelog.
-
-    These tests are written against `changelog()` as a function of commits
-    rather than against the emitted text of any one release, so they stay true
-    when the repository's history grows and cannot be satisfied by editing a
-    fixture to match the output.
-    """
-
-    HEADING = "### Also in this release"
+    MAINTENANCE = "<summary>Repository maintenance"
 
     def _ranges(self):
         """Every tag-to-tag range in the repository, plus the open one.
@@ -524,8 +513,7 @@ class ChangelogTests(unittest.TestCase):
             )
             yield f"{older}..{newer}", release_decision._parse_log(raw)
 
-    def test_every_commit_in_every_real_range_appears_exactly_once(self):
-        """Partition, not filter. Dropping a commit would be the silent skip."""
+    def test_every_non_release_commit_in_every_real_range_appears_once(self):
         checked = 0
         for label, commits in self._ranges():
             if not commits:
@@ -533,30 +521,34 @@ class ChangelogTests(unittest.TestCase):
             checked += 1
             body = changelog(commits)
             for commit in commits:
+                if release_decision._is_release_bookkeeping(commit.subject):
+                    self.assertNotIn(
+                        release_decision._subject_text(commit.subject),
+                        body,
+                        f"{label}: automated version bookkeeping leaked into notes",
+                    )
+                    continue
+                entry = f"- {release_decision._subject_text(commit.subject)}"
                 self.assertEqual(
-                    body.count(f"- {commit.subject}"),
+                    body.count(entry),
                     1,
                     f"{label}: {commit.subject!r} appears "
-                    f"{body.count(f'- {commit.subject}')} times in the notes, "
+                    f"{body.count(entry)} times in the notes, "
                     "so the changelog either dropped a commit or listed it twice",
                 )
         self.assertGreater(checked, 5, "too few non-empty ranges to be evidence")
 
-    def test_a_commit_is_filed_under_the_heading_exactly_when_it_ships_nothing(self):
-        """The notes and the gate must not be able to disagree.
-
-        This is the assertion the old renderer cannot satisfy: it had no second
-        section, so every non-shipping commit sat under a heading claiming it
-        changed something for the reader.
-        """
+    def test_only_non_shipping_commits_are_collapsed_as_maintenance(self):
         misfiled = []
         for label, commits in self._ranges():
             if not commits:
                 continue
             body = changelog(commits)
-            head, _, tail = body.partition(self.HEADING)
+            head, _, tail = body.partition(self.MAINTENANCE)
             for commit in commits:
-                entry = f"- {commit.subject}"
+                if release_decision._is_release_bookkeeping(commit.subject):
+                    continue
+                entry = f"- {release_decision._subject_text(commit.subject)}"
                 internal = entry in tail
                 if bool(ships(commit.paths)) == internal:
                     misfiled.append(
@@ -571,51 +563,66 @@ class ChangelogTests(unittest.TestCase):
             + "\n    ".join(misfiled),
         )
 
-    def test_the_heading_is_absent_when_every_commit_ships(self):
-        """An empty section is noise, and noise is what this test suite is for."""
+    def test_maintenance_details_are_absent_when_every_commit_ships(self):
         body = changelog(
             [
                 Commit("fix: a real change", ("custom_components/x/sensor.py",)),
                 Commit("feat: another", ("custom_components/x/camera.py",)),
             ]
         )
-        self.assertTrue(
-            self.HEADING not in body,
-            "the changelog printed an 'also in this release' heading with "
-            "nothing under it:\n" + body,
-        )
+        self.assertNotIn(self.MAINTENANCE, body)
 
-    def test_a_mixed_release_separates_the_two(self):
+    def test_a_mixed_release_prioritizes_the_user_fix(self):
         commits = [
             Commit("fix: the shipping one", ("custom_components/x/sensor.py",)),
-            Commit("test: the internal one", ("tests/test_x.py",)),
+            Commit("ci: the internal one", (".github/workflows/test.yml",)),
         ]
         body = changelog(commits)
-        head, sep, tail = body.partition(self.HEADING)
+        head, sep, tail = body.partition(self.MAINTENANCE)
         self.assertTrue(sep, "a mixed release produced no separation:\n" + body)
-        self.assertTrue(
-            "- fix: the shipping one" in head,
-            "the shipping commit was not listed above the heading:\n" + body,
-        )
-        self.assertTrue(
-            "- test: the internal one" in tail,
-            "the internal commit was not listed below the heading:\n" + body,
-        )
+        self.assertIn("### Fixes\n\n- The shipping one", head)
+        self.assertNotIn("internal", head.lower())
+        self.assertIn("- The internal one", tail)
 
-    def test_the_notes_name_every_subject(self):
-        """Non-vacuity. This passed before the partition existed and after it.
+    def test_user_changes_are_categorized_and_commit_syntax_is_removed(self):
+        body = changelog(
+            [
+                Commit("feat(cards): add a new view (#70)", ("README.md",)),
+                Commit("fix: repair the old view (#71)", ("README.md",)),
+                Commit("perf!: speed up rendering (#72)", ("README.md",)),
+                Commit("refactor: simplify updates (#73)", ("README.md",)),
+                Commit("docs: explain configuration (#74)", ("README.md",)),
+                Commit("chore: refresh translations (#75)", ("README.md",)),
+            ]
+        )
+        expected = (
+            "### New features\n\n- Add a new view (#70)\n"
+            "### Fixes\n\n- Repair the old view (#71)\n"
+            "### Performance\n\n- Speed up rendering (#72)\n"
+            "### Improvements\n\n- Simplify updates (#73)\n"
+            "### Documentation\n\n- Explain configuration (#74)\n"
+            "### Other user-facing changes\n\n- Refresh translations (#75)"
+        )
+        cursor = -1
+        for section in expected.split("\n### "):
+            needle = section if section.startswith("### ") else "### " + section
+            position = body.find(needle)
+            self.assertGreater(position, cursor, body)
+            cursor = position
+        self.assertNotRegex(body, r"(?m)^- (feat|fix|perf|refactor|docs|chore)[!(:]")
 
-        A reviewer looking at a uniformly red suite cannot tell a discriminating
-        test from a broken import, so at least one assertion here has to be
-        indifferent to the change being made.
-        """
-        for label, commits in self._ranges():
-            for commit in commits:
-                self.assertTrue(
-                    commit.subject in changelog(commits),
-                    f"{label}: {commit.subject!r} is missing from the notes "
-                    "entirely, which no version of this renderer should do",
-                )
+    def test_release_bookkeeping_is_omitted_from_cumulative_notes(self):
+        body = changelog(
+            [
+                Commit(
+                    "release: v1.14.1 [skip ci]",
+                    ("custom_components/nasa_astronomy/manifest.json",),
+                ),
+                Commit("fix: useful correction", ("README.md",)),
+            ]
+        )
+        self.assertNotIn("v1.14.1", body)
+        self.assertIn("- Useful correction", body)
 
     def test_v1_11_8_is_the_worked_example(self):
         """The defect, measured on the release that actually published it.
@@ -642,10 +649,37 @@ class ChangelogTests(unittest.TestCase):
             "that is no longer true the example needs replacing",
         )
         body = changelog(commits)
-        self.assertTrue(
-            self.HEADING in body,
-            "the release that shipped nothing still renders as though it did:\n"
-            + body,
+        self.assertIn("_No user-facing changes were found in this range._", body)
+        self.assertIn(self.MAINTENANCE, body)
+
+
+class ReleaseNotesRangeTests(unittest.TestCase):
+    def test_patch_release_summarizes_from_the_previous_minor_baseline(self):
+        self.assertEqual(
+            "v1.13.0",
+            release_decision.release_notes_start(
+                "v1.14.2",
+                "patch",
+                ["v1.13.0", "v1.13.1", "v1.14.0", "v1.14.1", "v1.14.2"],
+            ),
+        )
+
+    def test_minor_release_summarizes_from_the_current_minor_baseline(self):
+        self.assertEqual(
+            "v1.14.0",
+            release_decision.release_notes_start(
+                "v1.14.2",
+                "minor",
+                ["v1.13.0", "v1.14.0", "v1.14.1", "v1.14.2"],
+            ),
+        )
+
+    def test_a_missing_ideal_baseline_falls_back_to_the_previous_tag(self):
+        self.assertEqual(
+            "v1.14.2",
+            release_decision.release_notes_start(
+                "v1.14.2", "patch", ["v1.14.0", "v1.14.1", "v1.14.2"]
+            ),
         )
 
 
