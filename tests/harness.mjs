@@ -133,6 +133,21 @@ export function loadBundle(file, names) {
   return factory(...keys.map((key) => sandbox[key]));
 }
 
+/** Evaluate a bundle while retaining its sandbox for browser-API behavior tests. */
+export function loadBundleWithSandbox(file, names, configure = () => {}) {
+  const source = readFileSync(file, "utf8");
+  const sandbox = makeSandbox();
+  configure(sandbox);
+  const keys = Object.keys(sandbox);
+  const body = `${source}\n;return { ${names.join(", ")} };`;
+  // eslint-disable-next-line no-new-func
+  const factory = new Function(...keys, body);
+  return {
+    bindings: factory(...keys.map((key) => sandbox[key])),
+    sandbox,
+  };
+}
+
 /** Minimal `hass` stand-in. */
 export function makeHass(states, unitSystem = { temperature: "\u00b0C" }) {
   return { states, config: { unit_system: unitSystem } };

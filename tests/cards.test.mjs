@@ -10,7 +10,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { BUNDLES, loadBundle, makeHass, makeState, stubCanvasShadowRoot } from "./harness.mjs";
+import {
+  BUNDLES,
+  loadBundle,
+  loadBundleWithSandbox,
+  makeHass,
+  makeState,
+  stubCanvasShadowRoot,
+} from "./harness.mjs";
 
 const deepsky = loadBundle(BUNDLES.deepsky, [
   "dskObjectName",
@@ -523,6 +530,11 @@ test("BUG 6: native ISS map enables trail, fit, controls, and scale", () => {
   assert.match(source, /fit_zones:\s*true/);
   assert.match(source, /scale_ruler:\s*true/);
   assert.match(source, /label_mode:\s*"icon"/);
+  assert.match(source, /mapCard\.layout\s*=\s*"grid"/);
+  assert.match(source, /new ResizeObserver/);
+  assert.match(source, /map\?\.fitMap\?\.\(\{\s*unpause_autofit:\s*true\s*\}\)/);
+  assert.match(source, /container-type:\s*inline-size/);
+  assert.match(source, /@container\s*\(max-width:\s*360px\)/);
   assert.doesNotMatch(source, /unpkg\.com\/leaflet/);
   assert.doesNotMatch(source, /basemaps\.cartocdn\.com/);
 });
@@ -552,6 +564,86 @@ test("BUG 6: native ISS map receives cached coordinates while the entity is unav
   assert.equal(card._mapHass({}, false), card._hass);
 });
 
+test("ISS native map is responsive, refits after resize, and honors glass surfaces", async () => {
+  const frames = [];
+  let resizeCallback;
+  const styleValues = new Map();
+  const removedProperties = [];
+  const fitCalls = [];
+  const mapCard = {
+    style: {
+      setProperty: (property, value) => styleValues.set(property, value),
+      removeProperty: (property) => {
+        styleValues.delete(property);
+        removedProperties.push(property);
+      },
+    },
+    shadowRoot: {
+      querySelector: (selector) => selector === "ha-map"
+        ? { fitMap: (options) => fitCalls.push(options) }
+        : null,
+    },
+  };
+  let mapConfig;
+  const { bindings } = loadBundleWithSandbox(
+    BUNDLES.astronomy,
+    ["IssTrackerCard"],
+    (sandbox) => {
+      sandbox.ResizeObserver = class ResizeObserver {
+        constructor(callback) { resizeCallback = callback; }
+        observe() {}
+        disconnect() {}
+      };
+      sandbox.requestAnimationFrame = (callback) => {
+        frames.push(callback);
+        return frames.length;
+      };
+      sandbox.cancelAnimationFrame = () => {};
+      sandbox.loadCardHelpers = async () => ({
+        createCardElement: (config) => {
+          mapConfig = config;
+          return mapCard;
+        },
+      });
+    },
+  );
+  const container = {
+    replaceChildren(child) { this.child = child; },
+  };
+  const card = new bindings.IssTrackerCard();
+  card.shadowRoot = {
+    querySelector: (selector) => selector === "#iss-native-map" ? container : null,
+  };
+  card.setConfig({
+    entity: "sensor.astronomy_space_suite_iss_position",
+    glass_mode: true,
+  });
+  card._hass = makeHass({});
+
+  await card._renderNativeMap({ latitude: 1, longitude: 2 }, false);
+
+  assert.equal(mapCard.layout, "grid");
+  assert.equal(mapCard.style.width, "100%");
+  assert.equal(mapCard.style.height, "100%");
+  assert.equal(mapConfig.entities[0].name, "ISS");
+  assert.equal(mapConfig.entities[0].label_mode, "icon");
+  assert.equal(styleValues.get("--ha-card-background"), "transparent");
+  assert.equal(styleValues.get("--card-background-color"), "transparent");
+
+  resizeCallback();
+  while (frames.length) frames.shift()();
+  assert.deepEqual(fitCalls, [{ unpause_autofit: true }]);
+
+  card.setConfig({ entity: "sensor.astronomy_space_suite_iss_position", glass_mode: false });
+  card._styleNativeMap(mapCard);
+  assert.equal(styleValues.has("--ha-card-background"), false);
+  assert.equal(styleValues.has("--card-background-color"), false);
+  assert.deepEqual(
+    removedProperties.slice(-2),
+    ["--ha-card-background", "--card-background-color"],
+  );
+});
+
 test("glass appearance is opt-in and available to both card bundles", () => {
   for (const bundle of [BUNDLES.astronomy, BUNDLES.deepsky]) {
     const source = readFileSync(bundle, "utf8");
@@ -559,10 +651,12 @@ test("glass appearance is opt-in and available to both card bundles", () => {
     assert.match(source, /config\?\.glass_mode === true/);
     assert.match(source, /--astronomy-card-background/);
     assert.match(source, /--astronomy-card-backdrop-filter/);
+    assert.match(source, /--_astronomy-card-background:\s*var\(--astronomy-card-background,\s*transparent\)/);
   }
   const astronomySource = readFileSync(BUNDLES.astronomy, "utf8");
   assert.match(astronomySource, /contain:\s*layout style/);
   assert.match(astronomySource, /var\(--ha-card-border-width,\s*1px\)/);
+  assert.match(astronomySource, /mapCard\.style\.setProperty\(property,\s*"transparent"\)/);
 
   const astronomyCard = new astronomy.IssTrackerCard();
   astronomyCard.setConfig({ glass_mode: true });
