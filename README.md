@@ -168,7 +168,9 @@ glass_mode: false
 ```
 
 The map uses Home Assistant's native map renderer and keeps the last known
-position visible during a temporary upstream outage.
+position visible during a temporary upstream outage. Existing storage-mode
+dashboards keep their saved settings; enable `show_trail` on the live card (or
+import the bundled dashboard template) to display the history trail.
 
 ### ASS Earth Observation Card
 ```yaml

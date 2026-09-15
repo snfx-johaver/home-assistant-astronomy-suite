@@ -2408,7 +2408,8 @@ class IssTrackerCard extends HTMLElement {
       show_all: false,
       entities: [{
         entity: this._config.entity,
-        name: "ISS Position",
+        name: "ISS",
+        label_mode: "icon",
       }],
       hours_to_show: this._config.show_trail === false ? 0 : (this._config.trail_hours ?? 6),
       default_zoom: this._config.map_zoom ?? 0,
