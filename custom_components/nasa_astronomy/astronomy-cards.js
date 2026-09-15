@@ -42,10 +42,20 @@ const BASE_STYLES = `
     --astro-spacing: 12px;
     --astro-icon-size: 20px;
   }
+  :host([glass-mode]) {
+    contain: layout style;
+    --astronomy-card-background: rgba(var(--rgb-card-background-color, 32, 33, 36), 0.58);
+    --astronomy-card-backdrop-filter: blur(16px) saturate(135%);
+    --astronomy-card-border: 1px solid rgba(var(--rgb-primary-text-color, 255,255,255), 0.14);
+    --astronomy-card-box-shadow: 0 10px 32px rgba(0,0,0,0.18), 0 0 18px rgba(var(--rgb-primary-color, 3,169,244), 0.08);
+  }
   .astro-card {
-    background: ${ASTRO.surface};
+    background: var(--astronomy-card-background, ${ASTRO.surface});
     border-radius: ${ASTRO.radius};
-    box-shadow: ${ASTRO.shadow};
+    border: var(--astronomy-card-border, var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0)));
+    box-shadow: var(--astronomy-card-box-shadow, ${ASTRO.shadow});
+    backdrop-filter: var(--astronomy-card-backdrop-filter, none);
+    -webkit-backdrop-filter: var(--astronomy-card-backdrop-filter, none);
     overflow: hidden;
   }
   .astro-header {
@@ -549,10 +559,14 @@ class AstroEditorBase extends HTMLElement {
   _render() {
     this.shadowRoot.innerHTML = `
       <style>${EDITOR_STYLES}</style>
-      <div class="editor">${this._editorTemplate()}</div>
+      <div class="editor">
+        ${this._editorTemplate()}
+        <label class="switch-row"><span>Glass appearance</span><ha-switch id="glass_mode"></ha-switch></label>
+      </div>
     `;
     this._rendered = true;
     this._setupListeners();
+    this._bindSwitch("glass_mode", "glass_mode");
     this._updateValues();
   }
 
@@ -560,6 +574,7 @@ class AstroEditorBase extends HTMLElement {
     this.shadowRoot.querySelectorAll("ha-entity-picker").forEach((picker) => {
       picker.hass = this._hass;
     });
+    setSwitchValue(this.shadowRoot, "glass_mode", this._config.glass_mode === true);
     this._syncValues();
   }
 
@@ -2340,7 +2355,46 @@ class IssTrackerCard extends HTMLElement {
     };
   }
 
-  async _renderNativeMap() {
+  _mapHass(displayPos, isStale) {
+    if (!isStale) return this._hass;
+    const entityId = this._config.entity;
+    const current = getState(this._hass, entityId);
+    const currentLatitude = toNumber(current?.attributes?.latitude, NaN);
+    const currentLongitude = toNumber(current?.attributes?.longitude, NaN);
+    if (Number.isFinite(currentLatitude) && Number.isFinite(currentLongitude)) {
+      return this._hass;
+    }
+    const timestampValue = displayPos.timestamp || Date.now();
+    const timestamp = typeof timestampValue === "number"
+      ? new Date(timestampValue < 9999999999 ? timestampValue * 1000 : timestampValue).toISOString()
+      : timestampValue;
+    const fallbackKey = `${entityId}:${displayPos.latitude}:${displayPos.longitude}:${timestamp}`;
+    if (this._fallbackMapHass && this._fallbackMapKey === fallbackKey) {
+      return this._fallbackMapHass;
+    }
+    const fallbackState = {
+      ...(current || {}),
+      entity_id: entityId,
+      state: `${displayPos.latitude}, ${displayPos.longitude}`,
+      attributes: {
+        ...(current?.attributes || {}),
+        latitude: displayPos.latitude,
+        longitude: displayPos.longitude,
+        friendly_name: current?.attributes?.friendly_name || "ISS Position",
+      },
+      last_changed: current?.last_changed || timestamp,
+      last_updated: current?.last_updated || timestamp,
+    };
+    const mapHass = {
+      ...this._hass,
+      states: { ...this._hass.states, [entityId]: fallbackState },
+    };
+    this._fallbackMapHass = mapHass;
+    this._fallbackMapKey = fallbackKey;
+    return mapHass;
+  }
+
+  async _renderNativeMap(displayPos, isStale) {
     const container = this.shadowRoot.querySelector("#iss-native-map");
     if (!container) return;
     if (typeof window.loadCardHelpers !== "function") {
@@ -2364,9 +2418,10 @@ class IssTrackerCard extends HTMLElement {
       scale_ruler: true,
       aspect_ratio: "16:9",
     };
+    const mapHass = this._mapHass(displayPos, isStale);
     const serialized = JSON.stringify(mapConfig);
     if (this._nativeMap && this._nativeMapConfig === serialized) {
-      this._nativeMap.hass = this._hass;
+      this._nativeMap.hass = mapHass;
       return;
     }
 
@@ -2375,7 +2430,7 @@ class IssTrackerCard extends HTMLElement {
       const helpers = await window.loadCardHelpers();
       if (token !== this._nativeMapToken) return;
       const mapCard = helpers.createCardElement(mapConfig);
-      mapCard.hass = this._hass;
+      mapCard.hass = mapHass;
       mapCard.style.display = "block";
       mapCard.style.height = "100%";
       mapCard.style.setProperty("--ha-card-border-width", "0px");
@@ -2401,7 +2456,7 @@ class IssTrackerCard extends HTMLElement {
     }
 
     let displayPos = position;
-    let isStale = false;
+    let isStale = stateObj?.attributes?.stale === true;
     if (!posValid) {
       try {
         const cached = JSON.parse(localStorage.getItem(cacheKey) || "null");
@@ -2498,7 +2553,7 @@ class IssTrackerCard extends HTMLElement {
     if (timeEl) timeEl.textContent = isStale ? "⚠ Last known position" : `Updated ${formatDateTime(displayPos.timestamp)}`;
 
     if (this._config.show_map !== false) {
-      await this._renderNativeMap();
+      await this._renderNativeMap(displayPos, isStale);
     }
   }
 
@@ -2783,7 +2838,17 @@ class EarthObservationCard extends HTMLElement {
 }
 
 function defineElement(name, ctor) {
-  if (!customElements.get(name)) customElements.define(name, ctor);
+  if (customElements.get(name)) return;
+  if (!name.endsWith("-editor") && typeof ctor.prototype.setConfig === "function") {
+    const setConfig = ctor.prototype.setConfig;
+    ctor.prototype.setConfig = function setCardConfig(config) {
+      if (typeof this.toggleAttribute === "function") {
+        this.toggleAttribute("glass-mode", config?.glass_mode === true);
+      }
+      return setConfig.call(this, config);
+    };
+  }
+  customElements.define(name, ctor);
 }
 
 function registerCustomCard(type, name, description) {

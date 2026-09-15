@@ -15,11 +15,23 @@ const DEEPSKY_VERSION = "1.13.2";
 
 const DSK_BASE_STYLES = `
   :host { display: block; }
+  :host([glass-mode]) {
+    --astronomy-card-background: rgba(var(--rgb-card-background-color, 32, 33, 36), 0.58);
+    --astronomy-card-backdrop-filter: blur(16px) saturate(135%);
+    --astronomy-card-border: 1px solid rgba(var(--rgb-primary-text-color, 255,255,255), 0.14);
+    --astronomy-card-box-shadow: 0 10px 32px rgba(0,0,0,0.18), 0 0 18px rgba(var(--rgb-primary-color, 3,169,244), 0.08);
+  }
+  ha-card {
+    background: var(--astronomy-card-background, var(--ha-card-background, var(--card-background-color, #fff)));
+    border: var(--astronomy-card-border, var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0)));
+    box-shadow: var(--astronomy-card-box-shadow, var(--ha-card-box-shadow, none));
+    backdrop-filter: var(--astronomy-card-backdrop-filter, none);
+    -webkit-backdrop-filter: var(--astronomy-card-backdrop-filter, none);
+  }
   .dsk-card {
     padding: 16px;
     border-radius: var(--ha-card-border-radius, 12px);
-    background: var(--ha-card-background, var(--card-background-color, #fff));
-    box-shadow: var(--ha-card-box-shadow, none);
+    background: transparent;
     color: var(--primary-text-color);
     font-family: var(--paper-font-body1_-_font-family, 'Roboto', sans-serif);
   }
@@ -329,8 +341,22 @@ const DSO_TABLE_STYLES = `
 class DsoTonightTableCard extends HTMLElement {
   constructor() { super(); this.attachShadow({ mode: "open" }); this._config = {}; }
   static getConfigElement() { return document.createElement("dso-tonight-table-card-editor"); }
-  static getStubConfig() { return { title: "Deep Sky Tonight", entity: "sensor.nasa_astronomy_deepsky_best_tonight" }; }
-  setConfig(config) { this._config = { title: config.title || "Deep Sky Tonight", entity: config.entity || "sensor.nasa_astronomy_deepsky_best_tonight", ...config }; }
+  static getStubConfig() {
+    return {
+      title: "Deep Sky Tonight",
+      entity: "sensor.nasa_astronomy_deepsky_best_tonight",
+      show_magnitude: true,
+      sort_by: "score",
+    };
+  }
+  setConfig(config) {
+    this._config = {
+      ...DsoTonightTableCard.getStubConfig(),
+      ...config,
+      title: config.title || "Deep Sky Tonight",
+      entity: config.entity || "sensor.nasa_astronomy_deepsky_best_tonight",
+    };
+  }
   set hass(hass) { this._hass = hass; this._render(); }
 
   _render() {
@@ -362,24 +388,41 @@ class DsoTonightTableCard extends HTMLElement {
       const visible = visState ? visState.state === "Yes" : alt > 15;
       const transit = transitState ? transitState.state : "";
       const score = s.attributes?.score || 0;
+      const magnitude = Number(s.attributes?.magnitude);
       const type = s.attributes?.type || "";
       const name = dskObjectName(s, objKey);
       const constellation = s.attributes?.constellation || "";
 
-      if (visible) {
-        rows.push({ name, alt, az, transit, score, type, constellation });
+      const maxMagnitude = Number(this._config.max_magnitude);
+      const withinMagnitude = this._config.max_magnitude === undefined
+        || this._config.max_magnitude === null
+        || this._config.max_magnitude === ""
+        || !Number.isFinite(maxMagnitude)
+        || !Number.isFinite(magnitude)
+        || magnitude <= maxMagnitude;
+      if (visible && withinMagnitude) {
+        rows.push({ name, alt, az, transit, score, magnitude, type, constellation });
       }
     }
 
-    rows.sort((a, b) => b.score - a.score);
+    if (this._config.sort_by === "magnitude") {
+      rows.sort((a, b) => (Number.isFinite(a.magnitude) ? a.magnitude : Infinity) - (Number.isFinite(b.magnitude) ? b.magnitude : Infinity));
+    } else if (this._config.sort_by === "altitude") {
+      rows.sort((a, b) => b.alt - a.alt);
+    } else {
+      rows.sort((a, b) => b.score - a.score);
+    }
     const displayRows = rows.slice(0, 15);
 
     let tableHtml = "";
     if (displayRows.length > 0) {
-      tableHtml = `<table class="dso-table"><thead><tr><th>Object</th><th>Alt</th><th>Az</th><th>Transit</th><th>Type</th><th>Score</th></tr></thead><tbody>`;
+      tableHtml = `<table class="dso-table"><thead><tr><th>Object</th><th>Alt</th><th>Az</th><th>Transit</th>${this._config.show_magnitude === false ? "" : "<th>Mag</th>"}<th>Type</th><th>Score</th></tr></thead><tbody>`;
       for (const r of displayRows) {
         const dotColor = r.score > 70 ? "#4caf50" : r.score >= 40 ? "#ff9800" : "#f44336";
-        tableHtml += `<tr><td><strong>${r.name}</strong><br><span style="font-size:0.8em;color:var(--secondary-text-color)">${r.constellation}</span></td><td>${r.alt}°</td><td>${r.az}°</td><td>${r.transit}</td><td><span class="dso-type-badge">${r.type}</span></td><td><span class="dso-score-dot" style="background:${dotColor}"></span>${r.score}</td></tr>`;
+        const magnitudeCell = this._config.show_magnitude === false
+          ? ""
+          : `<td>${Number.isFinite(r.magnitude) ? r.magnitude.toFixed(1) : "—"}</td>`;
+        tableHtml += `<tr><td><strong>${r.name}</strong><br><span style="font-size:0.8em;color:var(--secondary-text-color)">${r.constellation}</span></td><td>${r.alt}°</td><td>${r.az}°</td><td>${r.transit}</td>${magnitudeCell}<td><span class="dso-type-badge">${r.type}</span></td><td><span class="dso-score-dot" style="background:${dotColor}"></span>${r.score}</td></tr>`;
       }
       tableHtml += `</tbody></table>`;
     } else {
@@ -396,9 +439,19 @@ class DsoTonightTableCardEditor extends HTMLElement {
   setConfig(config) { this._config = { ...config }; this._render(); }
   set hass(h) {}
   _render() {
-    this.shadowRoot.innerHTML = `<style>.ed{padding:16px}.f{margin-bottom:10px}.f label{display:block;font-size:0.8em;margin-bottom:3px;color:var(--secondary-text-color)}.f input{width:100%;padding:7px;border:1px solid var(--divider-color,#ccc);border-radius:6px;box-sizing:border-box;background:var(--card-background-color);color:var(--primary-text-color)}</style><div class="ed"><div class="f"><label>Title</label><input id="t" value="${this._config.title||"Deep Sky Tonight"}"/></div><div class="f"><label>Best Tonight Entity</label><input id="e" value="${this._config.entity||"sensor.nasa_astronomy_deepsky_best_tonight"}"/></div></div>`;
+    this.shadowRoot.innerHTML = `<style>.ed{padding:16px}.f{margin-bottom:10px}.f label{display:block;font-size:0.8em;margin-bottom:3px;color:var(--secondary-text-color)}.f input,.f select{width:100%;padding:7px;border:1px solid var(--divider-color,#ccc);border-radius:6px;box-sizing:border-box;background:var(--card-background-color);color:var(--primary-text-color)}.toggle{display:flex;align-items:center;justify-content:space-between;gap:12px}</style><div class="ed"><div class="f"><label>Title</label><input id="t" value="${dskEsc(this._config.title||"Deep Sky Tonight")}"/></div><div class="f"><label>Best Tonight Entity</label><input id="e" value="${dskEsc(this._config.entity||"sensor.nasa_astronomy_deepsky_best_tonight")}"/></div><div class="f"><label>Sort objects by</label><select id="sort"><option value="score">Visibility score</option><option value="magnitude">Magnitude (brightest first)</option><option value="altitude">Altitude (highest first)</option></select></div><div class="f"><label>Maximum magnitude (optional)</label><input id="mag" type="number" step="0.1" value="${dskEsc(this._config.max_magnitude ?? "")}"/></div><div class="f toggle"><label for="show-mag">Show magnitude column</label><input id="show-mag" type="checkbox" ${this._config.show_magnitude === false ? "" : "checked"}/></div><div class="f toggle"><label for="glass">Glass appearance</label><input id="glass" type="checkbox" ${this._config.glass_mode === true ? "checked" : ""}/></div></div>`;
+    this.shadowRoot.getElementById("sort").value = this._config.sort_by || "score";
     this.shadowRoot.getElementById("t").addEventListener("input", ev => { this._config.title = ev.target.value; this._fire(); });
     this.shadowRoot.getElementById("e").addEventListener("input", ev => { this._config.entity = ev.target.value; this._fire(); });
+    this.shadowRoot.getElementById("sort").addEventListener("change", ev => { this._config.sort_by = ev.target.value; this._fire(); });
+    this.shadowRoot.getElementById("mag").addEventListener("change", ev => {
+      const value = ev.target.value.trim();
+      if (value === "") delete this._config.max_magnitude;
+      else this._config.max_magnitude = Number(value);
+      this._fire();
+    });
+    this.shadowRoot.getElementById("show-mag").addEventListener("change", ev => { this._config.show_magnitude = ev.target.checked; this._fire(); });
+    this.shadowRoot.getElementById("glass").addEventListener("change", ev => { this._config.glass_mode = ev.target.checked; this._fire(); });
   }
   _fire() { this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: {...this._config} }, bubbles: true, composed: true })); }
 }
@@ -863,15 +916,29 @@ class DsoDomeCardEditor extends HTMLElement {
 // REGISTRATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-customElements.get("night-sky-highlights-2-card") || customElements.define("night-sky-highlights-2-card", NightSkyHighlights2Card);
+function defineDskElement(name, ctor) {
+  if (customElements.get(name)) return;
+  if (!name.endsWith("-editor") && typeof ctor.prototype.setConfig === "function") {
+    const setConfig = ctor.prototype.setConfig;
+    ctor.prototype.setConfig = function setCardConfig(config) {
+      if (typeof this.toggleAttribute === "function") {
+        this.toggleAttribute("glass-mode", config?.glass_mode === true);
+      }
+      return setConfig.call(this, config);
+    };
+  }
+  customElements.define(name, ctor);
+}
+
+defineDskElement("night-sky-highlights-2-card", NightSkyHighlights2Card);
 customElements.get("night-sky-highlights-2-card-editor") || customElements.define("night-sky-highlights-2-card-editor", NightSkyHighlights2CardEditor);
-customElements.get("dso-tonight-table-card") || customElements.define("dso-tonight-table-card", DsoTonightTableCard);
+defineDskElement("dso-tonight-table-card", DsoTonightTableCard);
 customElements.get("dso-tonight-table-card-editor") || customElements.define("dso-tonight-table-card-editor", DsoTonightTableCardEditor);
-customElements.get("dso-yard-map-card") || customElements.define("dso-yard-map-card", DsoYardMapCard);
+defineDskElement("dso-yard-map-card", DsoYardMapCard);
 customElements.get("dso-yard-map-card-editor") || customElements.define("dso-yard-map-card-editor", DsoYardMapCardEditor);
-customElements.get("dso-panorama-card") || customElements.define("dso-panorama-card", DsoPanoramaCard);
+defineDskElement("dso-panorama-card", DsoPanoramaCard);
 customElements.get("dso-panorama-card-editor") || customElements.define("dso-panorama-card-editor", DsoPanoramaCardEditor);
-customElements.get("dso-dome-card") || customElements.define("dso-dome-card", DsoDomeCard);
+defineDskElement("dso-dome-card", DsoDomeCard);
 customElements.get("dso-dome-card-editor") || customElements.define("dso-dome-card-editor", DsoDomeCardEditor);
 
 window.customCards = window.customCards || [];

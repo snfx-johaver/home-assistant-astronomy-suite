@@ -26,6 +26,7 @@ const astronomy = loadBundle(BUNDLES.astronomy, [
   "parseDate",
   "formatCountdown",
   "RocketLaunchCard",
+  "IssTrackerCard",
 ]);
 
 const BEST_TONIGHT = "sensor.nasa_astronomy_deepsky_best_tonight";
@@ -165,6 +166,35 @@ test("BUG 2: table rows render bare designations", () => {
   assert.equal(html.includes("Astronomy Space Suite"), false);
   assert.match(html, /<strong>M31<\/strong>/);
   assert.match(html, /<strong>NGC 7000<\/strong>/);
+});
+
+test("Deep Sky Tonight displays, sorts, and filters existing magnitude data", () => {
+  const states = {
+    [BEST_TONIGHT]: makeState(BEST_TONIGHT, "3 objects visible", { count_visible: 3, top_objects: [] }),
+  };
+  for (const [key, magnitude] of [["dim", 9.5], ["bright", 3.4], ["filtered", 11.2]]) {
+    states[`sensor.nasa_astronomy_deepsky_${key}_altitude`] = makeState(
+      `sensor.nasa_astronomy_deepsky_${key}_altitude`,
+      "60",
+      { object_name: key.toUpperCase(), score: 80, magnitude, type: "Galaxy" },
+    );
+    states[`sensor.nasa_astronomy_deepsky_${key}_visible`] = makeState("vis", "Yes");
+  }
+
+  const card = new deepsky.DsoTonightTableCard();
+  card.setConfig({
+    entity: BEST_TONIGHT,
+    sort_by: "magnitude",
+    max_magnitude: 10,
+    show_magnitude: true,
+  });
+  card.hass = makeHass(states);
+
+  const html = card.shadowRoot.innerHTML;
+  assert.match(html, /<th>Mag<\/th>/);
+  assert.ok(html.indexOf("<strong>BRIGHT</strong>") < html.indexOf("<strong>DIM</strong>"));
+  assert.equal(html.includes("<strong>FILTERED</strong>"), false);
+  assert.match(html, /<td>3\.4<\/td>/);
 });
 
 // ── BUG 3: rocket-launch-card showed impossible dates ────────────────────────
@@ -494,6 +524,66 @@ test("BUG 6: native ISS map enables trail, fit, controls, and scale", () => {
   assert.match(source, /scale_ruler:\s*true/);
   assert.doesNotMatch(source, /unpkg\.com\/leaflet/);
   assert.doesNotMatch(source, /basemaps\.cartocdn\.com/);
+});
+
+test("BUG 6: native ISS map receives cached coordinates while the entity is unavailable", () => {
+  const entity = "sensor.astronomy_space_suite_iss_position";
+  const unavailable = makeState(entity, "unavailable", { friendly_name: "ISS Position" });
+  const card = new astronomy.IssTrackerCard();
+  card.setConfig({ entity });
+  card._hass = makeHass({ [entity]: unavailable });
+
+  const mapHass = card._mapHass({
+    latitude: 12.3456,
+    longitude: -78.9012,
+    timestamp: "2026-09-15T12:00:00Z",
+  }, true);
+
+  assert.notEqual(mapHass, card._hass);
+  assert.equal(mapHass.states[entity].attributes.latitude, 12.3456);
+  assert.equal(mapHass.states[entity].attributes.longitude, -78.9012);
+  assert.equal(mapHass.states[entity].state, "12.3456, -78.9012");
+  assert.equal(card._mapHass({
+    latitude: 12.3456,
+    longitude: -78.9012,
+    timestamp: "2026-09-15T12:00:00Z",
+  }, true), mapHass);
+  assert.equal(card._mapHass({}, false), card._hass);
+});
+
+test("glass appearance is opt-in and available to both card bundles", () => {
+  for (const bundle of [BUNDLES.astronomy, BUNDLES.deepsky]) {
+    const source = readFileSync(bundle, "utf8");
+    assert.match(source, /:host\(\[glass-mode\]\)/);
+    assert.match(source, /config\?\.glass_mode === true/);
+    assert.match(source, /--astronomy-card-background/);
+    assert.match(source, /--astronomy-card-backdrop-filter/);
+  }
+  const astronomySource = readFileSync(BUNDLES.astronomy, "utf8");
+  assert.match(astronomySource, /contain:\s*layout style/);
+  assert.match(astronomySource, /var\(--ha-card-border-width,\s*1px\)/);
+
+  const astronomyCard = new astronomy.IssTrackerCard();
+  astronomyCard.setConfig({ glass_mode: true });
+  assert.equal(astronomyCard.hasAttribute("glass-mode"), true);
+  astronomyCard.setConfig({});
+  assert.equal(astronomyCard.hasAttribute("glass-mode"), false);
+
+  const deepSkyCard = new deepsky.DsoTonightTableCard();
+  deepSkyCard.setConfig({ glass_mode: true });
+  assert.equal(deepSkyCard.hasAttribute("glass-mode"), true);
+  deepSkyCard.setConfig({});
+  assert.equal(deepSkyCard.hasAttribute("glass-mode"), false);
+});
+
+test("bundled dashboard documents native ISS and optional glass configuration", () => {
+  const dashboard = readFileSync("lovelace/astronomy-dashboard.yaml", "utf8");
+  assert.match(dashboard, /Current card appearance remains the default/);
+  assert.match(dashboard, /glass_mode:\s*false/);
+  assert.match(dashboard, /trail_hours:\s*6/);
+  assert.match(dashboard, /map_zoom:\s*0/);
+  assert.match(dashboard, /type:\s*"custom:dso-tonight-table-card"/);
+  assert.match(dashboard, /show_magnitude:\s*true/);
 });
 
 // ── Bundle sync guarantee ───────────────────────────────────────────────────
