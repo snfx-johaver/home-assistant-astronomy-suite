@@ -172,6 +172,7 @@ def _core_entities() -> set[str]:
         "camera.astronomy_space_suite_goes_16_earth",
         "camera.astronomy_space_suite_goes_18_earth",
         "camera.astronomy_space_suite_himawari_8_earth",
+        "camera.astronomy_space_suite_meteosat_12_earth",
         "camera.astronomy_space_suite_sdo_sun",
         "camera.astronomy_space_suite_soho_sun",
     }
@@ -242,7 +243,7 @@ class DashboardTests(unittest.TestCase):
             missing,
             f"Dashboard is missing {len(missing)} entities: {sorted(missing)}",
         )
-        self.assertEqual(len(expected), 268)
+        self.assertEqual(len(expected), 269)
 
     def test_dashboard_does_not_reference_unknown_astronomy_entities(self):
         configured = {

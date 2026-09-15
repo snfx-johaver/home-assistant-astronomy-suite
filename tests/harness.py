@@ -61,6 +61,11 @@ class _SensorStateClass:
     TOTAL_INCREASING = "total_increasing"
 
 
+class _ClientTimeout:
+    def __init__(self, *, total=None, **kwargs):
+        self.total = total
+
+
 class _CoordinatorEntity(_StubBase):
     """Stand-in for ``CoordinatorEntity``, which is generic *and* stateful.
 
@@ -144,6 +149,10 @@ def install_homeassistant_stubs():
         "homeassistant.helpers.aiohttp_client",
         async_get_clientsession=lambda *args, **kwargs: None,
     )
+    _register(
+        "homeassistant.helpers.event",
+        async_track_time_interval=lambda *args, **kwargs: lambda: None,
+    )
     _register("homeassistant.helpers.entity_platform", AddEntitiesCallback=_StubBase)
     _register(
         "homeassistant.helpers.update_coordinator",
@@ -161,7 +170,7 @@ def install_homeassistant_stubs():
             "aiohttp",
             ClientSession=_StubBase,
             ClientError=type("ClientError", (Exception,), {}),
-            ClientTimeout=_StubBase,
+            ClientTimeout=_ClientTimeout,
         )
 
 

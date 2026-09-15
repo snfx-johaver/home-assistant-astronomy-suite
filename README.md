@@ -29,7 +29,7 @@ Fully isolated — does not modify any existing dashboards, integrations, or res
 | **Sky Conditions** (twilight phase, sidereal time, day length) | Local calc | None |
 | **Deep-Sky Objects** (30 DSOs × 4 sensors each + Best Tonight) | Local calc | None |
 
-### 📷 Cameras (7)
+### 📷 Cameras (8)
 | Camera | Source | Auth |
 |--------|--------|------|
 | APOD Image | NASA | API key |
@@ -37,6 +37,7 @@ Fully isolated — does not modify any existing dashboards, integrations, or res
 | GOES-16 Earth (Americas) | NOAA | None |
 | GOES-18 Earth (Pacific) | NOAA | None |
 | Himawari-8 Earth (Asia/Pacific) | NICT Japan | None |
+| Meteosat-12 Earth (Europe/Africa GeoColour RGB) | EUMETSAT / NASA | None |
 | SDO Sun (171Å corona, extreme UV) | NASA | None |
 | SOHO Sun (LASCO C3 coronagraph) | ESA/NASA | None |
 
@@ -53,7 +54,7 @@ All cards are prefixed **"ASS"** in the card picker for easy discovery.
 | `solar-system-card` | astronomy-cards.js | Real-time heliocentric orrery (orbital mechanics) |
 | `rocket-launch-card` | astronomy-cards.js | Next 5 launches with countdown timers |
 | `iss-tracker-card` | astronomy-cards.js | Native Home Assistant map with ISS history trail + live stream |
-| `earth-observation-card` | astronomy-cards.js | Multi-source satellite imagery (EPIC, GOES, SDO, SOHO) |
+| `earth-observation-card` | astronomy-cards.js | Multi-source satellite imagery (EPIC, GOES, Himawari, Meteosat, SDO, SOHO) |
 | `night-sky-highlights-card` | astronomy-cards.js | Best visible planets tonight with ephemeris data |
 | `night-sky-highlights-2-card` | deepsky-cards.js | Auto-detecting highlights tile grid (planets, DSO, NEO, ISS, KP, flares) |
 | `dso-tonight-table-card` | deepsky-cards.js | Sortable table of visible deep-sky objects |
@@ -179,6 +180,7 @@ epic_entity: camera.astronomy_space_suite_epic_earth
 goes_entity: camera.astronomy_space_suite_goes_16_earth
 goes18_entity: camera.astronomy_space_suite_goes_18_earth
 himawari_entity: camera.astronomy_space_suite_himawari_8_earth
+meteosat_entity: camera.astronomy_space_suite_meteosat_12_earth
 sdo_entity: camera.astronomy_space_suite_sdo_sun
 soho_entity: camera.astronomy_space_suite_soho_sun
 ```
@@ -252,7 +254,7 @@ The example uses responsive Home Assistant sections and eight focused views:
 Overview, Observing, Solar System, Space Weather, Near Earth, ISS and Earth,
 Launches and NASA, and Entity Coverage. It includes every one of the 15 custom
 cards, including the Sky Map and interactive 3D Sky Dome, and explicitly
-surfaces all 268 entities created when all integration options use their
+surfaces all 269 entities created when all integration options use their
 defaults:
 
 | Platform | Entity count | Dashboard handling |
@@ -317,6 +319,7 @@ home-assistant-astronomy-suite/
 | NOAA SWPC KP | services.swpc.noaa.gov | None | 10 min |
 | GOES-16/18 | cdn.star.nesdis.noaa.gov | None | Camera |
 | Himawari-8 | himawari8.nict.go.jp | None | Camera |
+| Meteosat-12 GeoColour | view.eumetsat.int/geoserver/wms | None | 10 min |
 | NASA SDO | sdo.gsfc.nasa.gov | None | Camera |
 | ESA/NASA SOHO | soho.nascom.nasa.gov | None | Camera |
 | Deep-Sky Objects | Local calculation (no API) | None | 5 min |
@@ -382,6 +385,12 @@ MIT
 ---
 
 ## 📋 Changelog
+
+### v1.16.0
+- **NEW: Meteosat-12 Europe/Africa camera** — adds EUMETSAT MTG full-disc GeoColour RGB imagery with the NASA Black Marble background and `EUMETSAT / NASA` attribution
+- **Resilient image delivery** — refreshes asynchronously every 10 minutes with a 25-second timeout, validates PNG responses, coalesces concurrent first loads, and retains the last successful frame during upstream failures
+- **Earth Observation card** — adds a configurable Meteosat tab, editor/default entity support, camera-proxy delivery, and a square black `object-fit: contain` full-disc presentation
+- **Comprehensive dashboard and tests** — includes direct Meteosat entity coverage plus regression checks for metadata, WMS projection parameters, fallback/concurrency behavior, malformed responses, card rendering, bundle identity, and release metadata
 
 ### v1.15.0
 - **FEATURE: Sky Map satellite basemap** — the optional house-map overlay now supports `map_style: satellite` using keyless Esri World Imagery, while `dark` remains the default for backward compatibility

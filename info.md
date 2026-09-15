@@ -10,7 +10,7 @@ A complete astronomy dashboard suite for Home Assistant powered by NASA APIs and
 - **ISS Tracker** — Live position and history trail on Home Assistant's native map, with last-known fallback and livestream link
 - **Solar System Orrery** — Interactive heliocentric planet visualization with zoom
 - **Rocket Launches** — Upcoming launch schedule with countdown
-- **Earth Observation** — EPIC, GOES-16, SDO, SOHO camera feeds
+- **Earth Observation** — EPIC, GOES-16/18, Himawari-8, Meteosat-12, SDO, and SOHO camera feeds
 - **Sun Horizon Arc** — Sun position with Dawn/Noon/Dusk labels
 - **Lunar Phase** — Moon phase visualization
 - **Night Sky Highlights** — Planet and observing-condition summaries

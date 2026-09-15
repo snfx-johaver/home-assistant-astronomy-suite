@@ -154,6 +154,10 @@ README_VARIANTS: tuple[str, ...] = (
 # The value is why, because an entry that cannot say why it is exempt is an
 # entry nobody can review.
 NOT_SHIPPING: dict[str, str] = {
+    "CHANGELOG.md": (
+        "repository release history; HACS renders README.md instead and does "
+        "not install this file"
+    ),
     "tests": "never installed; runs only in CI and on a developer's machine",
     ".github": "CI configuration; runs in Actions, ships nothing",
     "scripts": (
