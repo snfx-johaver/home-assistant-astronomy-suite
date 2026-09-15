@@ -81,6 +81,8 @@ jobs:
           body: |
             ## What's Changed
 
+            _Cumulative user-facing changes since ${{ steps.bump.outputs.notes_start_tag }}._
+
             ${{ steps.bump.outputs.changelog }}
 
             ---

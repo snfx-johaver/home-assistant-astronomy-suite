@@ -354,44 +354,123 @@ def decide(subjects: Iterable[str], changed_paths: Iterable[str]) -> Decision:
 
 
 def changelog(commits: Iterable[Commit]) -> str:
-    """The release-notes body, partitioned by whether a commit reaches a user.
+    """Render categorized, user-facing notes plus collapsed maintenance work."""
+    visible = [c for c in commits if not _is_release_bookkeeping(c.subject)]
+    shipped = [c for c in visible if ships(c.paths)]
+    internal = [c for c in visible if not ships(c.paths)]
 
-    This module already knows which paths reach an installation, and until now
-    it applied that knowledge to *whether* to release and not to *what it said*
-    when it did. The result was release notes headed "What's Changed" listing
-    changes that, by this module's own definition, changed nothing for the
-    reader. v1.11.8 is the worked example: both of its commits touched only
-    `tests/`, so its entire changelog described work no user received.
+    categories = (
+        ("New features", {"feat"}),
+        ("Fixes", {"fix"}),
+        ("Performance", {"perf"}),
+        ("Improvements", {"refactor"}),
+        ("Documentation", {"docs"}),
+    )
+    remaining = list(shipped)
+    sections: list[str] = []
+    for heading, commit_types in categories:
+        selected = [c for c in remaining if _subject_type(c.subject) in commit_types]
+        if not selected:
+            continue
+        if sections:
+            sections.append("")
+        sections.extend(
+            [f"### {heading}", "", *[f"- {_subject_text(c.subject)}" for c in selected]]
+        )
+        remaining = [c for c in remaining if c not in selected]
 
-    The answer is to partition rather than to filter. Dropping the internal
-    commits would make the notes an incomplete record of the tag, and silently
-    discarding things you have classified is the exact defect this repository
-    removed from the version sweep. Every commit appears exactly once; the
-    heading says which of the two it is.
-    """
-    commits = list(commits)
-    shipped = [c for c in commits if ships(c.paths)]
-    internal = [c for c in commits if not ships(c.paths)]
+    if remaining:
+        if sections:
+            sections.append("")
+        sections.extend(
+            [
+                "### Other user-facing changes",
+                "",
+                *[f"- {_subject_text(c.subject)}" for c in remaining],
+            ]
+        )
 
-    if shipped:
-        lines = [f"- {c.subject}" for c in shipped]
-    else:
-        # Only reachable on a SKIP, where nothing renders this. Total anyway,
-        # because a function that is correct only for its callers is a trap.
-        lines = ["_Nothing in this release reaches an installation._"]
+    if not shipped:
+        sections = ["_No user-facing changes were found in this range._"]
 
     if internal:
-        lines += [
-            "",
-            "### Also in this release",
-            "",
-            "These changed the repository without changing the integration "
-            "HACS installs, so they reach no configuration.",
-            "",
-        ]
-        lines += [f"- {c.subject}" for c in internal]
+        if sections:
+            sections.append("")
+        count = len(internal)
+        sections.extend(
+            [
+                "<details>",
+                f"<summary>Repository maintenance ({count} commit"
+                f"{'' if count == 1 else 's'})</summary>",
+                "",
+                "These changes affect development or automation, not the "
+                "integration installed by HACS.",
+                "",
+                *[f"- {_subject_text(c.subject)}" for c in internal],
+                "",
+                "</details>",
+            ]
+        )
 
-    return "\n".join(lines)
+    return "\n".join(sections)
+
+
+_CONVENTIONAL_SUBJECT = re.compile(
+    r"^(?P<type>[A-Za-z]+)(?:\([^)]+\))?(?:!)?:\s*(?P<text>.+)$"
+)
+_RELEASE_SUBJECT = re.compile(r"^release:\s+v\d+\.\d+\.\d+\b", re.IGNORECASE)
+_SEMVER_TAG = re.compile(r"^v(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)$")
+
+
+def _subject_type(subject: str) -> str:
+    match = _CONVENTIONAL_SUBJECT.match(subject.strip())
+    return match.group("type").lower() if match else ""
+
+
+def _subject_text(subject: str) -> str:
+    """Remove commit syntax and turn the subject into release-note prose."""
+    subject = subject.strip()
+    match = _CONVENTIONAL_SUBJECT.match(subject)
+    text = match.group("text").strip() if match else subject
+    if text and text[0].islower():
+        text = text[0].upper() + text[1:]
+    return text
+
+
+def _is_release_bookkeeping(subject: str) -> bool:
+    """Version sweep commits add no information to cumulative release notes."""
+    return bool(_RELEASE_SUBJECT.match(subject.strip()))
+
+
+def release_notes_start(last_tag: str, bump: str, tags: Iterable[str]) -> str:
+    """Choose a stable cumulative-summary boundary.
+
+    Patch releases summarize the current release line from the previous minor
+    baseline. A new minor or major release summarizes from the current line's
+    `.0` tag. If the ideal anchor does not exist, the immediately previous tag
+    is the only boundary we can name without inventing history.
+    """
+    match = _SEMVER_TAG.match(last_tag)
+    if not match:
+        return last_tag
+
+    major = int(match.group("major"))
+    minor = int(match.group("minor"))
+    if bump == "patch" and minor > 0:
+        wanted = (major, minor - 1, 0)
+    else:
+        wanted = (major, minor, 0)
+
+    parsed = {
+        (
+            int(candidate.group("major")),
+            int(candidate.group("minor")),
+            int(candidate.group("patch")),
+        ): tag
+        for tag in tags
+        if (candidate := _SEMVER_TAG.match(tag))
+    }
+    return parsed.get(wanted, last_tag)
 
 
 class ShallowCheckoutError(RuntimeError):
@@ -554,6 +633,21 @@ def collect() -> tuple[list[Commit], list[str], str]:
     return commits, [p for p in paths if p.strip()], last_tag
 
 
+def commits_since(start: str) -> list[Commit]:
+    """Read non-merge commits after a named tag for cumulative release notes."""
+    if not start:
+        return []
+    return _parse_log(
+        _git(
+            "log",
+            f"{start}..HEAD",
+            f"--pretty=format:{_RECORD}%s",
+            "--name-only",
+            "--no-merges",
+        )
+    )
+
+
 def main() -> int:
     commits, paths, last_tag = collect()
     subjects = [c.subject for c in commits]
@@ -574,12 +668,16 @@ def main() -> int:
         # comparison, and the only honest endpoints for it are the tag before
         # this release and the tag being cut. The workflow cannot name the
         # first without re-deriving it, so it is published here instead.
-        body = changelog(commits)
+        notes_start_tag = release_notes_start(
+            last_tag, decision.bump, _git("tag", "--list").splitlines()
+        )
+        body = changelog(commits_since(notes_start_tag))
         with open(output, "a", encoding="utf-8") as handle:
             handle.write(f"skip={'false' if decision.release else 'true'}\n")
             handle.write(f"bump={decision.bump}\n")
             handle.write(f"reason={decision.reason}\n")
             handle.write(f"previous_tag={last_tag}\n")
+            handle.write(f"notes_start_tag={notes_start_tag}\n")
             handle.write(f"changelog<<RELEASE_DECISION_EOF\n{body}\n")
             handle.write("RELEASE_DECISION_EOF\n")
     return 0
