@@ -241,6 +241,35 @@ type: custom:dso-dome-card
 title: 3D Sky Dome
 ```
 
+### Comprehensive Dashboard Example
+
+The bundled [`lovelace/astronomy-dashboard.yaml`](lovelace/astronomy-dashboard.yaml)
+is a production-ready, separate YAML dashboard. Import it as a new dashboard;
+it does not add global CSS, modify resources outside the integration's two
+owned card bundles, or alter an existing user dashboard.
+
+The example uses responsive Home Assistant sections and eight focused views:
+Overview, Observing, Solar System, Space Weather, Near Earth, ISS and Earth,
+Launches and NASA, and Entity Coverage. It includes every one of the 15 custom
+cards, including the Sky Map and interactive 3D Sky Dome, and explicitly
+surfaces all 268 entities created when all integration options use their
+defaults:
+
+| Platform | Entity count | Dashboard handling |
+|----------|-------------:|--------------------|
+| Core NASA/space sensors | 17 | Summary and topic views plus Entity Coverage |
+| Cameras | 7 | APOD, Earth observation, and live Sun presentations |
+| Ephemeris sensors | 123 | Observing, Solar System, and Entity Coverage |
+| Deep-sky sensors | 121 | Dynamic sky cards plus explicit Entity Coverage |
+| Update entities | 0 | The integration does not provide an update platform |
+
+Ephemeris bodies and deep-sky objects are configurable. If one is disabled, its
+standard entity row shows unavailable while the custom cards omit missing data,
+so the dashboard remains valid. The Horizon and Lunar cards retain their
+documented optional dependencies on Home Assistant's built-in `sun.sun` and
+`sensor.moon_phase`; all Astronomy Suite entity IDs in the example are derived
+from entities created by this integration.
+
 ---
 
 ## 🏗️ Architecture
@@ -357,6 +386,9 @@ MIT
 ### v1.15.0
 - **FEATURE: Sky Map satellite basemap** — the optional house-map overlay now supports `map_style: satellite` using keyless Esri World Imagery, while `dark` remains the default for backward compatibility
 - **Attribution and validation** — enabled map overlays display provider attribution, and latitude, longitude, zoom, and generated tile indices are bounded to valid Web Mercator ranges
+- **Comprehensive example dashboard** — rebuilt the isolated YAML dashboard around the customized live NASA dashboard's polished overview-and-drill-down structure, with responsive sections across eight logical views
+- **Complete card and entity coverage** — the example now includes all 15 custom cards (including Sky Map and 3D Sky Dome) and all 268 integration entities, with an explicit diagnostic coverage view for configurable ephemeris and deep-sky entities
+- **Dashboard regression tests** — added source-derived checks for YAML validity, custom card representation, exact entity coverage, and unknown entity references
 
 ### v1.10.4
 - **FIX: Solar Activity Monitor** — the "Live Sun" thumbnail grid forced a 4:3 box around SDO/SOHO square full-disc imagery with `object-fit: cover`, slicing roughly 25% off the top and bottom of the Sun; the tiles now size to the image. This is the same defect fixed for the Earth Observation card in v1.10.3 — that sweep corrected the Earth frame but missed this second instance

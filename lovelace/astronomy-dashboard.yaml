@@ -1,118 +1,86 @@
-# ═══════════════════════════════════════════════════════════════════════════════
-# Astronomy Space Suite - Example Dashboard
-# ═══════════════════════════════════════════════════════════════════════════════
-# This is the recommended dashboard configuration for the Astronomy Space Suite.
-# Import as a new dashboard in HA: Settings > Dashboards > Add > From YAML
+# Astronomy Space Suite - comprehensive example dashboard
 #
-# Prerequisites:
-#   - Astronomy Space Suite integration configured
-#   - Mushroom cards (HACS)
-#   - astronomy-cards.js resource loaded
-#   - deepsky-cards.js resource loaded
+# Import this file as a separate YAML dashboard. The integration deploys and
+# registers astronomy-cards.js and deepsky-cards.js automatically.
 #
-# Appearance:
-#   - Current card appearance remains the default.
-#   - Set glass_mode: true on any Astronomy Space Suite custom card to opt in.
-#   - Theme authors can globally customize --astronomy-card-background,
-#     --astronomy-card-backdrop-filter, --astronomy-card-border and
-#     --astronomy-card-box-shadow.
-# ═══════════════════════════════════════════════════════════════════════════════
-title: 🔭 Astronomy Space Suite
-views: 
+# Optional integrations:
+#   - Home Assistant Sun (`sun.sun`) for the Horizon card
+#   - Home Assistant Moon (`sensor.moon_phase`) for the Lunar card
+#
+# Ephemeris bodies and deep-sky objects can be disabled in integration options.
+# Their standard entity rows will then show unavailable without invalidating the
+# dashboard; custom cards already hide data that is not present.
+#
+# Current card appearance remains the default. Set glass_mode: true on an
+# individual Astronomy Space Suite card to opt in to its isolated glass style.
+
+title: Astronomy Space Suite
+views:
   - title: Overview
-    icon: "mdi:telescope"
-    cards: 
-
+    path: overview
+    icon: mdi:telescope
     type: sections
-    sections: 
+    max_columns: 4
+    dense_section_placement: true
+    sections:
       - type: grid
-        cards: 
-          - type: horizontal-stack
-            cards: 
-              - type: "custom:mushroom-entity-card"
+        cards:
+          - type: heading
+            heading: Mission control
+            icon: mdi:view-dashboard
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: tile
                 entity: sensor.astronomy_space_suite_neo_count_today
-                name: NEOs Today
-                icon: "mdi:meteor"
-                icon_color: blue
-                layout: vertical
-              - type: "custom:mushroom-entity-card"
+                name: NEOs today
+                color: deep-orange
+              - type: tile
                 entity: sensor.astronomy_space_suite_planetary_kp_index
-                name: KP Index
-                icon: "mdi:aurora"
-                icon_color: green
-                layout: vertical
-              - type: "custom:mushroom-entity-card"
+                name: Planetary KP
+                color: purple
+              - type: tile
                 entity: sensor.astronomy_space_suite_coronal_mass_ejections
-                name: CMEs (7d)
-                icon: "mdi:white-balance-sunny"
-                icon_color: orange
-                layout: vertical
-              - type: "custom:mushroom-entity-card"
+                name: CMEs
+                color: amber
+              - type: tile
                 entity: sensor.astronomy_space_suite_solar_flares
-                name: Flares (7d)
-                icon: "mdi:flare"
-                icon_color: yellow
-                layout: vertical
-
-          - entity: sensor.astronomy_space_suite_apod
+                name: Solar flares
+                color: red
+          - type: custom:apod-card
+            entity: sensor.astronomy_space_suite_apod
+            title: Astronomy Picture of the Day
             show_explanation: true
             show_copyright: true
             show_hd_link: true
             show_date: true
-            title: ""
-            image_height: 400
-            type: "custom:apod-card"
+            image_height: 420
 
       - type: grid
-        cards: 
+        cards:
           - type: heading
-            heading: "Solar system & NEO objects"
-            heading_style: subtitle
-          - type: "custom:solar-system-card"
-            title: Solar System
-            show_jupiter: true
-            show_saturn: true
-            show_orbits: true
-          - entity: sensor.astronomy_space_suite_neo_count_today
-            largest_entity: sensor.astronomy_space_suite_largest_neo
-            max_items: 10
-            show_hazardous_only: false
-            show_stats: true
-            title: Near Earth Objects
-            show_velocity: true
-            show_diameter: true
-            type: "custom:neo-threat-card"
+            heading: Tonight
+            icon: mdi:weather-night
+          - type: custom:night-sky-highlights-card
+            title: Planetary highlights
+            telescope_mode: false
+          - type: custom:night-sky-highlights-2-card
+            title: Astronomy highlights
+          - type: custom:dso-tonight-table-card
+            title: Deep sky tonight
+            entity: sensor.nasa_astronomy_deepsky_best_tonight
+            show_magnitude: true
+            sort_by: score
+            max_magnitude: 10
 
       - type: grid
-        cards: 
+        cards:
           - type: heading
-            heading: Satellites
-            heading_style: subtitle
-          - entity: sensor.astronomy_space_suite_iss_position
-            title: International Space Station
-            stream_url: "https://www.youtube.com/watch?v=uwXgcTc8oY8"
-            show_map: true
-            show_trail: true
-            show_stream_button: true
-            map_zoom: 0
-            trail_hours: 6
-            glass_mode: false
-            type: "custom:iss-tracker-card"
-          - entity_prefix: sensor.astronomy_space_suite_rocket_launch
-            max_launches: 5
-            title: Upcoming Launches
-            show_countdown: true
-            show_weather: true
-            show_tags: true
-            type: "custom:rocket-launch-card"
-
-      - type: grid
-        cards: 
-          - type: heading
-            heading: Earth
-            heading_style: subtitle
-          - type: "custom:earth-observation-card"
-            title: "Earth & Sun Observation"
+            heading: Live environment
+            icon: mdi:earth
+          - type: custom:earth-observation-card
+            title: Earth and Sun observation
             epic_entity: camera.astronomy_space_suite_epic_earth
             goes_entity: camera.astronomy_space_suite_goes_16_earth
             goes18_entity: camera.astronomy_space_suite_goes_18_earth
@@ -120,30 +88,323 @@ views:
             sdo_entity: camera.astronomy_space_suite_sdo_sun
             soho_entity: camera.astronomy_space_suite_soho_sun
             refresh_interval: 5
-          - type: "custom:astro-horizon-card"
-            sun_entity: sun.sun
-            moon_entity: sensor.moon_phase
-            title: Horizon
-            show_moon: true
-            show_sunrise_sunset: true
-            show_moonrise_moonset: true
-            show_elevation: true
-            label_dawn: Dawn
-            label_noon: Noon
-            label_dusk: Dusk
-          - moon_entity: sensor.moon
-            title: Moon Phase
-            show_next_phases: true
-            show_illumination: true
-            type: "custom:astro-lunar-card"
-            entity: sensor.moon_phase
-            show_phase_name: true
-            show_moonrise_moonset: true
-            moon_size: 150
+          - type: custom:solar-activity-card
+            title: Solar activity
+            cme_entity: sensor.astronomy_space_suite_coronal_mass_ejections
+            flare_entity: sensor.astronomy_space_suite_solar_flares
+            storm_entity: sensor.astronomy_space_suite_geomagnetic_storms
+            kp_entity: sensor.astronomy_space_suite_planetary_kp_index
+            sdo_entity: camera.astronomy_space_suite_sdo_sun
+            soho_entity: camera.astronomy_space_suite_soho_sun
+            show_cme: true
+            show_flares: true
+            show_storms: true
+            show_kp_gauge: true
+            show_live_sun: true
+            show_sdo: true
+            show_soho: true
+            time_range: 30
 
       - type: grid
-        cards: 
-          - cme_entity: sensor.astronomy_space_suite_coronal_mass_ejections
+        cards:
+          - type: heading
+            heading: Missions
+            icon: mdi:rocket-launch
+          - type: custom:iss-tracker-card
+            entity: sensor.astronomy_space_suite_iss_position
+            title: International Space Station
+            show_map: true
+            show_trail: true
+            show_stream_button: true
+            map_zoom: 0
+            trail_hours: 6
+            glass_mode: false
+          - type: custom:rocket-launch-card
+            entity_prefix: sensor.astronomy_space_suite_rocket_launch
+            max_launches: 5
+            title: Upcoming launches
+            show_countdown: true
+            show_weather: true
+            show_tags: true
+
+  - title: Observing
+    path: observing
+    icon: mdi:star-four-points
+    type: sections
+    max_columns: 3
+    dense_section_placement: true
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Sky orientation
+            icon: mdi:compass-outline
+          - type: custom:dso-yard-map-card
+            title: Sky Map
+            show_house_map: false
+            map_style: dark
+          - type: custom:dso-panorama-card
+            title: Horizon Panorama
+          - type: custom:dso-dome-card
+            title: 3D Sky Dome
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Observing plan
+            icon: mdi:telescope
+          - type: "custom:dso-tonight-table-card"
+            title: Deep sky targets
+            entity: sensor.nasa_astronomy_deepsky_best_tonight
+            show_magnitude: true
+            sort_by: altitude
+            max_magnitude: 10
+          - type: custom:night-sky-highlights-card
+            title: Telescope targets
+            telescope_mode: true
+          - type: custom:night-sky-highlights-2-card
+            title: Conditions and highlights
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Sun and Moon
+            icon: mdi:theme-light-dark
+          - type: custom:astro-horizon-card
+            sun_entity: sun.sun
+            title: Sun horizon
+            show_elevation: true
+            show_azimuth: true
+            show_times: true
+          - type: custom:astro-lunar-card
+            moon_entity: sensor.moon_phase
+            title: Lunar phase
+            show_next_phases: true
+            show_illumination: true
+          - type: entities
+            title: Sky conditions
+            show_header_toggle: false
+            entities:
+              - sensor.nasa_astronomy_ephemeris_sky_twilight_phase
+              - sensor.nasa_astronomy_ephemeris_sky_is_astronomical_night
+              - sensor.nasa_astronomy_ephemeris_sky_is_sun_above_horizon
+              - sensor.nasa_astronomy_ephemeris_sky_is_moon_above_horizon
+              - sensor.nasa_astronomy_ephemeris_sky_day_length_hours
+              - sensor.nasa_astronomy_ephemeris_sky_night_length_hours
+              - sensor.nasa_astronomy_ephemeris_sky_local_sidereal_time_hours
+              - sensor.nasa_astronomy_ephemeris_sky_julian_date
+              - sensor.nasa_astronomy_ephemeris_sky_equation_of_time_minutes
+
+  - title: Solar System
+    path: solar-system
+    icon: mdi:orbit
+    type: sections
+    max_columns: 3
+    dense_section_placement: true
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Orrery
+            icon: mdi:orbit
+          - type: custom:solar-system-card
+            title: Solar System
+            show_mercury: true
+            show_venus: true
+            show_earth: true
+            show_mars: true
+            show_jupiter: true
+            show_saturn: true
+            show_uranus: true
+            show_neptune: true
+            show_orbits: true
+            show_labels: true
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Sun
+            icon: mdi:white-balance-sunny
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - sensor.nasa_astronomy_ephemeris_sun_altitude
+              - sensor.nasa_astronomy_ephemeris_sun_azimuth
+              - sensor.nasa_astronomy_ephemeris_sun_right_ascension
+              - sensor.nasa_astronomy_ephemeris_sun_declination
+              - sensor.nasa_astronomy_ephemeris_sun_distance_au
+              - sensor.nasa_astronomy_ephemeris_sun_angular_diameter_arcmin
+              - sensor.nasa_astronomy_ephemeris_sun_solar_noon
+              - sensor.nasa_astronomy_ephemeris_sun_civil_dawn
+              - sensor.nasa_astronomy_ephemeris_sun_civil_dusk
+              - sensor.nasa_astronomy_ephemeris_sun_nautical_dawn
+              - sensor.nasa_astronomy_ephemeris_sun_nautical_dusk
+              - sensor.nasa_astronomy_ephemeris_sun_astronomical_dawn
+              - sensor.nasa_astronomy_ephemeris_sun_astronomical_dusk
+          - type: picture-entity
+            entity: camera.astronomy_space_suite_sdo_sun
+            name: SDO Sun
+            show_state: false
+            camera_view: auto
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Moon
+            icon: mdi:moon-waning-crescent
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - sensor.nasa_astronomy_ephemeris_moon_altitude
+              - sensor.nasa_astronomy_ephemeris_moon_azimuth
+              - sensor.nasa_astronomy_ephemeris_moon_right_ascension
+              - sensor.nasa_astronomy_ephemeris_moon_declination
+              - sensor.nasa_astronomy_ephemeris_moon_distance_km
+              - sensor.nasa_astronomy_ephemeris_moon_angular_diameter_arcmin
+              - sensor.nasa_astronomy_ephemeris_moon_phase_angle
+              - sensor.nasa_astronomy_ephemeris_moon_illumination_pct
+              - sensor.nasa_astronomy_ephemeris_moon_next_full_moon
+              - sensor.nasa_astronomy_ephemeris_moon_next_new_moon
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Planet positions
+            icon: mdi:planet
+          - type: entities
+            title: Mercury
+            show_header_toggle: false
+            entities:
+              - sensor.nasa_astronomy_ephemeris_mercury_altitude
+              - sensor.nasa_astronomy_ephemeris_mercury_azimuth
+              - sensor.nasa_astronomy_ephemeris_mercury_right_ascension
+              - sensor.nasa_astronomy_ephemeris_mercury_declination
+              - sensor.nasa_astronomy_ephemeris_mercury_distance_au
+              - sensor.nasa_astronomy_ephemeris_mercury_illumination_pct
+              - sensor.nasa_astronomy_ephemeris_mercury_phase_angle
+              - sensor.nasa_astronomy_ephemeris_mercury_angular_diameter_arcsec
+              - sensor.nasa_astronomy_ephemeris_mercury_rise
+              - sensor.nasa_astronomy_ephemeris_mercury_transit
+              - sensor.nasa_astronomy_ephemeris_mercury_set
+              - sensor.nasa_astronomy_ephemeris_mercury_visibility_start
+              - sensor.nasa_astronomy_ephemeris_mercury_visibility_end
+          - type: entities
+            title: Venus
+            show_header_toggle: false
+            entities:
+              - sensor.nasa_astronomy_ephemeris_venus_altitude
+              - sensor.nasa_astronomy_ephemeris_venus_azimuth
+              - sensor.nasa_astronomy_ephemeris_venus_right_ascension
+              - sensor.nasa_astronomy_ephemeris_venus_declination
+              - sensor.nasa_astronomy_ephemeris_venus_distance_au
+              - sensor.nasa_astronomy_ephemeris_venus_illumination_pct
+              - sensor.nasa_astronomy_ephemeris_venus_phase_angle
+              - sensor.nasa_astronomy_ephemeris_venus_angular_diameter_arcsec
+              - sensor.nasa_astronomy_ephemeris_venus_rise
+              - sensor.nasa_astronomy_ephemeris_venus_transit
+              - sensor.nasa_astronomy_ephemeris_venus_set
+              - sensor.nasa_astronomy_ephemeris_venus_visibility_start
+              - sensor.nasa_astronomy_ephemeris_venus_visibility_end
+          - type: entities
+            title: Mars
+            show_header_toggle: false
+            entities:
+              - sensor.nasa_astronomy_ephemeris_mars_altitude
+              - sensor.nasa_astronomy_ephemeris_mars_azimuth
+              - sensor.nasa_astronomy_ephemeris_mars_right_ascension
+              - sensor.nasa_astronomy_ephemeris_mars_declination
+              - sensor.nasa_astronomy_ephemeris_mars_distance_au
+              - sensor.nasa_astronomy_ephemeris_mars_illumination_pct
+              - sensor.nasa_astronomy_ephemeris_mars_phase_angle
+              - sensor.nasa_astronomy_ephemeris_mars_angular_diameter_arcsec
+              - sensor.nasa_astronomy_ephemeris_mars_rise
+              - sensor.nasa_astronomy_ephemeris_mars_transit
+              - sensor.nasa_astronomy_ephemeris_mars_set
+              - sensor.nasa_astronomy_ephemeris_mars_visibility_start
+              - sensor.nasa_astronomy_ephemeris_mars_visibility_end
+          - type: entities
+            title: Jupiter
+            show_header_toggle: false
+            entities:
+              - sensor.nasa_astronomy_ephemeris_jupiter_altitude
+              - sensor.nasa_astronomy_ephemeris_jupiter_azimuth
+              - sensor.nasa_astronomy_ephemeris_jupiter_right_ascension
+              - sensor.nasa_astronomy_ephemeris_jupiter_declination
+              - sensor.nasa_astronomy_ephemeris_jupiter_distance_au
+              - sensor.nasa_astronomy_ephemeris_jupiter_illumination_pct
+              - sensor.nasa_astronomy_ephemeris_jupiter_phase_angle
+              - sensor.nasa_astronomy_ephemeris_jupiter_angular_diameter_arcsec
+              - sensor.nasa_astronomy_ephemeris_jupiter_rise
+              - sensor.nasa_astronomy_ephemeris_jupiter_transit
+              - sensor.nasa_astronomy_ephemeris_jupiter_set
+              - sensor.nasa_astronomy_ephemeris_jupiter_visibility_start
+              - sensor.nasa_astronomy_ephemeris_jupiter_visibility_end
+          - type: entities
+            title: Saturn
+            show_header_toggle: false
+            entities:
+              - sensor.nasa_astronomy_ephemeris_saturn_altitude
+              - sensor.nasa_astronomy_ephemeris_saturn_azimuth
+              - sensor.nasa_astronomy_ephemeris_saturn_right_ascension
+              - sensor.nasa_astronomy_ephemeris_saturn_declination
+              - sensor.nasa_astronomy_ephemeris_saturn_distance_au
+              - sensor.nasa_astronomy_ephemeris_saturn_illumination_pct
+              - sensor.nasa_astronomy_ephemeris_saturn_phase_angle
+              - sensor.nasa_astronomy_ephemeris_saturn_angular_diameter_arcsec
+              - sensor.nasa_astronomy_ephemeris_saturn_rise
+              - sensor.nasa_astronomy_ephemeris_saturn_transit
+              - sensor.nasa_astronomy_ephemeris_saturn_set
+              - sensor.nasa_astronomy_ephemeris_saturn_visibility_start
+              - sensor.nasa_astronomy_ephemeris_saturn_visibility_end
+          - type: entities
+            title: Uranus
+            show_header_toggle: false
+            entities:
+              - sensor.nasa_astronomy_ephemeris_uranus_altitude
+              - sensor.nasa_astronomy_ephemeris_uranus_azimuth
+              - sensor.nasa_astronomy_ephemeris_uranus_right_ascension
+              - sensor.nasa_astronomy_ephemeris_uranus_declination
+              - sensor.nasa_astronomy_ephemeris_uranus_distance_au
+              - sensor.nasa_astronomy_ephemeris_uranus_illumination_pct
+              - sensor.nasa_astronomy_ephemeris_uranus_phase_angle
+              - sensor.nasa_astronomy_ephemeris_uranus_angular_diameter_arcsec
+              - sensor.nasa_astronomy_ephemeris_uranus_rise
+              - sensor.nasa_astronomy_ephemeris_uranus_transit
+              - sensor.nasa_astronomy_ephemeris_uranus_set
+              - sensor.nasa_astronomy_ephemeris_uranus_visibility_start
+              - sensor.nasa_astronomy_ephemeris_uranus_visibility_end
+          - type: entities
+            title: Neptune
+            show_header_toggle: false
+            entities:
+              - sensor.nasa_astronomy_ephemeris_neptune_altitude
+              - sensor.nasa_astronomy_ephemeris_neptune_azimuth
+              - sensor.nasa_astronomy_ephemeris_neptune_right_ascension
+              - sensor.nasa_astronomy_ephemeris_neptune_declination
+              - sensor.nasa_astronomy_ephemeris_neptune_distance_au
+              - sensor.nasa_astronomy_ephemeris_neptune_illumination_pct
+              - sensor.nasa_astronomy_ephemeris_neptune_phase_angle
+              - sensor.nasa_astronomy_ephemeris_neptune_angular_diameter_arcsec
+              - sensor.nasa_astronomy_ephemeris_neptune_rise
+              - sensor.nasa_astronomy_ephemeris_neptune_transit
+              - sensor.nasa_astronomy_ephemeris_neptune_set
+              - sensor.nasa_astronomy_ephemeris_neptune_visibility_start
+              - sensor.nasa_astronomy_ephemeris_neptune_visibility_end
+
+  - title: Space Weather
+    path: space-weather
+    icon: mdi:weather-sunny-alert
+    type: sections
+    max_columns: 3
+    dense_section_placement: true
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Solar activity monitor
+            icon: mdi:weather-sunny-alert
+          - type: custom:solar-activity-card
+            cme_entity: sensor.astronomy_space_suite_coronal_mass_ejections
             flare_entity: sensor.astronomy_space_suite_solar_flares
             storm_entity: sensor.astronomy_space_suite_geomagnetic_storms
             kp_entity: sensor.astronomy_space_suite_planetary_kp_index
@@ -158,231 +419,400 @@ views:
             show_sdo: true
             show_soho: true
             time_range: 30
-            type: "custom:solar-activity-card"
-          - type: "custom:night-sky-highlights-card"
-            title: Night Sky Highlights
-            telescope_mode: true
+          - type: entities
+            title: Space weather feeds
+            show_header_toggle: false
+            entities:
+              - sensor.astronomy_space_suite_planetary_kp_index
+              - sensor.astronomy_space_suite_coronal_mass_ejections
+              - sensor.astronomy_space_suite_solar_flares
+              - sensor.astronomy_space_suite_geomagnetic_storms
 
       - type: grid
-        cards: 
+        cards:
           - type: heading
-            heading: Deep Sky
-            heading_style: subtitle
-          - type: "custom:dso-tonight-table-card"
-            title: Deep Sky Tonight
-            entity: sensor.nasa_astronomy_deepsky_best_tonight
-            show_magnitude: true
-            sort_by: score
-            max_magnitude: 10
-            glass_mode: false
-          - type: "custom:night-sky-highlights-2-card"
-            title: Night Sky Highlights 2
-            glass_mode: false
-            entities: 
-              best_planet: sensor.best_planet_tonight
-              best_dso: sensor.best_dso_tonight
-              meteor_shower: sensor.meteor_shower_activity
-              iss: sensor.iss_next_pass
-              comet: sensor.brightest_comet
-              events: sensor.astronomy_special_events
-
-            show_sparkline: true
-
-
-    max_columns: 45
-    dense_section_placement: true
-  - title: Space Weather
-    path: space-weather
-    icon: "mdi:weather-sunny-alert"
-    cards: 
-      - cme_entity: sensor.astronomy_space_suite_coronal_mass_ejections
-        flare_entity: sensor.astronomy_space_suite_solar_flares
-        storm_entity: sensor.astronomy_space_suite_geomagnetic_storms
-        kp_entity: sensor.astronomy_space_suite_planetary_kp_index
-        sdo_entity: camera.astronomy_space_suite_sdo_sun
-        soho_entity: camera.astronomy_space_suite_soho_sun
-        title: Solar Activity Monitor
-        show_cme: true
-        show_flares: true
-        show_storms: true
-        show_kp_gauge: true
-        show_live_sun: true
-        show_sdo: true
-        show_soho: true
-        time_range: 30
-        type: "custom:solar-activity-card"
-      - type: horizontal-stack
-        cards: 
+            heading: Live Sun
+            icon: mdi:white-balance-sunny
           - type: picture-entity
             entity: camera.astronomy_space_suite_sdo_sun
-            name: ☀️ SDO Corona (171Å)
+            name: SDO 171 Angstrom
             show_state: false
-            show_name: true
-            camera_view: live
+            camera_view: auto
           - type: picture-entity
             entity: camera.astronomy_space_suite_soho_sun
-            name: ☀️ SOHO Coronagraph
+            name: SOHO LASCO C3
             show_state: false
-            show_name: true
-            camera_view: live
+            camera_view: auto
 
+  - title: Near Earth
+    path: near-earth
+    icon: mdi:meteor
+    type: sections
+    max_columns: 3
+    dense_section_placement: true
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Near-Earth objects
+            icon: mdi:meteor
+          - type: custom:neo-threat-card
+            entity: sensor.astronomy_space_suite_neo_count_today
+            largest_entity: sensor.astronomy_space_suite_largest_neo
+            max_items: 15
+            show_hazardous_only: false
+            show_stats: true
+            title: NEO threat assessment
+            show_velocity: true
+            show_diameter: true
+          - type: entities
+            title: NEO summary
+            show_header_toggle: false
+            entities:
+              - sensor.astronomy_space_suite_neo_count_today
+              - sensor.astronomy_space_suite_closest_neo
+              - sensor.astronomy_space_suite_fastest_neo
+              - sensor.astronomy_space_suite_largest_neo
 
-  - title: NEO Tracker
-    path: neo-tracker
-    icon: "mdi:meteor"
-    cards: 
-      - entity: sensor.astronomy_space_suite_neo_count_today
-        max_items: 10
-        show_hazardous_only: false
-        show_stats: true
-        title: Near Earth Objects
-        show_velocity: true
-        show_diameter: true
-        type: "custom:neo-threat-card"
-      - type: horizontal-stack
-        cards: 
-          - type: "custom:mushroom-entity-card"
-            entity: sensor.astronomy_space_suite_closest_neo
-            name: Closest
-            icon: "mdi:bullseye-arrow"
-            icon_color: red
-          - type: "custom:mushroom-entity-card"
-            entity: sensor.astronomy_space_suite_fastest_neo
-            name: Fastest
-            icon: "mdi:speedometer"
-            icon_color: orange
-          - type: "custom:mushroom-entity-card"
-            entity: sensor.astronomy_space_suite_largest_neo
-            name: Largest
-            icon: "mdi:resize"
-            icon_color: blue
+  - title: ISS and Earth
+    path: iss-earth
+    icon: mdi:earth
+    type: sections
+    max_columns: 3
+    dense_section_placement: true
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: International Space Station
+            icon: mdi:space-station
+          - type: custom:iss-tracker-card
+            entity: sensor.astronomy_space_suite_iss_position
+            title: ISS position and trail
+            show_map: true
+            show_trail: true
+            show_stream_button: true
+            map_zoom: 0
+            trail_hours: 6
+          - type: tile
+            entity: sensor.astronomy_space_suite_iss_position
+            name: Current ISS position
 
-
-  - title: ISS
-    path: iss
-    icon: "mdi:space-station"
-    cards: 
-      - entity: sensor.astronomy_space_suite_iss_position
-        title: International Space Station
-        show_map: true
-        show_trail: true
-        show_stream_button: true
-        map_zoom: 0
-        trail_hours: 6
-        glass_mode: false
-        type: "custom:iss-tracker-card"
-      - type: "custom:mushroom-entity-card"
-        entity: sensor.astronomy_space_suite_iss_position
-        name: ISS Position
-        icon: "mdi:space-station"
-        icon_color: red
-
-  - title: Earth
-    path: earth
-    icon: "mdi:earth"
-    cards: 
-      - type: "custom:earth-observation-card"
-        title: "Earth & Sun Observation"
-        epic_entity: camera.astronomy_space_suite_epic_earth
-        goes_entity: camera.astronomy_space_suite_goes_16_earth
-        goes18_entity: camera.astronomy_space_suite_goes_18_earth
-        himawari_entity: camera.astronomy_space_suite_himawari_8_earth
-        sdo_entity: camera.astronomy_space_suite_sdo_sun
-        soho_entity: camera.astronomy_space_suite_soho_sun
-        refresh_interval: 5
-      - type: horizontal-stack
-        cards: 
+      - type: grid
+        cards:
+          - type: heading
+            heading: Earth observation
+            icon: mdi:satellite-variant
+          - type: custom:earth-observation-card
+            title: Global satellite imagery
+            epic_entity: camera.astronomy_space_suite_epic_earth
+            goes_entity: camera.astronomy_space_suite_goes_16_earth
+            goes18_entity: camera.astronomy_space_suite_goes_18_earth
+            himawari_entity: camera.astronomy_space_suite_himawari_8_earth
+            sdo_entity: camera.astronomy_space_suite_sdo_sun
+            soho_entity: camera.astronomy_space_suite_soho_sun
+            refresh_interval: 5
           - type: picture-entity
             entity: camera.astronomy_space_suite_epic_earth
-            name: 🌍 NASA EPIC
+            name: NASA EPIC Earth
             show_state: false
-            camera_view: live
+            camera_view: auto
           - type: picture-entity
             entity: camera.astronomy_space_suite_goes_16_earth
-            name: 🌎 GOES-16
+            name: GOES-16 Americas
             show_state: false
-            camera_view: live
-
-      - type: horizontal-stack
-        cards: 
+            camera_view: auto
           - type: picture-entity
             entity: camera.astronomy_space_suite_goes_18_earth
-            name: 🌏 GOES-18
+            name: GOES-18 Pacific
             show_state: false
-            camera_view: live
+            camera_view: auto
           - type: picture-entity
             entity: camera.astronomy_space_suite_himawari_8_earth
-            name: 🌏 Himawari-8
+            name: Himawari-8 Asia Pacific
             show_state: false
-            camera_view: live
+            camera_view: auto
+          - type: entities
+            title: Earth events
+            show_header_toggle: false
+            entities:
+              - sensor.astronomy_space_suite_active_earth_events
+              - camera.astronomy_space_suite_apod_image
 
-      - type: "custom:mushroom-entity-card"
-        entity: sensor.astronomy_space_suite_active_earth_events
-        name: Active Earth Events (EONET)
-        icon: "mdi:earth-alert"
-        icon_color: red
+  - title: Launches and NASA
+    path: launches-nasa
+    icon: mdi:rocket-launch
+    type: sections
+    max_columns: 3
+    dense_section_placement: true
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Launch schedule
+            icon: mdi:rocket-launch
+          - type: custom:rocket-launch-card
+            entity_prefix: sensor.astronomy_space_suite_rocket_launch
+            max_launches: 5
+            title: Upcoming rocket launches
+            show_countdown: true
+            show_weather: true
+            show_tags: true
+          - type: entities
+            title: Launch entities
+            show_header_toggle: false
+            entities:
+              - sensor.astronomy_space_suite_rocket_launch_1
+              - sensor.astronomy_space_suite_rocket_launch_2
+              - sensor.astronomy_space_suite_rocket_launch_3
+              - sensor.astronomy_space_suite_rocket_launch_4
+              - sensor.astronomy_space_suite_rocket_launch_5
 
-  - title: Solar System
-    path: solar-system
-    icon: "mdi:orbit"
-    cards: 
-      - type: "custom:astro-horizon-card"
-        sun_entity: sun.sun
-        moon_entity: sensor.moon_phase
-        title: Horizon
-        show_moon: true
-        show_sunrise_sunset: true
-        show_moonrise_moonset: true
-        show_elevation: true
-        label_dawn: Dawn
-        label_noon: Noon
-        label_dusk: Dusk
-      - moon_entity: sensor.moon
-        title: Moon Phase
-        show_next_phases: true
-        show_illumination: true
-        type: "custom:astro-lunar-card"
-        entity: sensor.moon_phase
-        show_phase_name: true
-        show_moonrise_moonset: true
-        moon_size: 150
-      - type: "custom:solar-system-card"
-        title: Inner Solar System
-        show_mercury: true
-        show_venus: true
-        show_earth: true
-        show_mars: true
-        show_jupiter: false
-        show_saturn: false
-        show_orbits: true
-        show_labels: true
-      - type: "custom:solar-system-card"
-        title: Full Solar System
-        show_mercury: true
-        show_venus: true
-        show_earth: true
-        show_mars: true
-        show_jupiter: true
-        show_saturn: true
-        show_uranus: true
-        show_neptune: true
-        show_orbits: true
-        show_labels: true
+      - type: grid
+        cards:
+          - type: heading
+            heading: NASA technology and events
+            icon: mdi:lightbulb-on-outline
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - sensor.astronomy_space_suite_tech_transfer_patents
+              - sensor.astronomy_space_suite_active_earth_events
+              - sensor.astronomy_space_suite_apod
+          - type: picture-entity
+            entity: camera.astronomy_space_suite_apod_image
+            name: APOD image entity
+            show_state: false
+            camera_view: auto
 
-  - title: Launches
-    path: launches
-    icon: "mdi:rocket-launch"
-    cards: 
-      - type: "custom:rocket-launch-card"
-        entity_prefix: sensor.astronomy_space_suite_rocket_launch
-        max_launches: 5
-        title: Upcoming Rocket Launches
-        show_countdown: true
-      - type: "custom:astro-horizon-card"
-        sun_entity: sun.sun
-        title: ""
-        show_elevation: true
-        show_azimuth: true
-        show_times: true
+  - title: Entity Coverage
+    path: entity-coverage
+    icon: mdi:format-list-checks
+    type: sections
+    max_columns: 4
+    dense_section_placement: true
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Integration diagnostics
+            icon: mdi:information-outline
+          - type: markdown
+            content: >-
+              This view intentionally exposes every Astronomy Space Suite entity.
+              Optional ephemeris bodies and deep-sky targets may show unavailable
+              when disabled in integration options. That is expected and does not
+              invalidate this isolated dashboard.
+          - type: entities
+            title: Core sensors
+            show_header_toggle: false
+            entities:
+              - sensor.astronomy_space_suite_apod
+              - sensor.astronomy_space_suite_neo_count_today
+              - sensor.astronomy_space_suite_closest_neo
+              - sensor.astronomy_space_suite_fastest_neo
+              - sensor.astronomy_space_suite_largest_neo
+              - sensor.astronomy_space_suite_coronal_mass_ejections
+              - sensor.astronomy_space_suite_solar_flares
+              - sensor.astronomy_space_suite_geomagnetic_storms
+              - sensor.astronomy_space_suite_active_earth_events
+              - sensor.astronomy_space_suite_tech_transfer_patents
+              - sensor.astronomy_space_suite_rocket_launch_1
+              - sensor.astronomy_space_suite_rocket_launch_2
+              - sensor.astronomy_space_suite_rocket_launch_3
+              - sensor.astronomy_space_suite_rocket_launch_4
+              - sensor.astronomy_space_suite_rocket_launch_5
+              - sensor.astronomy_space_suite_iss_position
+              - sensor.astronomy_space_suite_planetary_kp_index
+          - type: entities
+            title: Cameras
+            show_header_toggle: false
+            entities:
+              - camera.astronomy_space_suite_apod_image
+              - camera.astronomy_space_suite_epic_earth
+              - camera.astronomy_space_suite_goes_16_earth
+              - camera.astronomy_space_suite_goes_18_earth
+              - camera.astronomy_space_suite_himawari_8_earth
+              - camera.astronomy_space_suite_sdo_sun
+              - camera.astronomy_space_suite_soho_sun
 
+      - type: grid
+        cards:
+          - type: heading
+            heading: Ephemeris coverage
+            icon: mdi:orbit
+          - type: entities
+            title: Sun, Moon, and sky
+            show_header_toggle: false
+            entities:
+              - sensor.nasa_astronomy_ephemeris_sun_altitude
+              - sensor.nasa_astronomy_ephemeris_sun_azimuth
+              - sensor.nasa_astronomy_ephemeris_sun_right_ascension
+              - sensor.nasa_astronomy_ephemeris_sun_declination
+              - sensor.nasa_astronomy_ephemeris_sun_distance_au
+              - sensor.nasa_astronomy_ephemeris_sun_angular_diameter_arcmin
+              - sensor.nasa_astronomy_ephemeris_sun_solar_noon
+              - sensor.nasa_astronomy_ephemeris_sun_civil_dawn
+              - sensor.nasa_astronomy_ephemeris_sun_civil_dusk
+              - sensor.nasa_astronomy_ephemeris_sun_nautical_dawn
+              - sensor.nasa_astronomy_ephemeris_sun_nautical_dusk
+              - sensor.nasa_astronomy_ephemeris_sun_astronomical_dawn
+              - sensor.nasa_astronomy_ephemeris_sun_astronomical_dusk
+              - sensor.nasa_astronomy_ephemeris_moon_altitude
+              - sensor.nasa_astronomy_ephemeris_moon_azimuth
+              - sensor.nasa_astronomy_ephemeris_moon_right_ascension
+              - sensor.nasa_astronomy_ephemeris_moon_declination
+              - sensor.nasa_astronomy_ephemeris_moon_distance_km
+              - sensor.nasa_astronomy_ephemeris_moon_angular_diameter_arcmin
+              - sensor.nasa_astronomy_ephemeris_moon_phase_angle
+              - sensor.nasa_astronomy_ephemeris_moon_illumination_pct
+              - sensor.nasa_astronomy_ephemeris_moon_next_full_moon
+              - sensor.nasa_astronomy_ephemeris_moon_next_new_moon
+              - sensor.nasa_astronomy_ephemeris_sky_twilight_phase
+              - sensor.nasa_astronomy_ephemeris_sky_is_astronomical_night
+              - sensor.nasa_astronomy_ephemeris_sky_is_sun_above_horizon
+              - sensor.nasa_astronomy_ephemeris_sky_is_moon_above_horizon
+              - sensor.nasa_astronomy_ephemeris_sky_day_length_hours
+              - sensor.nasa_astronomy_ephemeris_sky_night_length_hours
+              - sensor.nasa_astronomy_ephemeris_sky_local_sidereal_time_hours
+              - sensor.nasa_astronomy_ephemeris_sky_julian_date
+              - sensor.nasa_astronomy_ephemeris_sky_equation_of_time_minutes
 
+      - type: grid
+        cards:
+          - type: heading
+            heading: Deep-sky coverage
+            icon: mdi:galaxy
+          - type: entities
+            title: Summary and Messier 1-57
+            show_header_toggle: false
+            entities:
+              - sensor.nasa_astronomy_deepsky_best_tonight
+              - sensor.nasa_astronomy_deepsky_m31_altitude
+              - sensor.nasa_astronomy_deepsky_m31_azimuth
+              - sensor.nasa_astronomy_deepsky_m31_transit_time
+              - sensor.nasa_astronomy_deepsky_m31_visible
+              - sensor.nasa_astronomy_deepsky_m42_altitude
+              - sensor.nasa_astronomy_deepsky_m42_azimuth
+              - sensor.nasa_astronomy_deepsky_m42_transit_time
+              - sensor.nasa_astronomy_deepsky_m42_visible
+              - sensor.nasa_astronomy_deepsky_m45_altitude
+              - sensor.nasa_astronomy_deepsky_m45_azimuth
+              - sensor.nasa_astronomy_deepsky_m45_transit_time
+              - sensor.nasa_astronomy_deepsky_m45_visible
+              - sensor.nasa_astronomy_deepsky_m13_altitude
+              - sensor.nasa_astronomy_deepsky_m13_azimuth
+              - sensor.nasa_astronomy_deepsky_m13_transit_time
+              - sensor.nasa_astronomy_deepsky_m13_visible
+              - sensor.nasa_astronomy_deepsky_m51_altitude
+              - sensor.nasa_astronomy_deepsky_m51_azimuth
+              - sensor.nasa_astronomy_deepsky_m51_transit_time
+              - sensor.nasa_astronomy_deepsky_m51_visible
+              - sensor.nasa_astronomy_deepsky_m57_altitude
+              - sensor.nasa_astronomy_deepsky_m57_azimuth
+              - sensor.nasa_astronomy_deepsky_m57_transit_time
+              - sensor.nasa_astronomy_deepsky_m57_visible
+              - sensor.nasa_astronomy_deepsky_m8_altitude
+              - sensor.nasa_astronomy_deepsky_m8_azimuth
+              - sensor.nasa_astronomy_deepsky_m8_transit_time
+              - sensor.nasa_astronomy_deepsky_m8_visible
+              - sensor.nasa_astronomy_deepsky_m27_altitude
+              - sensor.nasa_astronomy_deepsky_m27_azimuth
+              - sensor.nasa_astronomy_deepsky_m27_transit_time
+              - sensor.nasa_astronomy_deepsky_m27_visible
+          - type: entities
+            title: Messier 81-104
+            show_header_toggle: false
+            entities:
+              - sensor.nasa_astronomy_deepsky_m81_altitude
+              - sensor.nasa_astronomy_deepsky_m81_azimuth
+              - sensor.nasa_astronomy_deepsky_m81_transit_time
+              - sensor.nasa_astronomy_deepsky_m81_visible
+              - sensor.nasa_astronomy_deepsky_m82_altitude
+              - sensor.nasa_astronomy_deepsky_m82_azimuth
+              - sensor.nasa_astronomy_deepsky_m82_transit_time
+              - sensor.nasa_astronomy_deepsky_m82_visible
+              - sensor.nasa_astronomy_deepsky_m101_altitude
+              - sensor.nasa_astronomy_deepsky_m101_azimuth
+              - sensor.nasa_astronomy_deepsky_m101_transit_time
+              - sensor.nasa_astronomy_deepsky_m101_visible
+              - sensor.nasa_astronomy_deepsky_m104_altitude
+              - sensor.nasa_astronomy_deepsky_m104_azimuth
+              - sensor.nasa_astronomy_deepsky_m104_transit_time
+              - sensor.nasa_astronomy_deepsky_m104_visible
+              - sensor.nasa_astronomy_deepsky_m17_altitude
+              - sensor.nasa_astronomy_deepsky_m17_azimuth
+              - sensor.nasa_astronomy_deepsky_m17_transit_time
+              - sensor.nasa_astronomy_deepsky_m17_visible
+              - sensor.nasa_astronomy_deepsky_m20_altitude
+              - sensor.nasa_astronomy_deepsky_m20_azimuth
+              - sensor.nasa_astronomy_deepsky_m20_transit_time
+              - sensor.nasa_astronomy_deepsky_m20_visible
+              - sensor.nasa_astronomy_deepsky_m1_altitude
+              - sensor.nasa_astronomy_deepsky_m1_azimuth
+              - sensor.nasa_astronomy_deepsky_m1_transit_time
+              - sensor.nasa_astronomy_deepsky_m1_visible
+              - sensor.nasa_astronomy_deepsky_m33_altitude
+              - sensor.nasa_astronomy_deepsky_m33_azimuth
+              - sensor.nasa_astronomy_deepsky_m33_transit_time
+              - sensor.nasa_astronomy_deepsky_m33_visible
+              - sensor.nasa_astronomy_deepsky_m44_altitude
+              - sensor.nasa_astronomy_deepsky_m44_azimuth
+              - sensor.nasa_astronomy_deepsky_m44_transit_time
+              - sensor.nasa_astronomy_deepsky_m44_visible
+              - sensor.nasa_astronomy_deepsky_m22_altitude
+              - sensor.nasa_astronomy_deepsky_m22_azimuth
+              - sensor.nasa_astronomy_deepsky_m22_transit_time
+              - sensor.nasa_astronomy_deepsky_m22_visible
+              - sensor.nasa_astronomy_deepsky_m3_altitude
+              - sensor.nasa_astronomy_deepsky_m3_azimuth
+              - sensor.nasa_astronomy_deepsky_m3_transit_time
+              - sensor.nasa_astronomy_deepsky_m3_visible
+              - sensor.nasa_astronomy_deepsky_m5_altitude
+              - sensor.nasa_astronomy_deepsky_m5_azimuth
+              - sensor.nasa_astronomy_deepsky_m5_transit_time
+              - sensor.nasa_astronomy_deepsky_m5_visible
+              - sensor.nasa_astronomy_deepsky_m16_altitude
+              - sensor.nasa_astronomy_deepsky_m16_azimuth
+              - sensor.nasa_astronomy_deepsky_m16_transit_time
+              - sensor.nasa_astronomy_deepsky_m16_visible
+              - sensor.nasa_astronomy_deepsky_m35_altitude
+              - sensor.nasa_astronomy_deepsky_m35_azimuth
+              - sensor.nasa_astronomy_deepsky_m35_transit_time
+              - sensor.nasa_astronomy_deepsky_m35_visible
+              - sensor.nasa_astronomy_deepsky_m47_altitude
+              - sensor.nasa_astronomy_deepsky_m47_azimuth
+              - sensor.nasa_astronomy_deepsky_m47_transit_time
+              - sensor.nasa_astronomy_deepsky_m47_visible
+              - sensor.nasa_astronomy_deepsky_m78_altitude
+              - sensor.nasa_astronomy_deepsky_m78_azimuth
+              - sensor.nasa_astronomy_deepsky_m78_transit_time
+              - sensor.nasa_astronomy_deepsky_m78_visible
+          - type: entities
+            title: NGC and IC targets
+            show_header_toggle: false
+            entities:
+              - sensor.nasa_astronomy_deepsky_ngc_7000_altitude
+              - sensor.nasa_astronomy_deepsky_ngc_7000_azimuth
+              - sensor.nasa_astronomy_deepsky_ngc_7000_transit_time
+              - sensor.nasa_astronomy_deepsky_ngc_7000_visible
+              - sensor.nasa_astronomy_deepsky_ngc_869_altitude
+              - sensor.nasa_astronomy_deepsky_ngc_869_azimuth
+              - sensor.nasa_astronomy_deepsky_ngc_869_transit_time
+              - sensor.nasa_astronomy_deepsky_ngc_869_visible
+              - sensor.nasa_astronomy_deepsky_ngc_884_altitude
+              - sensor.nasa_astronomy_deepsky_ngc_884_azimuth
+              - sensor.nasa_astronomy_deepsky_ngc_884_transit_time
+              - sensor.nasa_astronomy_deepsky_ngc_884_visible
+              - sensor.nasa_astronomy_deepsky_ngc_6992_altitude
+              - sensor.nasa_astronomy_deepsky_ngc_6992_azimuth
+              - sensor.nasa_astronomy_deepsky_ngc_6992_transit_time
+              - sensor.nasa_astronomy_deepsky_ngc_6992_visible
+              - sensor.nasa_astronomy_deepsky_ngc_253_altitude
+              - sensor.nasa_astronomy_deepsky_ngc_253_azimuth
+              - sensor.nasa_astronomy_deepsky_ngc_253_transit_time
+              - sensor.nasa_astronomy_deepsky_ngc_253_visible
+              - sensor.nasa_astronomy_deepsky_ic_434_altitude
+              - sensor.nasa_astronomy_deepsky_ic_434_azimuth
+              - sensor.nasa_astronomy_deepsky_ic_434_transit_time
+              - sensor.nasa_astronomy_deepsky_ic_434_visible
