@@ -476,6 +476,26 @@ test("BUG 5: APOD cropping is a deliberate exclusion, not the same defect", () =
   assert.match(rule[0], /object-fit/, "APOD cropping is intentional; see comment above");
 });
 
+// ── BUG 6: ISS map rendered one broken, key-gated tile ──────────────────────
+
+test("BUG 6: ISS card embeds Home Assistant's native map renderer", () => {
+  const source = readFileSync(BUNDLES.astronomy, "utf8");
+  assert.match(source, /window\.loadCardHelpers\(\)/);
+  assert.match(source, /helpers\.createCardElement\(mapConfig\)/);
+  assert.match(source, /type:\s*"map"/);
+  assert.match(source, /theme_mode:\s*"dark"/);
+});
+
+test("BUG 6: native ISS map enables trail, fit, controls, and scale", () => {
+  const source = readFileSync(BUNDLES.astronomy, "utf8");
+  assert.match(source, /hours_to_show:/);
+  assert.match(source, /auto_fit:\s*true/);
+  assert.match(source, /fit_zones:\s*true/);
+  assert.match(source, /scale_ruler:\s*true/);
+  assert.doesNotMatch(source, /unpkg\.com\/leaflet/);
+  assert.doesNotMatch(source, /basemaps\.cartocdn\.com/);
+});
+
 // ── Bundle sync guarantee ───────────────────────────────────────────────────
 
 test("the custom_components and www card bundles are byte-identical", () => {

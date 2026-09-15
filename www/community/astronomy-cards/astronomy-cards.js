@@ -2248,9 +2248,8 @@ class IssTrackerCardEditor extends AstroEditorBase {
       show_map: true,
       show_trail: true,
       show_stream_button: true,
-      map_zoom: 3,
-      trail_hours: 2,
-      trail_max_points: 24,
+      map_zoom: 0,
+      trail_hours: 6,
       ...config,
     });
   }
@@ -2260,9 +2259,8 @@ class IssTrackerCardEditor extends AstroEditorBase {
       <ha-entity-picker id="entity" label="ISS position entity"></ha-entity-picker>
       <div class="astro-input-wrap"><label for="title">Card title</label><input type="text" id="title" placeholder="Leave empty for default" /></div>
       <div class="astro-input-wrap"><label for="stream_url">ISS livestream URL</label><input type="text" id="stream_url" /></div>
-      <div class="astro-input-wrap"><label for="map_zoom">Map zoom level (1-18)</label><input type="number" id="map_zoom" min="1" max="18" /></div>
+      <div class="astro-input-wrap"><label for="map_zoom">Map zoom level (0-18)</label><input type="number" id="map_zoom" min="0" max="18" /></div>
       <div class="astro-input-wrap"><label for="trail_hours">Trail history (hours)</label><input type="number" id="trail_hours" min="1" max="24" /></div>
-      <div class="astro-input-wrap"><label for="trail_max_points">Max trail points</label><input type="number" id="trail_max_points" min="5" max="100" /></div>
       <label class="switch-row"><span>Show map</span><ha-switch id="show_map"></ha-switch></label>
       <label class="switch-row"><span>Show trail</span><ha-switch id="show_trail"></ha-switch></label>
       <label class="switch-row"><span>Show stream button</span><ha-switch id="show_stream_button"></ha-switch></label>
@@ -2273,9 +2271,8 @@ class IssTrackerCardEditor extends AstroEditorBase {
     this._bindPicker("entity", "entity");
     this._bindText("title", "title", (value) => value.trim());
     this._bindText("stream_url", "stream_url", (value) => value.trim());
-    this._bindText("map_zoom", "map_zoom", (value) => clamp(parseInt(value, 10) || 3, 1, 18));
-    this._bindText("trail_hours", "trail_hours", (value) => clamp(parseInt(value, 10) || 2, 1, 24));
-    this._bindText("trail_max_points", "trail_max_points", (value) => clamp(parseInt(value, 10) || 24, 5, 100));
+    this._bindText("map_zoom", "map_zoom", (value) => clamp(parseInt(value, 10) || 0, 0, 18));
+    this._bindText("trail_hours", "trail_hours", (value) => clamp(parseInt(value, 10) || 6, 1, 24));
     ["show_map", "show_trail", "show_stream_button"].forEach((key) => this._bindSwitch(key, key));
   }
 
@@ -2283,9 +2280,8 @@ class IssTrackerCardEditor extends AstroEditorBase {
     setPickerValue(this.shadowRoot, "entity", this._hass, this._config.entity || "sensor.astronomy_space_suite_iss_position");
     setTextValue(this.shadowRoot, "title", this._config.title || "ISS Tracker");
     setTextValue(this.shadowRoot, "stream_url", this._config.stream_url || "https://www.youtube.com/nasa/live");
-    setTextValue(this.shadowRoot, "map_zoom", String(this._config.map_zoom ?? 3));
-    setTextValue(this.shadowRoot, "trail_hours", String(this._config.trail_hours ?? 2));
-    setTextValue(this.shadowRoot, "trail_max_points", String(this._config.trail_max_points ?? 24));
+    setTextValue(this.shadowRoot, "map_zoom", String(this._config.map_zoom ?? 0));
+    setTextValue(this.shadowRoot, "trail_hours", String(this._config.trail_hours ?? 6));
     setSwitchValue(this.shadowRoot, "show_map", this._config.show_map !== false);
     setSwitchValue(this.shadowRoot, "show_trail", this._config.show_trail !== false);
     setSwitchValue(this.shadowRoot, "show_stream_button", this._config.show_stream_button !== false);
@@ -2297,13 +2293,9 @@ class IssTrackerCard extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._config = {};
-    this._trail = [];
-    this._trailKey = "";
-    this._lastTrailStamp = "";
-    this._leafletReady = false;
-    this._map = null;
-    this._issMarker = null;
-    this._trailLayer = null;
+    this._nativeMap = null;
+    this._nativeMapConfig = "";
+    this._nativeMapToken = 0;
   }
 
   static getConfigElement() { return document.createElement("iss-tracker-card-editor"); }
@@ -2315,9 +2307,8 @@ class IssTrackerCard extends HTMLElement {
       show_map: true,
       show_trail: true,
       show_stream_button: true,
-      map_zoom: 3,
-      trail_hours: 2,
-      trail_max_points: 24,
+      map_zoom: 0,
+      trail_hours: 6,
     };
   }
 
@@ -2349,72 +2340,53 @@ class IssTrackerCard extends HTMLElement {
     };
   }
 
-  _getTrailKey() {
-    return `astronomy-cards:iss-trail:${this._config.entity || "sensor.astronomy_space_suite_iss_position"}`;
-  }
-
-  _loadTrail() {
-    const key = this._getTrailKey();
-    if (this._trailKey === key) return;
-    this._trailKey = key;
-    this._lastTrailStamp = "";
-    const maxPoints = this._config.trail_max_points || 24;
-    try {
-      const parsed = JSON.parse(localStorage.getItem(key) || "[]");
-      this._trail = safeArray(parsed)
-        .filter((item) => Number.isFinite(item?.latitude) && Number.isFinite(item?.longitude))
-        .slice(-maxPoints);
-      const latest = this._trail[this._trail.length - 1];
-      this._lastTrailStamp = latest?.stamp || "";
-    } catch (_error) {
-      this._trail = [];
+  async _renderNativeMap() {
+    const container = this.shadowRoot.querySelector("#iss-native-map");
+    if (!container) return;
+    if (typeof window.loadCardHelpers !== "function") {
+      container.textContent = "Home Assistant map renderer is unavailable.";
+      container.classList.add("iss-map-error");
+      return;
     }
-  }
 
-  _pruneTrail() {
-    const hours = this._config.trail_hours || 2;
-    const cutoff = Date.now() - hours * 3600000;
-    const maxPoints = this._config.trail_max_points || 24;
-    this._trail = this._trail.filter((item) => {
-      if (!item.time) return true;
-      return item.time > cutoff;
-    }).slice(-maxPoints);
-  }
+    const mapConfig = {
+      type: "map",
+      show_all: false,
+      entities: [{
+        entity: this._config.entity,
+        name: "ISS Position",
+      }],
+      hours_to_show: this._config.show_trail === false ? 0 : (this._config.trail_hours ?? 6),
+      default_zoom: this._config.map_zoom ?? 0,
+      auto_fit: true,
+      fit_zones: true,
+      theme_mode: "dark",
+      scale_ruler: true,
+      aspect_ratio: "16:9",
+    };
+    const serialized = JSON.stringify(mapConfig);
+    if (this._nativeMap && this._nativeMapConfig === serialized) {
+      this._nativeMap.hass = this._hass;
+      return;
+    }
 
-  _updateTrail(position) {
-    this._loadTrail();
-    if (!Number.isFinite(position.latitude) || !Number.isFinite(position.longitude)) return this._trail;
-    const stamp = String(position.timestamp || `${position.latitude.toFixed(3)},${position.longitude.toFixed(3)}`);
-    if (stamp === this._lastTrailStamp) return this._trail;
-    this._lastTrailStamp = stamp;
-    this._trail = [...this._trail.filter((item) => item.stamp !== stamp), {
-      latitude: position.latitude,
-      longitude: position.longitude,
-      stamp,
-      time: Date.now(),
-    }];
-    this._pruneTrail();
+    const token = ++this._nativeMapToken;
     try {
-      localStorage.setItem(this._trailKey, JSON.stringify(this._trail));
-    } catch (_error) {}
-    return this._trail;
-  }
-
-  async _ensureLeaflet() {
-    if (this._leafletReady) return true;
-    if (window.L) { this._leafletReady = true; return true; }
-    // Load Leaflet CSS + JS
-    return new Promise((resolve) => {
-      const link = document.createElement("link");
-      link.rel = "stylesheet";
-      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-      document.head.appendChild(link);
-      const script = document.createElement("script");
-      script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-      script.onload = () => { this._leafletReady = true; resolve(true); };
-      script.onerror = () => resolve(false);
-      document.head.appendChild(script);
-    });
+      const helpers = await window.loadCardHelpers();
+      if (token !== this._nativeMapToken) return;
+      const mapCard = helpers.createCardElement(mapConfig);
+      mapCard.hass = this._hass;
+      mapCard.style.display = "block";
+      mapCard.style.height = "100%";
+      mapCard.style.setProperty("--ha-card-border-width", "0px");
+      mapCard.style.setProperty("--ha-card-border-radius", "18px");
+      container.replaceChildren(mapCard);
+      this._nativeMap = mapCard;
+      this._nativeMapConfig = serialized;
+    } catch (error) {
+      container.textContent = `Map unavailable: ${error?.message || error}`;
+      container.classList.add("iss-map-error");
+    }
   }
 
   async _render() {
@@ -2445,8 +2417,6 @@ class IssTrackerCard extends HTMLElement {
       return;
     }
 
-    const trail = this._updateTrail(displayPos);
-
     // Only do full DOM rebuild if structure doesn't exist yet
     if (!this.shadowRoot.querySelector(".astro-card")) {
       this.shadowRoot.innerHTML = `
@@ -2456,11 +2426,15 @@ class IssTrackerCard extends HTMLElement {
           .iss-map-container {
             border-radius: 18px;
             overflow: hidden;
-            height: 300px;
+            min-height: 260px;
             position: relative;
             box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06);
           }
-          .iss-map-container .leaflet-container { width: 100%; height: 100%; }
+          #iss-native-map { width: 100%; min-height: 260px; }
+          .iss-map-error {
+            min-height: 260px; display: grid; place-items: center; padding: 16px;
+            color: ${ASTRO.error}; background: rgba(var(--rgb-error-color, 244,67,54), 0.08);
+          }
           .iss-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
           .iss-stat {
             border-radius: 14px;
@@ -2491,7 +2465,7 @@ class IssTrackerCard extends HTMLElement {
           </div>
           <div class="iss-body">
             <div class="iss-stale-banner" style="display:none"></div>
-            ${this._config.show_map !== false ? `<div class="iss-map-container"><div id="iss-map-el"></div></div>` : ""}
+            ${this._config.show_map !== false ? `<div class="iss-map-container"><div id="iss-native-map"></div></div>` : ""}
             <div class="iss-grid">
               <div class="iss-stat"><div class="iss-stat-label">Latitude</div><div class="iss-stat-value iss-lat"></div></div>
               <div class="iss-stat"><div class="iss-stat-label">Longitude</div><div class="iss-stat-value iss-lon"></div></div>
@@ -2523,56 +2497,8 @@ class IssTrackerCard extends HTMLElement {
     const timeEl = this.shadowRoot.querySelector(".iss-time");
     if (timeEl) timeEl.textContent = isStale ? "⚠ Last known position" : `Updated ${formatDateTime(displayPos.timestamp)}`;
 
-    // Initialize or update Leaflet map
     if (this._config.show_map !== false) {
-      await this._ensureLeaflet();
-      if (window.L) {
-        const mapEl = this.shadowRoot.querySelector("#iss-map-el");
-        if (mapEl && !this._map) {
-          mapEl.style.width = "100%";
-          mapEl.style.height = "100%";
-          this._map = L.map(mapEl, { zoomControl: false, attributionControl: false }).setView([displayPos.latitude, displayPos.longitude], this._config.map_zoom || 3);
-          L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-            maxZoom: 19,
-          }).addTo(this._map);
-          L.control.attribution({ prefix: false, position: "bottomright" }).addTo(this._map);
-          this._trailLayer = L.layerGroup().addTo(this._map);
-
-          // ISS icon
-          const issIcon = L.divIcon({
-            html: '<svg width="32" height="32" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="rgba(33,150,243,0.2)" stroke="#2196f3" stroke-width="1.5"/><path fill="#2196f3" d="M11.38 2l-1.75 5.25h4.75L12.62 2h-1.24m1.24 22l1.76-5.25H9.62L11.38 24h1.24M2 11.38v1.24l5.25 1.76V9.62L2 11.38m20 1.24v-1.24l-5.25-1.76v4.76L22 12.62M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 1.5a2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 1-2.5 2.5A2.5 2.5 0 0 1 9.5 12 2.5 2.5 0 0 1 12 9.5Z"/></svg>',
-            className: "",
-            iconSize: [32, 32],
-            iconAnchor: [16, 16],
-          });
-          this._issMarker = L.marker([displayPos.latitude, displayPos.longitude], { icon: issIcon }).addTo(this._map);
-        }
-
-        // Update position
-        if (this._issMarker) {
-          this._issMarker.setLatLng([displayPos.latitude, displayPos.longitude]);
-          this._map.panTo([displayPos.latitude, displayPos.longitude], { animate: true, duration: 1 });
-        }
-
-        // Update trail dots (HA-style fading dots)
-        if (this._trailLayer && this._config.show_trail !== false) {
-          this._trailLayer.clearLayers();
-          const trailPoints = trail.slice(0, -1);
-          trailPoints.forEach((item, index) => {
-            const progress = (index + 1) / Math.max(trailPoints.length, 1);
-            const opacity = 0.2 + progress * 0.6;
-            const radius = 3 + progress * 3;
-            L.circleMarker([item.latitude, item.longitude], {
-              radius: radius,
-              fillColor: "#2196f3",
-              fillOpacity: opacity,
-              color: "#1565c0",
-              weight: 1,
-              opacity: opacity * 0.8,
-            }).addTo(this._trailLayer);
-          });
-        }
-      }
+      await this._renderNativeMap();
     }
   }
 
