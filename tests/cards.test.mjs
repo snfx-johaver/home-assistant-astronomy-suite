@@ -36,6 +36,8 @@ const astronomy = loadBundle(BUNDLES.astronomy, [
   "formatCountdown",
   "RocketLaunchCard",
   "IssTrackerCard",
+  "EarthObservationCard",
+  "EarthObservationCardEditor",
 ]);
 
 const BEST_TONIGHT = "sensor.nasa_astronomy_deepsky_best_tonight";
@@ -473,35 +475,59 @@ test("BUG 4: dome draws its colliding pair without overlapping fillText calls", 
   assert.ok(canvas.lines > 0, "the displaced dome label should get a leader line");
 });
 
-// ── BUG 5: earth-observation-card left a large empty band ────────────────────
+// ── Earth observation full-disc feeds ────────────────────────────────────────
 
-test("BUG 5: the image frame no longer forces a fixed aspect ratio", () => {
+test("Earth observation uses a square black contain frame without cropping", () => {
   const source = readFileSync(BUNDLES.astronomy, "utf8");
+  const frame = source.match(/\.earth-frame \{[^}]*\}/);
   const rule = source.match(/\.earth-frame img \{[^}]*\}/);
+  assert.ok(frame, ".earth-frame rule not found");
   assert.ok(rule, ".earth-frame img rule not found");
+  assert.match(frame[0], /aspect-ratio:\s*1\s*\/\s*1/);
+  assert.match(frame[0], /background:\s*#000/);
+  assert.match(rule[0], /object-fit:\s*contain/);
+  assert.match(rule[0], /height:\s*100%/);
+  assert.match(rule[0], /background:\s*#000/);
+});
+
+test("Live Sun thumbnails still avoid forced cropping", () => {
+  const source = readFileSync(BUNDLES.astronomy, "utf8");
+  const rule = source.match(/\.live-sun-card img \{[^}]*\}/);
+  assert.ok(rule, ".live-sun-card img rule not found");
   assert.equal(/aspect-ratio/.test(rule[0]), false, rule[0]);
   assert.equal(/object-fit/.test(rule[0]), false, rule[0]);
   assert.match(rule[0], /height:\s*auto/);
-  assert.equal(/\.earth-frame\.sun img \{/.test(source), false, "sun-specific object-fit override should be gone");
 });
 
-// Class-level guard. A fixed ratio on square full-disc imagery either crops the
-// disc or leaves a dead band, so every rule painting a solar/planetary disc must
-// size itself to its image. The Earth card was fixed first; the Live Sun grid
-// carried the identical defect and cropped ~25% of the disc.
-test("BUG 5: no disc-image rule forces a fixed aspect ratio", () => {
+test("Meteosat is in defaults, editor, views, attribution, and proxy rendering", () => {
+  const entity = "camera.astronomy_space_suite_meteosat_12_earth";
+  const stub = astronomy.EarthObservationCard.getStubConfig();
+  assert.equal(stub.meteosat_entity, entity);
+
+  const editor = new astronomy.EarthObservationCardEditor();
+  editor.setConfig({});
+  assert.equal(editor._config.meteosat_entity, entity);
+  assert.match(editor._editorTemplate(), /id="meteosat_entity"/);
+
+  const card = new astronomy.EarthObservationCard();
+  card.setConfig({});
+  card.hass = makeHass({
+    [entity]: makeState(entity, "idle", {
+      attribution: "EUMETSAT / NASA",
+      source: "EUMETSAT",
+      band: "GeoColour RGB",
+    }),
+  });
+  const view = card._getViews().find((item) => item.key === "meteosat");
+  assert.ok(view);
+  const data = card._getViewData(view);
+  assert.equal(data.title, "Meteosat-12");
+  assert.equal(data.source, "EUMETSAT / NASA");
+  assert.match(data.imageUrl, /\/api\/camera_proxy\/camera\.astronomy_space_suite_meteosat_12_earth/);
+
   const source = readFileSync(BUNDLES.astronomy, "utf8");
-  const discRules = [
-    [".earth-frame img", /\.earth-frame img \{[^}]*\}/],
-    [".live-sun-card img", /\.live-sun-card img \{[^}]*\}/],
-  ];
-  for (const [selector, pattern] of discRules) {
-    const rule = source.match(pattern);
-    assert.ok(rule, `${selector} rule not found`);
-    assert.equal(/aspect-ratio/.test(rule[0]), false, `${selector} must not force a ratio: ${rule[0]}`);
-    assert.equal(/object-fit/.test(rule[0]), false, `${selector} must not crop the disc: ${rule[0]}`);
-    assert.match(rule[0], /height:\s*auto/, `${selector} must size to its image: ${rule[0]}`);
-  }
+  assert.match(source, /<img src="\$\{esc\(active\.imageUrl\)\}"/);
+  assert.match(source, /Source: \$\{esc\(active\.source\)\}/);
 });
 
 test("BUG 5: APOD cropping is a deliberate exclusion, not the same defect", () => {

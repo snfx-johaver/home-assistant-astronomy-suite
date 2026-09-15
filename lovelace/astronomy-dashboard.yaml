@@ -85,6 +85,7 @@ views:
             goes_entity: camera.astronomy_space_suite_goes_16_earth
             goes18_entity: camera.astronomy_space_suite_goes_18_earth
             himawari_entity: camera.astronomy_space_suite_himawari_8_earth
+            meteosat_entity: camera.astronomy_space_suite_meteosat_12_earth
             sdo_entity: camera.astronomy_space_suite_sdo_sun
             soho_entity: camera.astronomy_space_suite_soho_sun
             refresh_interval: 5
@@ -509,6 +510,7 @@ views:
             goes_entity: camera.astronomy_space_suite_goes_16_earth
             goes18_entity: camera.astronomy_space_suite_goes_18_earth
             himawari_entity: camera.astronomy_space_suite_himawari_8_earth
+            meteosat_entity: camera.astronomy_space_suite_meteosat_12_earth
             sdo_entity: camera.astronomy_space_suite_sdo_sun
             soho_entity: camera.astronomy_space_suite_soho_sun
             refresh_interval: 5
@@ -530,6 +532,11 @@ views:
           - type: picture-entity
             entity: camera.astronomy_space_suite_himawari_8_earth
             name: Himawari-8 Asia Pacific
+            show_state: false
+            camera_view: auto
+          - type: picture-entity
+            entity: camera.astronomy_space_suite_meteosat_12_earth
+            name: Meteosat-12 Europe and Africa
             show_state: false
             camera_view: auto
           - type: entities

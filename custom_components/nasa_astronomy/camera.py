@@ -1,6 +1,8 @@
-"""Camera platform for Astronomy Space Suite - APOD, EPIC, GOES, Himawari, SDO, SOHO."""
+"""Camera platform for Astronomy Space Suite."""
 from __future__ import annotations
 
+import asyncio
+from datetime import timedelta
 import logging
 from typing import Any
 
@@ -10,8 +12,9 @@ from homeassistant.components.camera import Camera
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
@@ -20,6 +23,7 @@ from .const import (
     GOES18_EARTH_URL,
     HIMAWARI8_EARTH_URL,
     INTEGRATION_VERSION,
+    METEOSAT12_EARTH_URL,
     SDO_SUN_URL,
     SOHO_SUN_URL,
 )
@@ -41,6 +45,7 @@ async def async_setup_entry(
         StaticImageCamera(coordinator, entry, "GOES-16 Earth", "mdi:satellite-variant", GOES16_EARTH_URL, "goes_16_earth", {"source": "NOAA GOES-16", "band": "GeoColor Full Disk", "region": "Americas", "update_frequency": "Every 10 minutes"}),
         StaticImageCamera(coordinator, entry, "GOES-18 Earth", "mdi:satellite-variant", GOES18_EARTH_URL, "goes_18_earth", {"source": "NOAA GOES-18", "band": "GeoColor Full Disk", "region": "Pacific", "update_frequency": "Every 10 minutes"}),
         StaticImageCamera(coordinator, entry, "Himawari-8 Earth", "mdi:satellite-variant", HIMAWARI8_EARTH_URL, "himawari8_earth", {"source": "Himawari-8 (NICT Japan)", "band": "True Color", "region": "Asia/Pacific", "update_frequency": "Every 10 minutes"}),
+        Meteosat12EarthCamera(coordinator, entry),
         StaticImageCamera(coordinator, entry, "SDO Sun", "mdi:white-balance-sunny", SDO_SUN_URL, "sdo_sun", {"source": "NASA SDO", "wavelength": "171 Å (Fe IX)", "description": "Solar corona in extreme ultraviolet", "update_frequency": "Near real-time"}),
         StaticImageCamera(coordinator, entry, "SOHO Sun", "mdi:weather-sunny-alert", SOHO_SUN_URL, "soho_sun", {"source": "ESA/NASA SOHO LASCO C3", "description": "Coronagraph showing solar wind and CMEs", "update_frequency": "Every 20 minutes"}),
     ], True)
@@ -216,6 +221,108 @@ class NasaEpicEarthCamera(CoordinatorEntity[NasaDataCoordinator], Camera):
             "image_url": self._get_latest_image_url() or "",
             "centroid_coordinates": latest.get("centroid_coordinates", {}),
             "total_images_today": len(epic),
+        }
+
+
+class Meteosat12EarthCamera(CoordinatorEntity[NasaDataCoordinator], Camera):
+    """Cached EUMETSAT Meteosat-12 GeoColour full-disc camera."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Meteosat-12 Earth"
+    _attr_icon = "mdi:satellite-variant"
+
+    def __init__(
+        self,
+        coordinator: NasaDataCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize the Meteosat-12 camera."""
+        CoordinatorEntity.__init__(self, coordinator)
+        Camera.__init__(self)
+        self._attr_unique_id = f"{entry.entry_id}_meteosat_12_earth_camera"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, entry.entry_id)},
+            "name": "Astronomy Space Suite",
+            "manufacturer": "NASA",
+            "model": "Open APIs",
+            "sw_version": INTEGRATION_VERSION,
+        }
+        self._cached_image: bytes | None = None
+        self._refresh_lock = asyncio.Lock()
+
+    async def async_added_to_hass(self) -> None:
+        """Start the independent EUMETSAT refresh lifecycle."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_time_interval(
+                self.hass,
+                self._async_scheduled_refresh,
+                timedelta(minutes=10),
+            )
+        )
+        self.hass.async_create_task(
+            self._async_refresh(),
+            "Meteosat-12 initial image refresh",
+        )
+
+    async def _async_scheduled_refresh(self, _now: Any) -> None:
+        """Refresh the cached image on the ten-minute source cadence."""
+        await self._async_refresh()
+
+    async def _async_refresh(self, *, force: bool = True) -> bytes | None:
+        """Download and validate one PNG, retaining the previous good image."""
+        async with self._refresh_lock:
+            if self._cached_image is not None and not force:
+                return self._cached_image
+            try:
+                session = async_get_clientsession(self.hass)
+                timeout = aiohttp.ClientTimeout(total=25)
+                async with session.get(METEOSAT12_EARTH_URL, timeout=timeout) as resp:
+                    if resp.status != 200:
+                        _LOGGER.warning(
+                            "Meteosat-12 image refresh failed with HTTP status %s",
+                            resp.status,
+                        )
+                        return self._cached_image
+
+                    content_type = resp.headers.get("Content-Type", "").lower()
+                    image = await resp.read()
+                    if (
+                        not content_type.startswith("image/png")
+                        or not image.startswith(b"\x89PNG\r\n\x1a\n")
+                    ):
+                        _LOGGER.warning(
+                            "Meteosat-12 image refresh returned invalid PNG content "
+                            "(content type: %s, bytes: %s)",
+                            content_type or "missing",
+                            len(image),
+                        )
+                        return self._cached_image
+
+                    self._cached_image = image
+                    return image
+            except (aiohttp.ClientError, TimeoutError) as err:
+                _LOGGER.warning("Meteosat-12 image refresh failed: %s", err)
+                return self._cached_image
+
+    async def async_camera_image(
+        self, width: int | None = None, height: int | None = None
+    ) -> bytes | None:
+        """Serve cached bytes, fetching synchronously only before the first refresh."""
+        if self._cached_image is None:
+            return await self._async_refresh(force=False)
+        return self._cached_image
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str]:
+        """Return Meteosat observation metadata."""
+        return {
+            "source": "EUMETSAT",
+            "band": "GeoColour RGB",
+            "region": "Europe/Africa",
+            "update_frequency": "Every 10 minutes",
+            "attribution": "EUMETSAT / NASA",
+            "background": "NASA Black Marble",
         }
 
 

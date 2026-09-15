@@ -146,12 +146,19 @@ RELEASE_MAINTAINED = {
 # point of the entry: "we decided not to care" is how index.ts reached 1.0.0,
 # so an entry here has to say what the number actually is.
 NOT_A_PRODUCT_VERSION = {
+    "CHANGELOG.md": "release history headings; frozen after publication",
     "README.md": "changelog headings recording past releases; frozen by design",
+    "custom_components/nasa_astronomy/const.py": (
+        "the EUMETSAT WMS protocol version, not the integration version"
+    ),
     "hacs.json": "minimum supported Home Assistant version, not ours",
     "scripts/bump_version.py": "comments describing the 1.0.0 drift incident",
     "tests/cards.test.mjs": "names the release whose defects it regression-tests",
     "tests/test_cards_resource_version.py": "docstring prose describing past drift",
     "tests/test_device_info_version.py": "docstring quoting the original stale values",
+    "tests/test_meteosat_camera.py": (
+        "asserts the third-party EUMETSAT WMS protocol version"
+    ),
     "tests/test_version_literals.py": "this docstring, describing the same incidents",
     "tests/test_resource_registration.py": (
         "an illustrative ``?v=1.2.3`` cache-bust shape, a ``0.0.1`` sentinel "

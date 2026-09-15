@@ -1,5 +1,5 @@
 /**
- * Astronomy Space Suite Cards v1.15.0
+ * Astronomy Space Suite Cards v1.16.0
  * Pre-built Astronomy Space Suite bundle for Home Assistant Lovelace.
  *
  * Cards:
@@ -211,7 +211,7 @@ const EDITOR_STYLES = `
 `;
 
 const DOCS_URL = "https://github.com/snfx-johaver/home-assistant-astronomy-suite";
-const VERSION = "1.15.0";
+const VERSION = "1.16.0";
 const DAY_MS = 86400000;
 const J2000 = 2451545.0;
 
@@ -2632,6 +2632,7 @@ class EarthObservationCardEditor extends AstroEditorBase {
       goes_entity: "camera.astronomy_space_suite_goes_16_earth",
       goes18_entity: "camera.astronomy_space_suite_goes_18_earth",
       himawari_entity: "camera.astronomy_space_suite_himawari_8_earth",
+      meteosat_entity: "camera.astronomy_space_suite_meteosat_12_earth",
       sdo_entity: "camera.astronomy_space_suite_sdo_sun",
       soho_entity: "camera.astronomy_space_suite_soho_sun",
       title: "Earth Observation",
@@ -2648,6 +2649,7 @@ class EarthObservationCardEditor extends AstroEditorBase {
       <ha-entity-picker id="goes_entity" label="GOES-16 camera entity"></ha-entity-picker>
       <ha-entity-picker id="goes18_entity" label="GOES-18 camera entity"></ha-entity-picker>
       <ha-entity-picker id="himawari_entity" label="Himawari-8 camera entity"></ha-entity-picker>
+      <ha-entity-picker id="meteosat_entity" label="Meteosat-12 camera entity"></ha-entity-picker>
       <ha-entity-picker id="sdo_entity" label="SDO sun camera entity"></ha-entity-picker>
       <ha-entity-picker id="soho_entity" label="SOHO sun camera entity"></ha-entity-picker>
       <div class="astro-input-wrap"><label for="title">Card title</label><input type="text" id="title" placeholder="Leave empty for default" /></div>
@@ -2658,7 +2660,7 @@ class EarthObservationCardEditor extends AstroEditorBase {
   }
 
   _setupListeners() {
-    ["epic_entity", "goes_entity", "goes18_entity", "himawari_entity", "sdo_entity", "soho_entity"].forEach((key) => this._bindPicker(key, key));
+    ["epic_entity", "goes_entity", "goes18_entity", "himawari_entity", "meteosat_entity", "sdo_entity", "soho_entity"].forEach((key) => this._bindPicker(key, key));
     this._bindText("title", "title", (value) => value.trim());
     this._bindText("refresh_interval", "refresh_interval", (value) => clamp(parseInt(value, 10) || 5, 1, 60));
     ["show_epic", "show_goes"].forEach((key) => this._bindSwitch(key, key));
@@ -2669,6 +2671,7 @@ class EarthObservationCardEditor extends AstroEditorBase {
     setPickerValue(this.shadowRoot, "goes_entity", this._hass, this._config.goes_entity || "camera.astronomy_space_suite_goes_16_earth");
     setPickerValue(this.shadowRoot, "goes18_entity", this._hass, this._config.goes18_entity || "camera.astronomy_space_suite_goes_18_earth");
     setPickerValue(this.shadowRoot, "himawari_entity", this._hass, this._config.himawari_entity || "camera.astronomy_space_suite_himawari_8_earth");
+    setPickerValue(this.shadowRoot, "meteosat_entity", this._hass, this._config.meteosat_entity || "camera.astronomy_space_suite_meteosat_12_earth");
     setPickerValue(this.shadowRoot, "sdo_entity", this._hass, this._config.sdo_entity || "camera.astronomy_space_suite_sdo_sun");
     setPickerValue(this.shadowRoot, "soho_entity", this._hass, this._config.soho_entity || "camera.astronomy_space_suite_soho_sun");
     setTextValue(this.shadowRoot, "title", this._config.title || "Earth Observation");
@@ -2695,6 +2698,7 @@ class EarthObservationCard extends HTMLElement {
       goes_entity: "camera.astronomy_space_suite_goes_16_earth",
       goes18_entity: "camera.astronomy_space_suite_goes_18_earth",
       himawari_entity: "camera.astronomy_space_suite_himawari_8_earth",
+      meteosat_entity: "camera.astronomy_space_suite_meteosat_12_earth",
       sdo_entity: "camera.astronomy_space_suite_sdo_sun",
       soho_entity: "camera.astronomy_space_suite_soho_sun",
       title: "Earth Observation",
@@ -2733,6 +2737,7 @@ class EarthObservationCard extends HTMLElement {
       { key: "goes", title: "GOES-16", group: "earth", entityId: this._config.goes_entity, enabled: this._config.show_goes !== false, fallbackSource: "NOAA GOES-16", fallbackDetail: "Geostationary Earth observation imagery." },
       { key: "goes18", title: "GOES-18", group: "earth", entityId: this._config.goes18_entity, enabled: true, fallbackSource: "NOAA GOES-18", fallbackDetail: "Pacific geostationary Earth observation imagery." },
       { key: "himawari", title: "Himawari", group: "earth", entityId: this._config.himawari_entity, enabled: true, fallbackSource: "Himawari-8", fallbackDetail: "Asia-Pacific Earth observation imagery." },
+      { key: "meteosat", title: "Meteosat-12", group: "earth", entityId: this._config.meteosat_entity, enabled: true, fallbackSource: "EUMETSAT / NASA", fallbackDetail: "GeoColour RGB full-disc imagery of Europe and Africa." },
       { key: "sdo", title: "SDO", group: "sun", entityId: this._config.sdo_entity, enabled: true, fallbackSource: "NASA SDO", fallbackDetail: "Solar Dynamics Observatory imagery." },
       { key: "soho", title: "SOHO", group: "sun", entityId: this._config.soho_entity, enabled: true, fallbackSource: "ESA/NASA SOHO", fallbackDetail: "Solar coronagraph imagery." },
     ].filter((view) => view.enabled && view.entityId && (!this._hass || getState(this._hass, view.entityId)));
@@ -2772,7 +2777,7 @@ class EarthObservationCard extends HTMLElement {
       ...view,
       stateObj,
       imageUrl: this._getImageUrl(view.entityId, stateObj),
-      source: attrs.source_info || attrs.source || attrs.attribution || view.fallbackSource,
+      source: attrs.attribution || attrs.source_info || attrs.source || view.fallbackSource,
       headline: formatDateTime(attrs.date || attrs.timestamp || stateObj.last_updated || stateObj.last_changed),
       detail: attrs.caption || attrs.description || attrs.summary || attrs.sector || attrs.view || view.fallbackDetail,
     };
@@ -2837,17 +2842,20 @@ class EarthObservationCard extends HTMLElement {
         }
         .earth-tab.active { background: rgba(var(--rgb-accent-color, 124,77,255), 0.14); color: ${ASTRO.accent}; }
         .earth-frame {
+          aspect-ratio: 1 / 1;
           border-radius: 18px;
           overflow: hidden;
           background: #000;
           box-shadow: inset 0 0 0 1px rgba(var(--rgb-primary-text-color, 0,0,0), 0.06);
           line-height: 0;
         }
-        /* Size the frame to the image instead of forcing a 16/9 box: the EPIC,
-           GOES, Himawari, SDO and SOHO feeds are all square full-disc frames, so
-           a fixed ratio either cropped the disc (object-fit: cover) or left a
-           tall empty band below it (object-fit: contain). */
-        .earth-frame img { display: block; width: 100%; height: auto; }
+        .earth-frame img {
+          display: block;
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+          background: #000;
+        }
         .earth-meta { padding: 12px 2px 0; display: flex; flex-direction: column; gap: 8px; }
         .earth-headline { font-size: 0.84rem; font-weight: 700; color: ${ASTRO.text1}; }
         .earth-detail { font-size: 0.78rem; line-height: 1.45; color: ${ASTRO.text2}; }
@@ -3162,11 +3170,11 @@ registerCustomCard("astro-lunar-card", "ASS Lunar Card", "Moon phase visualizati
 registerCustomCard("solar-system-card", "ASS Solar System Card", "Client-side heliocentric orrery with editor");
 registerCustomCard("rocket-launch-card", "ASS Rocket Launch Card", "Upcoming rocket launches list with editor");
 registerCustomCard("iss-tracker-card", "ASS ISS Tracker Card", "International Space Station position tracker with editor");
-registerCustomCard("earth-observation-card", "ASS Earth Observation Card", "NASA EPIC and NOAA GOES Earth imagery viewer with editor");
+registerCustomCard("earth-observation-card", "ASS Earth Observation Card", "EPIC, GOES, Himawari and Meteosat Earth imagery viewer with editor");
 registerCustomCard("night-sky-highlights-card", "ASS Night Sky Highlights Card", "Best visible objects tonight based on ephemeris with editor");
 
 console.info(
-  "%c Astronomy Space Suite Cards v1.15.0 %c",
+  "%c Astronomy Space Suite Cards v1.16.0 %c",
   "color:white;background:#1a237e;font-weight:bold;padding:2px 8px;border-radius:4px 0 0 4px;",
   "color:#1a237e;background:#e8eaf6;font-weight:bold;padding:2px 8px;border-radius:0 4px 4px 0;",
 );
