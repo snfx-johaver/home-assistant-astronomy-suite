@@ -465,16 +465,40 @@ const YARD_MAP_STYLES = `
   .yard-svg { width: 100%; aspect-ratio: 1; border-radius: 50%; overflow: hidden; background: radial-gradient(circle, #0d1b2a 0%, #1b2838 70%, #2c3e50 100%); position: relative; }
   .yard-svg svg { width: 100%; height: 100%; position: relative; z-index: 2; }
   .yard-bg-map { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; border-radius: 50%; opacity: 0.35; object-fit: cover; pointer-events: none; }
+  .yard-attribution { position: absolute; left: 50%; bottom: 5px; z-index: 3; max-width: 76%; transform: translateX(-50%); padding: 2px 5px; border-radius: 4px; background: rgba(0,0,0,0.72); color: #fff; font-size: 7px; line-height: 1.25; text-align: center; }
+  .yard-attribution a { color: #fff; text-decoration: underline; }
   .yard-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; justify-content: center; font-size: 0.72em; color: var(--secondary-text-color); }
   .yard-legend-item { display: flex; align-items: center; gap: 4px; }
   .yard-legend-dot { width: 8px; height: 8px; border-radius: 50%; }
 `;
 
+const DSK_MAP_MAX_LATITUDE = 85.05112878;
+const DSK_MAP_STYLES = {
+  dark: {
+    tileUrl: (zoom, x, y) => `https://basemaps.cartocdn.com/dark_all/${zoom}/${x}/${y}.png`,
+    attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">&copy; OpenStreetMap contributors</a> <a href="https://carto.com/attributions" target="_blank" rel="noopener noreferrer">&copy; CARTO</a>',
+  },
+  satellite: {
+    tileUrl: (zoom, x, y) => `https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${zoom}/${y}/${x}`,
+    attribution: '<a href="https://goto.arcgisonline.com/maps/World_Imagery" target="_blank" rel="noopener noreferrer">Source: Esri, Vantor, Earthstar Geographics, GIS User Community</a>',
+  },
+};
+
+function dskMapStyle(value) {
+  return Object.prototype.hasOwnProperty.call(DSK_MAP_STYLES, value) ? value : "dark";
+}
+
+function dskClampMapNumber(value, min, max, fallback) {
+  if (value === "" || value == null) return fallback;
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
+}
+
 class DsoYardMapCard extends HTMLElement {
   constructor() { super(); this.attachShadow({ mode: "open" }); this._config = {}; }
   static getConfigElement() { return document.createElement("dso-yard-map-card-editor"); }
-  static getStubConfig() { return { title: "Sky Map", show_house_map: false, map_latitude: "", map_longitude: "", map_zoom: 18 }; }
-  setConfig(config) { this._config = { title: config.title || "Sky Map", show_house_map: false, map_zoom: 18, ...config }; }
+  static getStubConfig() { return { title: "Sky Map", show_house_map: false, map_style: "dark", map_latitude: "", map_longitude: "", map_zoom: 18 }; }
+  setConfig(config) { this._config = { title: config.title || "Sky Map", show_house_map: false, map_style: "dark", map_zoom: 18, ...config }; }
   set hass(hass) { this._hass = hass; this._render(); }
 
   _render() {
@@ -582,18 +606,20 @@ class DsoYardMapCard extends HTMLElement {
     // House map background overlay
     let houseMapBg = "";
     if (this._config.show_house_map) {
-      const lat = this._config.map_latitude || this._hass.config?.latitude || 52.37;
-      const lon = this._config.map_longitude || this._hass.config?.longitude || 4.89;
-      const zoom = Math.max(14, Math.min(20, parseInt(this._config.map_zoom) || 18));
-      // Use OpenStreetMap static tile — dark style from CartoDB
-      const tileUrl = `https://basemaps.cartocdn.com/dark_all/${zoom}/${this._lonToTileX(lon, zoom)}/${this._latToTileY(lat, zoom)}.png`;
-      houseMapBg = `<img class="yard-bg-map" src="${tileUrl}" alt="" />`;
+      const fallbackLat = dskClampMapNumber(this._hass.config?.latitude, -DSK_MAP_MAX_LATITUDE, DSK_MAP_MAX_LATITUDE, 52.37);
+      const fallbackLon = dskClampMapNumber(this._hass.config?.longitude, -180, 180, 4.89);
+      const lat = dskClampMapNumber(this._config.map_latitude, -DSK_MAP_MAX_LATITUDE, DSK_MAP_MAX_LATITUDE, fallbackLat);
+      const lon = dskClampMapNumber(this._config.map_longitude, -180, 180, fallbackLon);
+      const zoom = Math.trunc(dskClampMapNumber(this._config.map_zoom, 14, 20, 18));
+      const style = DSK_MAP_STYLES[dskMapStyle(this._config.map_style)];
+      const tileUrl = style.tileUrl(zoom, this._lonToTileX(lon, zoom), this._latToTileY(lat, zoom));
+      houseMapBg = `<img class="yard-bg-map" src="${tileUrl}" alt="" /><div class="yard-attribution">${style.attribution}</div>`;
     }
 
     this.shadowRoot.innerHTML = `<style>${YARD_MAP_STYLES}</style><ha-card><div class="dsk-card"><div class="dsk-header"><div class="dsk-title">${this._config.title}</div><span class="dsk-badge">${objects.length} objects</span></div><div class="yard-svg">${houseMapBg}${svg}</div>${legend}</div></ha-card>`;
   }
-  _lonToTileX(lon, zoom) { return Math.floor((lon + 180) / 360 * Math.pow(2, zoom)); }
-  _latToTileY(lat, zoom) { const r = lat * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * Math.pow(2, zoom)); }
+  _lonToTileX(lon, zoom) { const tiles = Math.pow(2, zoom); return Math.max(0, Math.min(tiles - 1, Math.floor((lon + 180) / 360 * tiles))); }
+  _latToTileY(lat, zoom) { const tiles = Math.pow(2, zoom); const r = lat * Math.PI / 180; return Math.max(0, Math.min(tiles - 1, Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * tiles))); }
   getCardSize() { return 6; }
 }
 
@@ -607,12 +633,15 @@ class DsoYardMapCardEditor extends HTMLElement {
     <div class="ed">
       <div class="f"><label>Title</label><input id="t" value="${this._config.title||"Sky Map"}"/></div>
       <div class="sw"><input type="checkbox" id="sm" ${showMap}/><label for="sm">Show house map overlay</label></div>
-      <div class="f"><label>Latitude (blank = HA default)</label><input id="lat" type="number" step="any" value="${this._config.map_latitude||""}"/></div>
-      <div class="f"><label>Longitude (blank = HA default)</label><input id="lon" type="number" step="any" value="${this._config.map_longitude||""}"/></div>
+      <div class="f"><label>Map style</label><select id="ms"><option value="dark">Dark</option><option value="satellite">Satellite</option></select></div>
+      <div class="f"><label>Latitude (blank = HA default)</label><input id="lat" type="number" min="-85.05112878" max="85.05112878" step="any" value="${this._config.map_latitude??""}"/></div>
+      <div class="f"><label>Longitude (blank = HA default)</label><input id="lon" type="number" min="-180" max="180" step="any" value="${this._config.map_longitude??""}"/></div>
       <div class="f"><label>Zoom (14-20)</label><input id="z" type="number" min="14" max="20" value="${this._config.map_zoom||18}"/></div>
     </div>`;
+    this.shadowRoot.getElementById("ms").value = dskMapStyle(this._config.map_style);
     this.shadowRoot.getElementById("t").addEventListener("input", ev => { this._config.title = ev.target.value; this._fire(); });
     this.shadowRoot.getElementById("sm").addEventListener("change", ev => { this._config.show_house_map = ev.target.checked; this._fire(); });
+    this.shadowRoot.getElementById("ms").addEventListener("change", ev => { this._config.map_style = dskMapStyle(ev.target.value); this._fire(); });
     this.shadowRoot.getElementById("lat").addEventListener("input", ev => { this._config.map_latitude = ev.target.value; this._fire(); });
     this.shadowRoot.getElementById("lon").addEventListener("input", ev => { this._config.map_longitude = ev.target.value; this._fire(); });
     this.shadowRoot.getElementById("z").addEventListener("input", ev => { this._config.map_zoom = parseInt(ev.target.value) || 18; this._fire(); });
