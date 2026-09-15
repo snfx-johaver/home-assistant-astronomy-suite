@@ -215,7 +215,19 @@ can customize the global glass treatment with `--astronomy-card-background`,
 ```yaml
 type: custom:dso-yard-map-card
 title: Sky Map
+show_house_map: true
+map_style: satellite # dark (default) or satellite
+map_latitude: 52.37 # optional; blank uses Home Assistant's location
+map_longitude: 4.89 # optional; blank uses Home Assistant's location
+map_zoom: 18 # 14-20
 ```
+
+The map overlay is optional and remains disabled by default. Existing
+configurations continue to use the keyless CARTO dark basemap. Set
+`map_style: satellite` to use keyless Esri World Imagery; the card displays the
+required provider attribution directly on every enabled map overlay. Latitude,
+longitude, and zoom values are clamped to valid Web Mercator tile limits, and
+no API key is exposed or required.
 
 ### ASS Horizon Panorama
 ```yaml
@@ -341,6 +353,10 @@ MIT
 ---
 
 ## 📋 Changelog
+
+### v1.15.0
+- **FEATURE: Sky Map satellite basemap** — the optional house-map overlay now supports `map_style: satellite` using keyless Esri World Imagery, while `dark` remains the default for backward compatibility
+- **Attribution and validation** — enabled map overlays display provider attribution, and latitude, longitude, zoom, and generated tile indices are bounded to valid Web Mercator ranges
 
 ### v1.10.4
 - **FIX: Solar Activity Monitor** — the "Live Sun" thumbnail grid forced a 4:3 box around SDO/SOHO square full-disc imagery with `object-fit: cover`, slicing roughly 25% off the top and bottom of the Sun; the tiles now size to the image. This is the same defect fixed for the Earth Observation card in v1.10.3 — that sweep corrected the Earth frame but missed this second instance

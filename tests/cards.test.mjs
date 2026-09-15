@@ -25,6 +25,8 @@ const deepsky = loadBundle(BUNDLES.deepsky, [
   "dskTextWidth",
   "NightSkyHighlights2Card",
   "DsoTonightTableCard",
+  "DsoYardMapCard",
+  "DsoYardMapCardEditor",
   "DsoPanoramaCard",
   "DsoDomeCard",
 ]);
@@ -644,6 +646,96 @@ test("ISS native map is responsive, refits after resize, and honors glass surfac
   );
 });
 
+test("sky map defaults to the existing dark basemap configuration", () => {
+  assert.deepEqual(deepsky.DsoYardMapCard.getStubConfig(), {
+    title: "Sky Map",
+    show_house_map: false,
+    map_style: "dark",
+    map_latitude: "",
+    map_longitude: "",
+    map_zoom: 18,
+  });
+
+  const card = new deepsky.DsoYardMapCard();
+  card.setConfig({});
+  assert.equal(card._config.map_style, "dark");
+  assert.equal(card._config.show_house_map, false);
+});
+
+test("sky map editor exposes and emits the basemap style", () => {
+  const controls = new Map();
+  const control = (id) => {
+    if (!controls.has(id)) {
+      controls.set(id, {
+        value: "",
+        listeners: {},
+        addEventListener(type, callback) { this.listeners[type] = callback; },
+      });
+    }
+    return controls.get(id);
+  };
+  const editor = new deepsky.DsoYardMapCardEditor();
+  editor.shadowRoot = {
+    innerHTML: "",
+    getElementById: control,
+  };
+  let changed;
+  editor.dispatchEvent = (event) => { changed = event.detail.config; };
+  editor.setConfig({ map_style: "satellite" });
+
+  assert.match(editor.shadowRoot.innerHTML, /<option value="dark">Dark<\/option>/);
+  assert.match(editor.shadowRoot.innerHTML, /<option value="satellite">Satellite<\/option>/);
+  assert.equal(control("ms").value, "satellite");
+
+  control("ms").listeners.change({ target: { value: "dark" } });
+  assert.equal(changed.map_style, "dark");
+});
+
+test("sky map selects the requested keyless tile provider and shows attribution", () => {
+  const hass = makeHass({});
+  hass.config.latitude = 0;
+  hass.config.longitude = 0;
+
+  const dark = new deepsky.DsoYardMapCard();
+  dark.setConfig({ show_house_map: true });
+  dark._hass = hass;
+  dark._render();
+  assert.match(dark.shadowRoot.innerHTML, /basemaps\.cartocdn\.com\/dark_all\/18\/131072\/131072\.png/);
+  assert.match(dark.shadowRoot.innerHTML, /OpenStreetMap contributors/);
+  assert.match(dark.shadowRoot.innerHTML, /CARTO/);
+
+  const satellite = new deepsky.DsoYardMapCard();
+  satellite.setConfig({
+    show_house_map: true,
+    map_style: "satellite",
+    map_latitude: 0,
+    map_longitude: 0,
+    map_zoom: 14,
+  });
+  satellite._hass = hass;
+  satellite._render();
+  assert.match(satellite.shadowRoot.innerHTML, /World_Imagery\/MapServer\/tile\/14\/8192\/8192/);
+  assert.match(satellite.shadowRoot.innerHTML, /Source: Esri, Vantor, Earthstar Geographics, GIS User Community/);
+  assert.match(satellite.shadowRoot.innerHTML, /class="yard-attribution"/);
+  assert.doesNotMatch(satellite.shadowRoot.innerHTML, /token=|api[_-]?key/i);
+});
+
+test("sky map normalizes unknown styles and clamps coordinates, zoom, and tile indices", () => {
+  const card = new deepsky.DsoYardMapCard();
+  card.setConfig({
+    show_house_map: true,
+    map_style: "not-a-provider",
+    map_latitude: 999,
+    map_longitude: 999,
+    map_zoom: 999,
+  });
+  card._hass = makeHass({});
+  card._render();
+
+  assert.match(card.shadowRoot.innerHTML, /basemaps\.cartocdn\.com\/dark_all\/20\/1048575\/0\.png/);
+  assert.match(card.shadowRoot.innerHTML, /OpenStreetMap contributors/);
+});
+
 test("glass appearance is opt-in and available to both card bundles", () => {
   for (const bundle of [BUNDLES.astronomy, BUNDLES.deepsky]) {
     const source = readFileSync(bundle, "utf8");
@@ -679,6 +771,15 @@ test("bundled dashboard documents native ISS and optional glass configuration", 
   assert.match(dashboard, /map_zoom:\s*0/);
   assert.match(dashboard, /type:\s*"custom:dso-tonight-table-card"/);
   assert.match(dashboard, /show_magnitude:\s*true/);
+});
+
+test("README documents optional dark and satellite sky map basemaps", () => {
+  const readme = readFileSync("README.md", "utf8");
+  assert.match(readme, /show_house_map:\s*true/);
+  assert.match(readme, /map_style:\s*satellite/);
+  assert.match(readme, /dark.*default/i);
+  assert.match(readme, /Esri World Imagery/);
+  assert.match(readme, /attribution/i);
 });
 
 // ── Bundle sync guarantee ───────────────────────────────────────────────────
