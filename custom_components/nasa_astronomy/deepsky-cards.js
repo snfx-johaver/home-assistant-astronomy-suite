@@ -16,17 +16,17 @@ const DEEPSKY_VERSION = "1.14.1";
 const DSK_BASE_STYLES = `
   :host { display: block; }
   :host([glass-mode]) {
-    --astronomy-card-background: rgba(var(--rgb-card-background-color, 32, 33, 36), 0.58);
-    --astronomy-card-backdrop-filter: blur(16px) saturate(135%);
-    --astronomy-card-border: 1px solid rgba(var(--rgb-primary-text-color, 255,255,255), 0.14);
-    --astronomy-card-box-shadow: 0 10px 32px rgba(0,0,0,0.18), 0 0 18px rgba(var(--rgb-primary-color, 3,169,244), 0.08);
+    --_astronomy-card-background: var(--astronomy-card-background, transparent);
+    --_astronomy-card-backdrop-filter: var(--astronomy-card-backdrop-filter, blur(16px) saturate(135%));
+    --_astronomy-card-border: var(--astronomy-card-border, 1px solid rgba(var(--rgb-primary-text-color, 255,255,255), 0.14));
+    --_astronomy-card-box-shadow: var(--astronomy-card-box-shadow, 0 10px 32px rgba(0,0,0,0.18), 0 0 18px rgba(var(--rgb-primary-color, 3,169,244), 0.08));
   }
   ha-card {
-    background: var(--astronomy-card-background, var(--ha-card-background, var(--card-background-color, #fff)));
-    border: var(--astronomy-card-border, var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0)));
-    box-shadow: var(--astronomy-card-box-shadow, var(--ha-card-box-shadow, none));
-    backdrop-filter: var(--astronomy-card-backdrop-filter, none);
-    -webkit-backdrop-filter: var(--astronomy-card-backdrop-filter, none);
+    background: var(--_astronomy-card-background, var(--astronomy-card-background, var(--ha-card-background, var(--card-background-color, #fff))));
+    border: var(--_astronomy-card-border, var(--astronomy-card-border, var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0))));
+    box-shadow: var(--_astronomy-card-box-shadow, var(--astronomy-card-box-shadow, var(--ha-card-box-shadow, none)));
+    backdrop-filter: var(--_astronomy-card-backdrop-filter, var(--astronomy-card-backdrop-filter, none));
+    -webkit-backdrop-filter: var(--_astronomy-card-backdrop-filter, var(--astronomy-card-backdrop-filter, none));
   }
   .dsk-card {
     padding: 16px;

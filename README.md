@@ -204,8 +204,10 @@ glass_mode: false
 ### Optional Glass Appearance
 
 The current card appearance remains the default. Set `glass_mode: true` on any
-Astronomy Space Suite custom card to opt in per card. Themes can customize the
-global glass treatment with `--astronomy-card-background`,
+Astronomy Space Suite custom card to opt in per card. Glass mode makes the card
+and embedded native-map surfaces transparent while applying backdrop blur;
+`glass_mode: false` retains Home Assistant's normal solid card surface. Themes
+can customize the global glass treatment with `--astronomy-card-background`,
 `--astronomy-card-backdrop-filter`, `--astronomy-card-border`, and
 `--astronomy-card-box-shadow`.
 

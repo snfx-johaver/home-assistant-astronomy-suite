@@ -44,18 +44,18 @@ const BASE_STYLES = `
   }
   :host([glass-mode]) {
     contain: layout style;
-    --astronomy-card-background: rgba(var(--rgb-card-background-color, 32, 33, 36), 0.58);
-    --astronomy-card-backdrop-filter: blur(16px) saturate(135%);
-    --astronomy-card-border: 1px solid rgba(var(--rgb-primary-text-color, 255,255,255), 0.14);
-    --astronomy-card-box-shadow: 0 10px 32px rgba(0,0,0,0.18), 0 0 18px rgba(var(--rgb-primary-color, 3,169,244), 0.08);
+    --_astronomy-card-background: var(--astronomy-card-background, transparent);
+    --_astronomy-card-backdrop-filter: var(--astronomy-card-backdrop-filter, blur(16px) saturate(135%));
+    --_astronomy-card-border: var(--astronomy-card-border, 1px solid rgba(var(--rgb-primary-text-color, 255,255,255), 0.14));
+    --_astronomy-card-box-shadow: var(--astronomy-card-box-shadow, 0 10px 32px rgba(0,0,0,0.18), 0 0 18px rgba(var(--rgb-primary-color, 3,169,244), 0.08));
   }
   .astro-card {
-    background: var(--astronomy-card-background, ${ASTRO.surface});
+    background: var(--_astronomy-card-background, var(--astronomy-card-background, ${ASTRO.surface}));
     border-radius: ${ASTRO.radius};
-    border: var(--astronomy-card-border, var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0)));
-    box-shadow: var(--astronomy-card-box-shadow, ${ASTRO.shadow});
-    backdrop-filter: var(--astronomy-card-backdrop-filter, none);
-    -webkit-backdrop-filter: var(--astronomy-card-backdrop-filter, none);
+    border: var(--_astronomy-card-border, var(--astronomy-card-border, var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0))));
+    box-shadow: var(--_astronomy-card-box-shadow, var(--astronomy-card-box-shadow, ${ASTRO.shadow}));
+    backdrop-filter: var(--_astronomy-card-backdrop-filter, var(--astronomy-card-backdrop-filter, none));
+    -webkit-backdrop-filter: var(--_astronomy-card-backdrop-filter, var(--astronomy-card-backdrop-filter, none));
     overflow: hidden;
   }
   .astro-header {
@@ -2311,6 +2311,8 @@ class IssTrackerCard extends HTMLElement {
     this._nativeMap = null;
     this._nativeMapConfig = "";
     this._nativeMapToken = 0;
+    this._nativeMapResizeObserver = null;
+    this._nativeMapResizeFrame = 0;
   }
 
   static getConfigElement() { return document.createElement("iss-tracker-card-editor"); }
@@ -2334,6 +2336,15 @@ class IssTrackerCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     this._render();
+  }
+
+  disconnectedCallback() {
+    this._nativeMapResizeObserver?.disconnect();
+    this._nativeMapResizeObserver = null;
+    if (this._nativeMapResizeFrame) {
+      cancelAnimationFrame(this._nativeMapResizeFrame);
+      this._nativeMapResizeFrame = 0;
+    }
   }
 
   _parsePosition(stateObj) {
@@ -2422,7 +2433,9 @@ class IssTrackerCard extends HTMLElement {
     const mapHass = this._mapHass(displayPos, isStale);
     const serialized = JSON.stringify(mapConfig);
     if (this._nativeMap && this._nativeMapConfig === serialized) {
+      this._styleNativeMap(this._nativeMap);
       this._nativeMap.hass = mapHass;
+      this._observeNativeMap(container);
       return;
     }
 
@@ -2431,18 +2444,50 @@ class IssTrackerCard extends HTMLElement {
       const helpers = await window.loadCardHelpers();
       if (token !== this._nativeMapToken) return;
       const mapCard = helpers.createCardElement(mapConfig);
+      mapCard.layout = "grid";
       mapCard.hass = mapHass;
       mapCard.style.display = "block";
+      mapCard.style.width = "100%";
       mapCard.style.height = "100%";
       mapCard.style.setProperty("--ha-card-border-width", "0px");
       mapCard.style.setProperty("--ha-card-border-radius", "18px");
+      this._styleNativeMap(mapCard);
       container.replaceChildren(mapCard);
       this._nativeMap = mapCard;
       this._nativeMapConfig = serialized;
+      this._observeNativeMap(container);
     } catch (error) {
       container.textContent = `Map unavailable: ${error?.message || error}`;
       container.classList.add("iss-map-error");
     }
+  }
+
+  _styleNativeMap(mapCard) {
+    for (const property of ["--ha-card-background", "--card-background-color"]) {
+      if (this._config.glass_mode === true) {
+        mapCard.style.setProperty(property, "transparent");
+      } else {
+        mapCard.style.removeProperty(property);
+      }
+    }
+  }
+
+  _observeNativeMap(container) {
+    if (typeof ResizeObserver !== "function") return;
+    if (this._nativeMapResizeContainer === container && this._nativeMapResizeObserver) return;
+    this._nativeMapResizeObserver?.disconnect();
+    this._nativeMapResizeContainer = container;
+    this._nativeMapResizeObserver = new ResizeObserver(() => {
+      if (this._nativeMapResizeFrame) cancelAnimationFrame(this._nativeMapResizeFrame);
+      this._nativeMapResizeFrame = requestAnimationFrame(() => {
+        this._nativeMapResizeFrame = requestAnimationFrame(() => {
+          this._nativeMapResizeFrame = 0;
+          const map = this._nativeMap?.shadowRoot?.querySelector("ha-map");
+          map?.fitMap?.({ unpause_autofit: true });
+        });
+      });
+    });
+    this._nativeMapResizeObserver.observe(container);
   }
 
   async _render() {
@@ -2478,17 +2523,24 @@ class IssTrackerCard extends HTMLElement {
       this.shadowRoot.innerHTML = `
         <style>
           ${BASE_STYLES}
-          .iss-body { padding: 0 12px 14px; display: flex; flex-direction: column; gap: 12px; }
+          .iss-body {
+            padding: 0 12px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            container-type: inline-size;
+          }
           .iss-map-container {
             border-radius: 18px;
             overflow: hidden;
-            min-height: 260px;
+            height: clamp(240px, 56.25cqw, 360px);
+            min-height: 240px;
             position: relative;
             box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06);
           }
-          #iss-native-map { width: 100%; min-height: 260px; }
+          #iss-native-map { width: 100%; height: 100%; min-height: 240px; }
           .iss-map-error {
-            min-height: 260px; display: grid; place-items: center; padding: 16px;
+            min-height: 240px; display: grid; place-items: center; padding: 16px;
             color: ${ASTRO.error}; background: rgba(var(--rgb-error-color, 244,67,54), 0.08);
           }
           .iss-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
@@ -2511,6 +2563,18 @@ class IssTrackerCard extends HTMLElement {
             padding: 6px 12px; border-radius: 8px; font-size: 0.75rem; font-weight: 500;
             background: rgba(var(--rgb-warning-color, 255,152,0), 0.12);
             color: var(--warning-color, #ff9800); text-align: center;
+          }
+          :host([glass-mode]) .iss-map-container,
+          :host([glass-mode]) .iss-stat {
+            background: transparent;
+            box-shadow: none;
+          }
+          @container (max-width: 360px) {
+            .iss-map-container { height: 220px; min-height: 220px; border-radius: 14px; }
+            #iss-native-map, .iss-map-error { min-height: 220px; }
+            .iss-grid { grid-template-columns: 1fr; }
+            .iss-footer { align-items: stretch; }
+            .iss-button { justify-content: center; }
           }
         </style>
         <ha-card class="astro-card">
