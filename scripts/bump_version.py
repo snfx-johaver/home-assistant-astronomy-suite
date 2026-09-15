@@ -43,6 +43,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+SEMVER = re.compile(r"\d+\.\d+\.\d+")
 
 VERSION_FILES = {
     "version_json": ROOT / "version.json",
@@ -101,9 +102,61 @@ CARD_BUNDLES = (
 )
 
 
+def get_version_surfaces() -> dict[str, str]:
+    """Return every release-maintained version surface and its current value."""
+    surfaces = {}
+
+    with open(VERSION_FILES["version_json"], encoding="utf-8") as f:
+        version_data = json.load(f)
+    for key in ("version", "integration", "cards"):
+        surfaces[f"version.json:{key}"] = version_data[key]
+
+    with open(VERSION_FILES["manifest"], encoding="utf-8") as f:
+        surfaces["custom_components/nasa_astronomy/manifest.json:version"] = (
+            json.load(f)["version"]
+        )
+
+    with open(VERSION_FILES["package"], encoding="utf-8") as f:
+        surfaces["www/community/astronomy-cards/package.json:version"] = (
+            json.load(f)["version"]
+        )
+
+    for bundle in CARD_BUNDLES:
+        for path in bundle["paths"]:
+            content = path.read_text(encoding="utf-8")
+            relative = path.relative_to(ROOT).as_posix()
+            for pattern, label in bundle["patterns"]:
+                matches = list(re.finditer(pattern, content, flags=re.M))
+                if not matches:
+                    raise SystemExit(
+                        f"❌ {path.name}: no {label} version string matched "
+                        f"{pattern!r}"
+                    )
+                for index, match in enumerate(matches, 1):
+                    version = SEMVER.search(match.group(0))
+                    if version is None:
+                        raise SystemExit(
+                            f"❌ {path.name}: {label} matched without a semantic "
+                            "version"
+                        )
+                    surfaces[f"{relative}:{label}:{index}"] = version.group(0)
+
+    return surfaces
+
+
 def get_current_version() -> str:
-    with open(VERSION_FILES["version_json"]) as f:
-        return json.load(f)["version"]
+    """Read the release version only when every maintained surface agrees."""
+    surfaces = get_version_surfaces()
+    versions = sorted(set(surfaces.values()))
+    if len(versions) != 1:
+        details = "\n".join(
+            f"  {name}: {version}" for name, version in sorted(surfaces.items())
+        )
+        raise SystemExit(
+            "❌ release version surfaces have drifted and cannot be bumped:\n"
+            f"{details}"
+        )
+    return versions[0]
 
 
 def bump(version: str, part: str) -> str:

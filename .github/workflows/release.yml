@@ -53,22 +53,18 @@ jobs:
         run: python scripts/release_decision.py
 
       - name: Bump version
-        if: steps.bump.outputs.skip != 'true'
-        id: version
+        if: steps.bump.outputs.skip != 'true' && steps.bump.outputs.needs_bump == 'true'
         run: |
           python scripts/bump_version.py ${{ steps.bump.outputs.bump }} --no-git
-
-          # Read new version
-          NEW_VERSION=$(python -c "import json; print(json.load(open('version.json'))['version'])")
-          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "tag=v$NEW_VERSION" >> $GITHUB_OUTPUT
 
       - name: Commit and push version bump
         if: steps.bump.outputs.skip != 'true'
         run: |
           git add -A
-          git commit -m "release: v${{ steps.version.outputs.version }} [skip ci]"
-          git tag "v${{ steps.version.outputs.version }}"
+          if ! git diff --cached --quiet; then
+            git commit -m "release: v${{ steps.bump.outputs.version }} [skip ci]"
+          fi
+          git tag "v${{ steps.bump.outputs.version }}"
           git push
           git push --tags
 
@@ -76,8 +72,8 @@ jobs:
         if: steps.bump.outputs.skip != 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: v${{ steps.version.outputs.version }}
+          tag_name: v${{ steps.bump.outputs.version }}
+          name: v${{ steps.bump.outputs.version }}
           body: |
             ## What's Changed
 
@@ -86,5 +82,5 @@ jobs:
             ${{ steps.bump.outputs.changelog }}
 
             ---
-            **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.bump.outputs.previous_tag }}...${{ steps.version.outputs.tag }}
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.bump.outputs.previous_tag }}...v${{ steps.bump.outputs.version }}
           generate_release_notes: false

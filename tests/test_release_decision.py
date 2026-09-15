@@ -64,8 +64,10 @@ from release_decision import (  # noqa: E402
     decide,
     derived_shipping,
     installed_roots,
+    release_version,
     ships,
     top_level,
+    VersionDriftError,
 )
 
 package_init = load_component_module("__init__")
@@ -269,6 +271,62 @@ class ShippingPredicateTests(unittest.TestCase):
         self.assertEqual("none", bump_from_subjects(["test: check a thing"]))
         self.assertEqual("none", bump_from_subjects(["docs: write a thing"]))
         self.assertEqual("none", bump_from_subjects([]))
+
+
+class ReleaseVersionTests(unittest.TestCase):
+    @staticmethod
+    def surfaces(version, **overrides):
+        values = {
+            "version.json:version": version,
+            "manifest.json:version": version,
+            "astronomy-cards.js:VERSION": version,
+        }
+        values.update(overrides)
+        return values
+
+    def test_meteosat_minor_prebump_is_released_without_another_bump(self):
+        result = release_version(
+            "v1.15.0", "minor", self.surfaces("1.16.0")
+        )
+        self.assertEqual(result.version, "1.16.0")
+        self.assertFalse(result.bump_required)
+
+    def test_an_ordinary_minor_change_still_uses_automation(self):
+        result = release_version(
+            "v1.15.0", "minor", self.surfaces("1.15.0")
+        )
+        self.assertEqual(result.version, "1.16.0")
+        self.assertTrue(result.bump_required)
+
+    def test_an_exact_patch_prebump_is_released_without_another_bump(self):
+        result = release_version(
+            "v1.15.0", "patch", self.surfaces("1.15.1")
+        )
+        self.assertEqual(result.version, "1.15.1")
+        self.assertFalse(result.bump_required)
+
+    def test_minor_after_patches_accepts_the_exact_next_minor(self):
+        result = release_version(
+            "v1.15.2", "minor", self.surfaces("1.16.0")
+        )
+        self.assertEqual(result.version, "1.16.0")
+        self.assertFalse(result.bump_required)
+
+    def test_a_patch_prebump_cannot_satisfy_a_minor_release(self):
+        with self.assertRaisesRegex(VersionDriftError, "either 1.15.0.*or 1.16.0"):
+            release_version("v1.15.0", "minor", self.surfaces("1.15.1"))
+
+    def test_a_double_minor_bump_fails_closed(self):
+        with self.assertRaisesRegex(VersionDriftError, "not 1.17.0"):
+            release_version("v1.15.0", "minor", self.surfaces("1.17.0"))
+
+    def test_disagreeing_surfaces_are_not_normalized(self):
+        with self.assertRaisesRegex(VersionDriftError, "surfaces disagree"):
+            release_version(
+                "v1.15.0",
+                "minor",
+                self.surfaces("1.16.0", **{"manifest.json:version": "1.15.0"}),
+            )
 
 
 class ClassificationCorrectnessTests(unittest.TestCase):
@@ -1599,6 +1657,23 @@ class WorkflowWiringTests(unittest.TestCase):
             not missing,
             "the workflow reads decider outputs that the module never writes, "
             "so they render as empty strings: %s" % ", ".join(missing),
+        )
+
+    def test_the_workflow_only_runs_the_bumper_when_the_decider_requires_it(self):
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "steps.bump.outputs.needs_bump == 'true'",
+            workflow,
+            "an already-prepared release still runs bump_version.py and will "
+            "advance to the following semantic version",
+        )
+        self.assertIn(
+            "steps.bump.outputs.version",
+            workflow,
+            "the workflow does not tag the exact version resolved from the "
+            "latest release tag and maintained surfaces",
         )
 
 

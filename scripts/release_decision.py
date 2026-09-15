@@ -132,6 +132,8 @@ import sys
 from pathlib import Path
 from typing import Iterable, NamedTuple
 
+import bump_version
+
 ROOT = Path(__file__).resolve().parent.parent
 
 # The spellings HACS will render, in the order it tries them. Taken from
@@ -203,6 +205,18 @@ class Decision(NamedTuple):
     release: bool
     bump: str  # "major" | "minor" | "patch" | "none"
     reason: str
+
+
+class ReleaseVersion(NamedTuple):
+    """The exact version to publish and whether the tree still needs rewriting."""
+
+    version: str
+    bump_required: bool
+    reason: str
+
+
+class VersionDriftError(ValueError):
+    """Release surfaces do not describe one valid transition from the last tag."""
 
 
 class Commit(NamedTuple):
@@ -354,6 +368,73 @@ def decide(subjects: Iterable[str], changed_paths: Iterable[str]) -> Decision:
 
     return Decision(
         True, bump, f"a {bump} bump, and {len(shipped)} shipped file(s) changed"
+    )
+
+
+def release_version(
+    last_tag: str, bump: str, surfaces: dict[str, str]
+) -> ReleaseVersion:
+    """Resolve the target from the last release without double-bumping pre-work.
+
+    A release-ready PR may already have advanced every maintained surface to
+    the exact version implied by its conventional commits. That state is valid
+    and should be tagged as-is. An ordinary PR leaves every surface equal to
+    the latest tag, so the workflow must still run the bump script.
+
+    No other state is safe: disagreement is drift, while a consistent version
+    beyond either allowed value may be a wrong semantic level or an accidental
+    double bump. Both fail closed instead of being normalized silently.
+    """
+    if bump not in ("major", "minor", "patch"):
+        raise ValueError(f"cannot resolve a release version for bump {bump!r}")
+    if not surfaces:
+        raise VersionDriftError("no release version surfaces were found")
+
+    versions = sorted(set(surfaces.values()))
+    if len(versions) != 1:
+        details = ", ".join(
+            f"{name}={version}" for name, version in sorted(surfaces.items())
+        )
+        raise VersionDriftError(
+            f"release version surfaces disagree: {details}"
+        )
+    current = versions[0]
+
+    if not last_tag:
+        target = bump_version.bump(current, bump)
+        return ReleaseVersion(
+            target,
+            True,
+            f"no previous release tag; bump {current} to {target}",
+        )
+
+    match = _SEMVER_TAG.match(last_tag)
+    if not match:
+        raise VersionDriftError(
+            f"latest release tag {last_tag!r} is not an exact vMAJOR.MINOR.PATCH tag"
+        )
+    released = ".".join(
+        (match.group("major"), match.group("minor"), match.group("patch"))
+    )
+    target = bump_version.bump(released, bump)
+
+    if current == released:
+        return ReleaseVersion(
+            target,
+            True,
+            f"surfaces still match {last_tag}; bump them to {target}",
+        )
+    if current == target:
+        return ReleaseVersion(
+            target,
+            False,
+            f"surfaces are already consistently prepared at {target}",
+        )
+
+    raise VersionDriftError(
+        f"a {bump} release after {last_tag} must have every surface at either "
+        f"{released} (automation bumps it) or {target} (already prepared), "
+        f"not {current}"
     )
 
 
@@ -662,6 +743,15 @@ def main() -> int:
     print(f"commits:  {len(subjects)}")
     print(f"changed:  {len(paths)} file(s), {len(ships(paths))} of them shipped")
 
+    version = None
+    if decision.release:
+        version = release_version(
+            last_tag, decision.bump, bump_version.get_version_surfaces()
+        )
+        print(f"version:  {version.version}")
+        print(f"rewrite:  {'yes' if version.bump_required else 'no'}")
+        print(f"state:    {version.reason}")
+
     output = os.environ.get("GITHUB_OUTPUT")
     if output:
         # The changelog is emitted here rather than recomputed in bash so that
@@ -679,6 +769,9 @@ def main() -> int:
         with open(output, "a", encoding="utf-8") as handle:
             handle.write(f"skip={'false' if decision.release else 'true'}\n")
             handle.write(f"bump={decision.bump}\n")
+            needs_bump = "true" if version and version.bump_required else "false"
+            handle.write(f"needs_bump={needs_bump}\n")
+            handle.write(f"version={version.version if version else ''}\n")
             handle.write(f"reason={decision.reason}\n")
             handle.write(f"previous_tag={last_tag}\n")
             handle.write(f"notes_start_tag={notes_start_tag}\n")

@@ -329,6 +329,39 @@ class ReleaseScriptTests(unittest.TestCase):
                     f"{name}: {url}",
                 )
 
+    def test_a_release_bump_refuses_to_normalize_existing_version_drift(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            copy = copy_of_the_repo(scratch)
+            manifest_path = (
+                copy / "custom_components" / "nasa_astronomy" / "manifest.json"
+            )
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["version"] = "9.9.8"
+            manifest_path.write_text(
+                json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+            )
+            before = {
+                str(relative): (copy / relative).read_bytes()
+                for relative in VERSIONED_FILES
+            }
+
+            result = run_bumper(copy)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "release version surfaces have drifted",
+                result.stdout + result.stderr,
+            )
+            after = {
+                str(relative): (copy / relative).read_bytes()
+                for relative in VERSIONED_FILES
+            }
+            self.assertEqual(
+                after,
+                before,
+                "the bumper rewrote files while rejecting pre-existing drift",
+            )
+
 
 class AbortedReleaseTests(unittest.TestCase):
     """A release that cannot complete must not half-happen.
