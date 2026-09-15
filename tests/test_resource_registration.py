@@ -219,10 +219,12 @@ class FakeHass:
     def __init__(self, root, resources=None, shape="dataclass"):
         self.config = FakeConfig(root)
         self.data = {}
+        self.executor_jobs = []
         if resources is not None:
             self.data["lovelace"] = LOVELACE_SHAPES[shape](resources)
 
     async def async_add_executor_job(self, func, *args):
+        self.executor_jobs.append((func, args))
         return func(*args)
 
 
@@ -391,6 +393,29 @@ class ApiPathTests(unittest.TestCase):
         registrars = [ASYNC_REGISTRARS[name] for name in sorted(ASYNC_REGISTRARS)]
         resources, _ = self._run_all(registrars, sorted(BUNDLE_URLS.values()))
         self.assertTrue(resources.updated, "no registrar updated anything")
+
+    def test_resource_hashing_runs_in_the_executor(self):
+        """Bundle bytes must not be read on Home Assistant's event loop."""
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        resources = FakeResources([stale(url) for url in BUNDLE_URLS.values()])
+        hass = deployed_hass(scratch.name, resources)
+
+        asyncio.run(package_init._async_register_cards_resource(hass))
+        asyncio.run(package_init._async_register_deepsky_cards_resource(hass))
+
+        resource_url_jobs = [
+            args
+            for func, args in hass.executor_jobs
+            if func is package_init.resource_url
+        ]
+        self.assertEqual(
+            resource_url_jobs,
+            [
+                (hass, package_init.CARDS_FILENAME),
+                (hass, package_init.DEEPSKY_CARDS_FILENAME),
+            ],
+        )
 
     def test_the_real_lovelace_data_is_not_a_mapping(self):
         """The premise, pinned against the upstream class rather than recalled.

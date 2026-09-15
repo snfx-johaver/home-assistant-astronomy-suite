@@ -522,6 +522,7 @@ test("BUG 6: native ISS map enables trail, fit, controls, and scale", () => {
   assert.match(source, /auto_fit:\s*true/);
   assert.match(source, /fit_zones:\s*true/);
   assert.match(source, /scale_ruler:\s*true/);
+  assert.match(source, /label_mode:\s*"icon"/);
   assert.doesNotMatch(source, /unpkg\.com\/leaflet/);
   assert.doesNotMatch(source, /basemaps\.cartocdn\.com/);
 });

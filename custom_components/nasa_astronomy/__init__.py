@@ -164,7 +164,7 @@ async def _async_migrate_bundle_resource(
     hass: HomeAssistant, filename: str, storage_registrar
 ) -> None:
     """Create, update, and de-duplicate one owned Lovelace resource."""
-    wanted_url = resource_url(hass, filename)
+    wanted_url = await hass.async_add_executor_job(resource_url, hass, filename)
     try:
         lovelace_data = hass.data.get("lovelace")
         if lovelace_data is not None:
