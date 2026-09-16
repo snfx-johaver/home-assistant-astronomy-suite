@@ -348,31 +348,98 @@ class SeededScaleClaims(unittest.TestCase):
                 )
 
 
-class DuplicateBrandAssets(unittest.TestCase):
-    """Record the duplication, without asserting a particular layout.
+def duplicate_png_groups(paths: list[Path] | None = None) -> dict[str, list[str]]:
+    """Content digests carried by more than one file, mapped to those files.
 
-    Eight identical copies of one 32,483-byte file were carried in six
-    directories. De-duplicating fully means deciding which locations Home
-    Assistant, HACS and the README each need, and that is a packaging decision
-    rather than a measurable defect -- so this asserts the bound that *is*
-    settled: the count must not grow.
+    Takes ``paths`` so it can be driven against seeded inputs. A grouping
+    function that can only ever be called with this repository's tree cannot be
+    shown to group anything -- and if it silently returned ``{}`` the assertion
+    below would still need to fail, which is why that assertion pins an exact
+    shape rather than an upper bound.
+    """
+    if paths is None:
+        paths = repository_pngs()
+    digests: dict[str, list[str]] = {}
+    for path in paths:
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        try:
+            name = path.relative_to(REPO_ROOT).as_posix()
+        except ValueError:
+            name = path.name
+        digests.setdefault(digest, []).append(name)
+    return {
+        digest: sorted(names)
+        for digest, names in digests.items()
+        if len(names) > 1
+    }
+
+
+class DuplicateBrandAssets(unittest.TestCase):
+    """Exactly one set of byte-identical PNGs is sanctioned here.
+
+    The brand icon is carried at six paths. That is deliberate: deleting the
+    copies was declined in #35 and #40 -- "the identical brand files are
+    intentional" -- and again when #55 was closed. HACS additionally requires a
+    ``brand`` directory containing ``icon.png`` for an integration repository to
+    validate, so at least one of those copies is load-bearing to CI.
+
+    The previous form of this test asserted only that no group exceeded six.
+    That bound was set by the brand icon and therefore guarded nothing else: a
+    546 KB ``world-map.png`` was duplicated into ``www/`` for months, and a
+    third copy of it could have been added without turning this red. An upper
+    bound derived from the largest known offender cannot detect a smaller new
+    one.
+
+    So this pins the shape instead -- one sanctioned group, of a known size.
+    A new duplicate group is a new decision, and it should have to be made
+    deliberately rather than inherited from whichever file happened to be
+    biggest.
     """
 
-    KNOWN_DUPLICATE_COUNT = 6
+    SANCTIONED_GROUP_SIZE = 6
 
-    def test_identical_brand_copies_do_not_multiply(self):
-        digests: dict[str, list[str]] = {}
-        for path in repository_pngs():
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
-            digests.setdefault(digest, []).append(
-                path.relative_to(REPO_ROOT).as_posix()
+    def test_the_grouper_actually_groups(self):
+        """Must-find control: seeded identical files are detected as a group.
+
+        Without this, a grouper that returned ``{}`` for everything would be
+        caught by the assertion below only by accident of its exact wording.
+        Pinned directly so the reason is legible.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_png(root / "a.png", 8, 8, fill=1)
+            write_png(root / "b.png", 8, 8, fill=1)
+            write_png(root / "c.png", 8, 8, fill=2)
+            groups = duplicate_png_groups(
+                [root / "a.png", root / "b.png", root / "c.png"]
             )
-        worst = max((len(paths) for paths in digests.values()), default=0)
-        self.assertLessEqual(
-            worst,
-            self.KNOWN_DUPLICATE_COUNT,
-            "the number of byte-identical PNG copies has grown: "
-            + repr({d[:8]: p for d, p in digests.items() if len(p) > 1}),
+            self.assertEqual(len(groups), 1)
+            self.assertEqual(next(iter(groups.values())), ["a.png", "b.png"])
+
+    def test_distinct_files_produce_no_group(self):
+        """Must-find control, inverted: it does not invent duplicates."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_png(root / "a.png", 8, 8, fill=1)
+            write_png(root / "b.png", 8, 8, fill=2)
+            self.assertEqual(
+                duplicate_png_groups([root / "a.png", root / "b.png"]), {}
+            )
+
+    def test_only_the_sanctioned_brand_group_is_duplicated(self):
+        """The load-bearing assertion: one group, of the size we agreed to."""
+        groups = duplicate_png_groups()
+        self.assertEqual(
+            len(groups),
+            1,
+            "expected exactly one sanctioned group of byte-identical PNGs "
+            f"(the brand icon); found {len(groups)}: {groups!r}",
+        )
+        only = next(iter(groups.values()))
+        self.assertEqual(
+            len(only),
+            self.SANCTIONED_GROUP_SIZE,
+            f"the sanctioned brand group is now {len(only)} files: {only!r}",
         )
 
 
