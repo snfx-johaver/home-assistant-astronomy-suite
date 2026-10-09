@@ -302,6 +302,26 @@ def displayed_roots(tracked: Iterable[str] | None = None) -> dict[str, str]:
                 "never reads the default branch, so a change here reaches no "
                 "user until a release is cut."
             )
+            readme = ROOT / name
+            if readme.is_file():
+                content = readme.read_text(encoding="utf-8")
+                referenced_assets = {
+                    match.group("html") or match.group("markdown")
+                    for match in re.finditer(
+                        r"""src=["'](?P<html>[^"']+)["']"""
+                        r"""|!\[[^\]]*\]\((?P<markdown>[^)\s]+)""",
+                        content,
+                        re.IGNORECASE,
+                    )
+                }
+                for path in tracked:
+                    if "/" in path and path in referenced_assets:
+                        root = top_level(path)
+                        roots[root] = (
+                            f"{path} is referenced by {name}, so HACS renders "
+                            "it with the release documentation rather than "
+                            "installing it into Home Assistant."
+                        )
             break
     return roots
 
