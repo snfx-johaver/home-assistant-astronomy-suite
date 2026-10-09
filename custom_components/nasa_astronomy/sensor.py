@@ -242,6 +242,7 @@ class NasaAstronomySensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
                     "explanation": apod.get("explanation"),
                     "url": apod.get("url"),
                     "hdurl": apod.get("hdurl"),
+                    "page_url": apod.get("page_url"),
                     "date": apod.get("date"),
                     "media_type": apod.get("media_type"),
                     "copyright": apod.get("copyright"),

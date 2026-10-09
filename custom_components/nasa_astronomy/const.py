@@ -45,7 +45,7 @@ CONF_ROCKET_API_KEY = "rocket_api_key"
 
 BASE_URL = "https://api.nasa.gov"
 
-APOD_URL = f"{BASE_URL}/planetary/apod"
+APOD_URL = "https://science.nasa.gov/wp-json/wp/v2/apod-basic"
 NEOWS_URL = f"{BASE_URL}/neo/rest/v1/feed"
 DONKI_CME_URL = f"{BASE_URL}/DONKI/CME"
 DONKI_FLR_URL = f"{BASE_URL}/DONKI/FLR"

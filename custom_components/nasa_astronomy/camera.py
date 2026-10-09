@@ -128,6 +128,7 @@ class NasaApodCamera(CoordinatorEntity[NasaDataCoordinator], Camera):
             "explanation": apod.get("explanation"),
             "date": apod.get("date"),
             "hdurl": apod.get("hdurl"),
+            "page_url": apod.get("page_url"),
             "copyright": apod.get("copyright"),
         }
 
