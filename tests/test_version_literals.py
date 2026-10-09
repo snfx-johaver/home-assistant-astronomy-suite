@@ -126,7 +126,7 @@ THIRD_PARTY_CDN_VERSION = re.compile(
 # here would silence a real failure, which is why
 # test_the_binary_declaration_is_not_an_escape_hatch requires every declared
 # suffix to name files that genuinely cannot be decoded.
-BINARY_SUFFIXES = (".png",)
+BINARY_SUFFIXES = (".png", ".webp")
 
 # Files whose version-shaped literals claim to be *this product's* version.
 # Every literal in these must equal the release version AND be written by the

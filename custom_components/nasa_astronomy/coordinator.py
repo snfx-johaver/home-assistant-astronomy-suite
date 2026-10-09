@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import math
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -41,6 +43,16 @@ ISS_ORBIT_REFRESH_INTERVAL = timedelta(hours=2)
 ISS_ORBIT_RETRY_INTERVAL = timedelta(minutes=15)
 ISS_ORBIT_MAX_AGE = timedelta(days=7)
 ISS_LAST_KNOWN_MAX_AGE_SECONDS = 30 * 60
+APOD_MIGRATION_NOTICE = "apod.nasa.gov is moving"
+APOD_ROLLOVER_IMAGE_PATTERN = re.compile(
+    r"""\.src\s*=\s*['"](https?://[^'"]+)['"]""",
+    re.IGNORECASE,
+)
+APOD_VIDEO_PATTERN = re.compile(
+    r"""<(?:source|iframe)\b[^>]*\bsrc=["']([^"']+)""",
+    re.IGNORECASE,
+)
+HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
 
 
 class NasaDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -151,7 +163,59 @@ class NasaDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _fetch_apod(self) -> dict[str, Any] | None:
         """Fetch Astronomy Picture of the Day."""
-        return await self._fetch_json(APOD_URL)
+        payload = await self._fetch_json_noauth(APOD_URL, {"per_page": "1"})
+        return self._normalize_apod(payload)
+
+    @staticmethod
+    def _normalize_apod(payload: Any) -> dict[str, Any] | None:
+        """Map NASA Science's APOD payload to the integration's stable shape."""
+        if isinstance(payload, list):
+            payload = payload[0] if payload else None
+        if not isinstance(payload, dict):
+            return None
+
+        media_type = str(payload.get("media_type") or "").lower()
+        basic_html = str(payload.get("basic_html") or "")
+        page_url = payload.get("permalink") or payload.get("url")
+        media_url = payload.get("hdurl")
+
+        if media_type == "image":
+            alt = str(payload.get("alt") or "")
+            if APOD_MIGRATION_NOTICE in alt.lower():
+                rollover = APOD_ROLLOVER_IMAGE_PATTERN.search(basic_html)
+                if rollover:
+                    media_url = html.unescape(rollover.group(1))
+        elif media_type in {"video", "iframe"}:
+            embedded = APOD_VIDEO_PATTERN.search(basic_html)
+            if embedded:
+                media_url = html.unescape(embedded.group(1))
+            elif media_url:
+                media_type = "image"
+
+        if not media_url:
+            return None
+
+        def plain_text(value: Any) -> str:
+            text = HTML_TAG_PATTERN.sub(" ", str(value or ""))
+            return " ".join(html.unescape(text).split())
+
+        explanation = plain_text(payload.get("explanation"))
+        if explanation.lower().startswith("explanation:"):
+            explanation = explanation[len("explanation:"):].lstrip()
+
+        return {
+            "date": payload.get("date"),
+            "title": plain_text(payload.get("title")),
+            "explanation": explanation,
+            "media_type": media_type,
+            "url": media_url,
+            "hdurl": payload.get("hdurl") or media_url,
+            "page_url": page_url,
+            "copyright": plain_text(
+                payload.get("copyright") or payload.get("credit")
+            ),
+            "alt": plain_text(payload.get("alt")),
+        }
 
     async def _fetch_neo(self) -> dict[str, Any] | None:
         """Fetch Near Earth Objects."""

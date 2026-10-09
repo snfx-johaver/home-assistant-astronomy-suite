@@ -1,6 +1,7 @@
 """Config flow for Astronomy Space Suite."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 import aiohttp
@@ -11,7 +12,7 @@ from homeassistant.const import CONF_API_KEY
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import DOMAIN, APOD_URL, CONF_ROCKET_API_KEY
+from .const import DOMAIN, CONF_ROCKET_API_KEY, NEOWS_URL
 
 ALL_BODIES = ["sun", "moon", "mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune"]
 
@@ -149,9 +150,16 @@ class NasaAstronomyConfigFlow(ConfigFlow, domain=DOMAIN):
         """Test if the NASA API key is valid."""
         session = async_get_clientsession(self.hass)
         timeout = aiohttp.ClientTimeout(total=10)
+        today = datetime.now().strftime("%Y-%m-%d")
         try:
             async with session.get(
-                APOD_URL, params={"api_key": api_key}, timeout=timeout
+                NEOWS_URL,
+                params={
+                    "api_key": api_key,
+                    "start_date": today,
+                    "end_date": today,
+                },
+                timeout=timeout,
             ) as resp:
                 if resp.status == 200:
                     return True

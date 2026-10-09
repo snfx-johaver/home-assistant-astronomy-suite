@@ -6,6 +6,12 @@ The most complete astronomy and space dashboard for Home Assistant. Yes, I know 
 
 Fully isolated — does not modify any existing dashboards, integrations, or resources.
 
+<p align="center">
+  <img src="docs/images/dashboard-overview.webp" alt="Astronomy Space Suite dashboard showing the solar system orrery, night sky highlights, solar activity, and sky map" width="100%">
+</p>
+
+<p align="center"><sub>One dashboard for orbital positions, observing conditions, space weather, satellites, launches, and NASA imagery. Representative data shown.</sub></p>
+
 ---
 
 ## ✨ Features
@@ -43,6 +49,10 @@ Fully isolated — does not modify any existing dashboards, integrations, or res
 
 ### 🃏 Custom Lovelace Cards (15)
 All cards are prefixed **"ASS"** in the card picker for easy discovery.
+
+<p align="center">
+  <img src="docs/images/observing-dashboard.webp" alt="Astronomy Space Suite observing dashboard showing moon and planet visibility, a deep-sky object table, and a polar sky map" width="100%">
+</p>
 
 | Card | Bundle | Description |
 |------|--------|-------------|
@@ -309,7 +319,7 @@ home-assistant-astronomy-suite/
 
 | Source | URL | Auth | Update |
 |--------|-----|------|--------|
-| NASA APOD | api.nasa.gov/planetary/apod | API key | 10 min |
+| NASA APOD | science.nasa.gov/wp-json/wp/v2/apod-basic | None | 10 min |
 | NASA NeoWs | api.nasa.gov/neo/rest/v1/feed | API key | 10 min |
 | NASA DONKI | api.nasa.gov/DONKI/ | API key | 10 min |
 | NASA EONET | eonet.gsfc.nasa.gov/api/v3 | None | 10 min |
@@ -385,6 +395,11 @@ MIT
 ---
 
 ## 📋 Changelog
+
+### v1.16.1
+- **FIX: APOD migration** — reads APOD from NASA Science's replacement endpoint and maps its new payload back to the integration's existing sensor and card fields
+- **Correct APOD media** — uses NASA's original rollover image instead of the temporary `apod.nasa.gov → science.nasa.gov/apod` notice, and extracts direct media URLs for video entries
+- **Updated presentation** — adds dashboard screenshots and points the data-source documentation at the current NASA Science service
 
 ### v1.16.0
 - **NEW: Meteosat-12 Europe/Africa camera** — adds EUMETSAT MTG full-disc GeoColour RGB imagery with the NASA Black Marble background and `EUMETSAT / NASA` attribution
