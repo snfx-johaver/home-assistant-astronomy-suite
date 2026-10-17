@@ -402,7 +402,7 @@ class OpenAstronomyEphemerisProvider:
         self._update_interval = update_interval
         self._enabled_bodies = enabled_bodies or {}
         self._cache = EphemerisCache(ttl_seconds=update_interval)
-        self._throttle = EphemerisThrottle(max_per_hour=8)
+        self._throttle = EphemerisThrottle(max_per_hour=120)
         self._last_known: dict[str, dict] = {}
         self._last_success: dict[str, datetime] = {}
         self._stale_threshold = timedelta(hours=6)
