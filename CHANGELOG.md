@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.17.0
+
+- Fixed the Himawari-8/9 camera by resolving NICT's latest image timestamp
+  dynamically and downloading the current full-disk PNG.
+- Added PNG validation, ten-minute refresh, concurrent-download coalescing, and
+  last-success fallback for the Himawari camera.
+
 ## 1.16.0
 
 - Added the `camera.astronomy_space_suite_meteosat_12_earth` EUMETSAT
