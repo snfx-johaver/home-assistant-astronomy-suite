@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta
 import logging
 from typing import Any
 
@@ -21,7 +21,8 @@ from .const import (
     EPIC_IMAGE_BASE_URL,
     GOES16_EARTH_URL,
     GOES18_EARTH_URL,
-    HIMAWARI8_EARTH_URL,
+    HIMAWARI8_IMAGE_BASE_URL,
+    HIMAWARI8_LATEST_URL,
     INTEGRATION_VERSION,
     METEOSAT12_EARTH_URL,
     SDO_SUN_URL,
@@ -44,7 +45,7 @@ async def async_setup_entry(
         NasaEpicEarthCamera(coordinator, entry),
         StaticImageCamera(coordinator, entry, "GOES-16 Earth", "mdi:satellite-variant", GOES16_EARTH_URL, "goes_16_earth", {"source": "NOAA GOES-16", "band": "GeoColor Full Disk", "region": "Americas", "update_frequency": "Every 10 minutes"}),
         StaticImageCamera(coordinator, entry, "GOES-18 Earth", "mdi:satellite-variant", GOES18_EARTH_URL, "goes_18_earth", {"source": "NOAA GOES-18", "band": "GeoColor Full Disk", "region": "Pacific", "update_frequency": "Every 10 minutes"}),
-        StaticImageCamera(coordinator, entry, "Himawari-8 Earth", "mdi:satellite-variant", HIMAWARI8_EARTH_URL, "himawari8_earth", {"source": "Himawari-8 (NICT Japan)", "band": "True Color", "region": "Asia/Pacific", "update_frequency": "Every 10 minutes"}),
+        Himawari8EarthCamera(coordinator, entry),
         Meteosat12EarthCamera(coordinator, entry),
         StaticImageCamera(coordinator, entry, "SDO Sun", "mdi:white-balance-sunny", SDO_SUN_URL, "sdo_sun", {"source": "NASA SDO", "wavelength": "171 Å (Fe IX)", "description": "Solar corona in extreme ultraviolet", "update_frequency": "Near real-time"}),
         StaticImageCamera(coordinator, entry, "SOHO Sun", "mdi:weather-sunny-alert", SOHO_SUN_URL, "soho_sun", {"source": "ESA/NASA SOHO LASCO C3", "description": "Coronagraph showing solar wind and CMEs", "update_frequency": "Every 20 minutes"}),
@@ -335,6 +336,143 @@ class Meteosat12EarthCamera(CoordinatorEntity[NasaDataCoordinator], Camera):
             "update_frequency": "Every 10 minutes",
             "attribution": "EUMETSAT / NASA",
             "background": "NASA Black Marble",
+        }
+
+
+class Himawari8EarthCamera(CoordinatorEntity[NasaDataCoordinator], Camera):
+    """Cached NICT Himawari-8/9 full-disk camera."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Himawari-8 Earth"
+    _attr_icon = "mdi:satellite-variant"
+
+    def __init__(
+        self,
+        coordinator: NasaDataCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize the Himawari camera."""
+        CoordinatorEntity.__init__(self, coordinator)
+        Camera.__init__(self)
+        self._attr_unique_id = f"{entry.entry_id}_himawari8_earth_camera"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, entry.entry_id)},
+            "name": "Astronomy Space Suite",
+            "manufacturer": "NASA",
+            "model": "Open APIs",
+            "sw_version": INTEGRATION_VERSION,
+        }
+        self._cached_image: bytes | None = None
+        self._image_url: str | None = None
+        self._refresh_task: asyncio.Task[bytes | None] | None = None
+
+    async def async_added_to_hass(self) -> None:
+        """Start the independent NICT refresh lifecycle."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_time_interval(
+                self.hass,
+                self._async_scheduled_refresh,
+                timedelta(minutes=10),
+            )
+        )
+        self.hass.async_create_task(
+            self._async_refresh(),
+            "Himawari-8 initial image refresh",
+        )
+
+    async def _async_scheduled_refresh(self, _now: Any) -> None:
+        """Refresh the image on the ten-minute source cadence."""
+        await self._async_refresh()
+
+    async def _async_refresh(self) -> bytes | None:
+        """Coalesce refresh requests and retain the last good image."""
+        if self._refresh_task is None:
+            self._refresh_task = self.hass.async_create_task(
+                self._async_download(),
+                "Himawari-8 image refresh",
+            )
+        task = self._refresh_task
+        try:
+            return await asyncio.shield(task)
+        finally:
+            if task.done() and self._refresh_task is task:
+                self._refresh_task = None
+
+    async def _async_download(self) -> bytes | None:
+        """Resolve the current NICT image timestamp and download its PNG."""
+        try:
+            session = async_get_clientsession(self.hass)
+            timeout = aiohttp.ClientTimeout(total=25)
+            async with session.get(HIMAWARI8_LATEST_URL, timeout=timeout) as resp:
+                if resp.status != 200:
+                    _LOGGER.warning(
+                        "Himawari-8 timestamp refresh failed with HTTP status %s",
+                        resp.status,
+                    )
+                    return self._cached_image
+                latest = await resp.json()
+
+            if not isinstance(latest, dict) or not isinstance(latest.get("date"), str):
+                _LOGGER.warning("Himawari-8 timestamp response has no valid date")
+                return self._cached_image
+            timestamp = datetime.strptime(
+                latest["date"], "%Y-%m-%d %H:%M:%S"
+            ).strftime("%Y/%m/%d/%H%M%S")
+            image_url = f"{HIMAWARI8_IMAGE_BASE_URL}/{timestamp}_0_0.png"
+
+            async with session.get(image_url, timeout=timeout) as resp:
+                if resp.status != 200:
+                    _LOGGER.warning(
+                        "Himawari-8 image refresh failed with HTTP status %s",
+                        resp.status,
+                    )
+                    return self._cached_image
+
+                content_type = resp.headers.get("Content-Type", "").lower()
+                image = await resp.read()
+                if (
+                    not content_type.startswith("image/png")
+                    or not image.startswith(b"\x89PNG\r\n\x1a\n")
+                ):
+                    _LOGGER.warning(
+                        "Himawari-8 image refresh returned invalid PNG content "
+                        "(content type: %s, bytes: %s)",
+                        content_type or "missing",
+                        len(image),
+                    )
+                    return self._cached_image
+
+            self._cached_image = image
+            self._image_url = image_url
+            self.async_write_ha_state()
+            return image
+        except (aiohttp.ClientError, TimeoutError, TypeError, ValueError) as err:
+            _LOGGER.warning("Himawari-8 image refresh failed: %s", err)
+            return self._cached_image
+
+    async def async_camera_image(
+        self, width: int | None = None, height: int | None = None
+    ) -> bytes | None:
+        """Serve cached bytes, fetching synchronously before the first refresh."""
+        if self._cached_image is None:
+            return await self._async_refresh()
+        return self._cached_image
+
+    @property
+    def entity_picture(self) -> str | None:
+        """Return the URL for the latest successfully downloaded image."""
+        return self._image_url
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str]:
+        """Return Himawari observation metadata."""
+        return {
+            "source": "Himawari-8/9 (NICT Japan)",
+            "band": "True Color",
+            "region": "Asia/Pacific",
+            "update_frequency": "Every 10 minutes",
+            "image_url": self._image_url or "",
         }
 
 
