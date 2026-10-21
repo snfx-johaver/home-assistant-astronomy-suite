@@ -186,6 +186,7 @@ import the bundled dashboard template) to display the history trail.
 ### ASS Earth Observation Card
 ```yaml
 type: custom:earth-observation-card
+default_view: goes18 # epic, goes, goes18, himawari, meteosat, sdo, or soho
 epic_entity: camera.astronomy_space_suite_epic_earth
 goes_entity: camera.astronomy_space_suite_goes_16_earth
 goes18_entity: camera.astronomy_space_suite_goes_18_earth

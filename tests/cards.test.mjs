@@ -540,6 +540,38 @@ test("Meteosat is in defaults, editor, views, attribution, and proxy rendering",
   assert.match(source, /Source: \$\{esc\(active\.source\)\}/);
 });
 
+test("Earth observation honors the configured default view and falls back when unavailable", () => {
+  const card = new astronomy.EarthObservationCard();
+  card.setConfig({ default_view: "goes18" });
+  assert.equal(card._activeView, "goes18");
+
+  card.hass = makeHass({
+    "camera.astronomy_space_suite_goes_18_earth": makeState(
+      "camera.astronomy_space_suite_goes_18_earth",
+      "idle",
+    ),
+  });
+  assert.equal(card._activeView, "goes18");
+
+  const fallbackCard = new astronomy.EarthObservationCard();
+  fallbackCard.setConfig({ default_view: "goes18" });
+  fallbackCard.hass = makeHass({
+    "camera.astronomy_space_suite_epic_earth": makeState(
+      "camera.astronomy_space_suite_epic_earth",
+      "idle",
+    ),
+  });
+  assert.equal(fallbackCard._activeView, "epic");
+});
+
+test("Earth observation editor exposes and syncs the default view", () => {
+  const editor = new astronomy.EarthObservationCardEditor();
+  editor.setConfig({ default_view: "himawari" });
+  assert.equal(editor._config.default_view, "himawari");
+  assert.match(editor._editorTemplate(), /<select id="default_view">/);
+  assert.match(editor._editorTemplate(), /<option value="goes18">GOES-18<\/option>/);
+});
+
 test("BUG 5: APOD cropping is a deliberate exclusion, not the same defect", () => {
   const source = readFileSync(BUNDLES.astronomy, "utf8");
   const rule = source.match(/\.apod-media img,\s*\.apod-video iframe \{[^}]*\}/);
