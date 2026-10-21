@@ -2638,6 +2638,7 @@ class EarthObservationCardEditor extends AstroEditorBase {
       title: "Earth Observation",
       show_epic: true,
       show_goes: true,
+      default_view: "epic",
       refresh_interval: 5,
       ...config,
     });
@@ -2654,6 +2655,15 @@ class EarthObservationCardEditor extends AstroEditorBase {
       <ha-entity-picker id="soho_entity" label="SOHO sun camera entity"></ha-entity-picker>
       <div class="astro-input-wrap"><label for="title">Card title</label><input type="text" id="title" placeholder="Leave empty for default" /></div>
       <div class="astro-input-wrap"><label for="refresh_interval">Refresh interval (minutes)</label><input type="number" id="refresh_interval" min="1" max="60" /></div>
+      <div class="astro-input-wrap"><label for="default_view">Default view</label><select id="default_view">
+        <option value="epic">EPIC</option>
+        <option value="goes">GOES-16</option>
+        <option value="goes18">GOES-18</option>
+        <option value="himawari">Himawari</option>
+        <option value="meteosat">Meteosat-12</option>
+        <option value="sdo">SDO</option>
+        <option value="soho">SOHO</option>
+      </select></div>
       <label class="switch-row"><span>Show EPIC</span><ha-switch id="show_epic"></ha-switch></label>
       <label class="switch-row"><span>Show GOES-16</span><ha-switch id="show_goes"></ha-switch></label>
     `;
@@ -2663,6 +2673,7 @@ class EarthObservationCardEditor extends AstroEditorBase {
     ["epic_entity", "goes_entity", "goes18_entity", "himawari_entity", "meteosat_entity", "sdo_entity", "soho_entity"].forEach((key) => this._bindPicker(key, key));
     this._bindText("title", "title", (value) => value.trim());
     this._bindText("refresh_interval", "refresh_interval", (value) => clamp(parseInt(value, 10) || 5, 1, 60));
+    this._bindSelect("default_view", "default_view");
     ["show_epic", "show_goes"].forEach((key) => this._bindSwitch(key, key));
   }
 
@@ -2676,6 +2687,7 @@ class EarthObservationCardEditor extends AstroEditorBase {
     setPickerValue(this.shadowRoot, "soho_entity", this._hass, this._config.soho_entity || "camera.astronomy_space_suite_soho_sun");
     setTextValue(this.shadowRoot, "title", this._config.title || "Earth Observation");
     setTextValue(this.shadowRoot, "refresh_interval", this._config.refresh_interval || 5);
+    setSelectValue(this.shadowRoot, "default_view", this._config.default_view || "epic");
     setSwitchValue(this.shadowRoot, "show_epic", this._config.show_epic !== false);
     setSwitchValue(this.shadowRoot, "show_goes", this._config.show_goes !== false);
   }
@@ -2687,6 +2699,7 @@ class EarthObservationCard extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this._config = {};
     this._activeView = "epic";
+    this._defaultApplied = false;
     this._refreshHandle = 0;
     this._refreshToken = Date.now();
   }
@@ -2704,6 +2717,7 @@ class EarthObservationCard extends HTMLElement {
       title: "Earth Observation",
       show_epic: true,
       show_goes: true,
+      default_view: "epic",
       refresh_interval: 5,
     };
   }
@@ -2721,6 +2735,10 @@ class EarthObservationCard extends HTMLElement {
 
   setConfig(config) {
     this._config = { ...EarthObservationCard.getStubConfig(), ...config };
+    if (!this._defaultApplied) {
+      this._activeView = this._config.default_view;
+      this._defaultApplied = true;
+    }
     this._selectDefaultView();
     this._ensureRefreshTimer();
   }
