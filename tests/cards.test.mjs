@@ -572,9 +572,44 @@ test("Earth observation editor exposes and syncs the default view", () => {
   assert.match(editor._editorTemplate(), /<option value="goes18">GOES-18<\/option>/);
 });
 
+test("APOD videos use native playback instead of framing NASA's video URL", () => {
+  const { bindings } = loadBundleWithSandbox(BUNDLES.astronomy, ["ApodCard"], (sandbox) => {
+    sandbox.document.createElement = () => {
+      let innerHTML = "";
+      return {
+        get innerHTML() { return innerHTML; },
+        set textContent(value) {
+          innerHTML = String(value)
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;");
+        },
+      };
+    };
+  });
+  const card = new bindings.ApodCard();
+  card.setConfig({ entity: "sensor.astronomy_space_suite_apod" });
+  card._renderApod({
+    cardTitle: "Astronomy Picture of the Day",
+    mediaTitle: "Jupiter Occultation",
+    explanation: "",
+    url: "https://assets.science.nasa.gov/jupiter.mp4",
+    hdurl: "https://assets.science.nasa.gov/jupiter-poster.jpg",
+    date: "2026-10-28",
+    mediaType: "video",
+    copyright: "",
+  });
+
+  assert.match(card.shadowRoot.innerHTML, /<video src="https:\/\/assets\.science\.nasa\.gov\/jupiter\.mp4"/);
+  assert.match(card.shadowRoot.innerHTML, /poster="https:\/\/assets\.science\.nasa\.gov\/jupiter-poster\.jpg"/);
+  assert.match(card.shadowRoot.innerHTML, /controls playsinline preload="metadata"/);
+  assert.doesNotMatch(card.shadowRoot.innerHTML, /<iframe/);
+  assert.match(card.shadowRoot.innerHTML, /\.apod-video video \{[^}]*object-fit:\s*contain/);
+});
+
 test("BUG 5: APOD cropping is a deliberate exclusion, not the same defect", () => {
   const source = readFileSync(BUNDLES.astronomy, "utf8");
-  const rule = source.match(/\.apod-media img,\s*\.apod-video iframe \{[^}]*\}/);
+  const rule = source.match(/\.apod-media img,\s*\.apod-video video \{[^}]*\}/);
   assert.ok(rule, ".apod-media img rule not found");
   // APOD is arbitrary photography, not a disc on a black field, so cropping to
   // fill the hero area is a design choice rather than the BUG 5 defect. This

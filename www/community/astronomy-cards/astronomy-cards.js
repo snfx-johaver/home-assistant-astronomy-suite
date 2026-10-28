@@ -763,7 +763,7 @@ class ApodCard extends HTMLElement {
     const mediaHtml = mediaType === "video"
       ? `
         <div class="apod-video" style="height:${imageHeight}px;">
-          <iframe src="${esc(url)}" title="${esc(mediaTitle)}" loading="lazy" allowfullscreen></iframe>
+          <video src="${esc(url)}" title="${esc(mediaTitle)}" controls playsinline preload="metadata"${hdurl ? ` poster="${esc(hdurl)}"` : ""}></video>
         </div>
       `
       : `
@@ -788,12 +788,12 @@ class ApodCard extends HTMLElement {
           background: #000;
         }
         .apod-media img,
-        .apod-video iframe {
+        .apod-video video {
           width: 100%;
           height: 100%;
           display: block;
           border: 0;
-          object-fit: cover;
+          object-fit: contain;
         }
         .apod-overlay {
           position: absolute;
