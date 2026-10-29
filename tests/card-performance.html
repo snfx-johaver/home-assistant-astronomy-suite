@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>ASS card performance benchmark</title>
+<style>
+  body { font: 14px sans-serif; margin: 20px; }
+  #cards { width: 420px; }
+</style>
+<h1>ASS card performance benchmark</h1>
+<p>Local synthetic rendering only. No Home Assistant frontend, upstream imagery, or network latency is measured.</p>
+<button id="run">Run benchmark</button>
+<pre id="result">Ready</pre>
+<div id="cards"></div>
+<script type="module">
+  import { makePerformanceHass } from "./performance-fixture.mjs";
+  const bundleRoot = new URLSearchParams(location.search).get("bundleRoot") || "../custom_components/nasa_astronomy/";
+  await import(`${bundleRoot}astronomy-cards.js`);
+  await import(`${bundleRoot}deepsky-cards.js`);
+
+  // Count frontend property propagation without pretending to emulate HA's picker.
+  class EntityPicker extends HTMLElement {
+    set hass(value) { this._hass = value; this.assignments = (this.assignments || 0) + 1; }
+    get hass() { return this._hass; }
+  }
+  customElements.define("ha-entity-picker", EntityPicker);
+  window.loadCardHelpers = async () => ({ createCardElement: () => document.createElement("div") });
+
+  const median = (values) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)];
+  const tick = () => new Promise((resolve) => requestAnimationFrame(resolve));
+  window.runCardBenchmark = async () => {
+    const hass = makePerformanceHass();
+    const updates = Array.from({ length: 20 }, (_, index) => ({
+      ...hass,
+      states: { ...hass.states, "sensor.unrelated_0": { state: String(index), attributes: {} } },
+    }));
+    const rows = [];
+    for (const metadata of window.customCards) {
+      const type = metadata.type;
+      const ctor = customElements.get(type);
+      const config = ctor.getStubConfig();
+      const timings = [];
+      let updatesMs = 0, renders = 0, editorMs = 0, pickerAssignments = 0, editorEchoMs = 0, editorRebuilds = 0;
+      for (let sample = 0; sample < 5; sample++) {
+        const card = document.createElement(type);
+        const start = performance.now();
+        card.setConfig(config);
+        document.querySelector("#cards").append(card);
+        card.hass = hass;
+        // Include layout and canvas work; exclude remote image downloads.
+        card.getBoundingClientRect();
+        timings.push(performance.now() - start);
+        await tick();
+        if (sample === 4) {
+          const render = card._render.bind(card);
+          card._render = (...args) => { renders++; return render(...args); };
+          const startUpdates = performance.now();
+          for (const next of updates) card.hass = next;
+          card.getBoundingClientRect();
+          updatesMs = performance.now() - startUpdates;
+          const editor = ctor.getConfigElement();
+          const startEditor = performance.now();
+          editor.setConfig(config);
+          editor.hass = hass;
+          document.querySelector("#cards").append(editor);
+          for (const next of updates) editor.hass = next;
+          editor.getBoundingClientRect();
+          editorMs = performance.now() - startEditor;
+          pickerAssignments = [...editor.shadowRoot.querySelectorAll("ha-entity-picker")]
+            .reduce((sum, picker) => sum + picker.assignments, 0);
+          const renderEditor = editor._render.bind(editor);
+          editor._render = (...args) => { editorRebuilds++; return renderEditor(...args); };
+          const startEcho = performance.now();
+          for (let index = 0; index < 20; index++) editor.setConfig({ ...config });
+          editor.getBoundingClientRect();
+          editorEchoMs = performance.now() - startEcho;
+          editor.remove();
+        }
+        card.remove();
+      }
+      rows.push({ type, initialMs: median(timings), updatesMs, renders, editorMs, pickerAssignments, editorEchoMs, editorRebuilds });
+    }
+    const startPicker = performance.now();
+    let previews = 0;
+    for (const metadata of window.customCards.filter((entry) => entry.preview)) {
+      const card = document.createElement(metadata.type);
+      card.setConfig(customElements.get(metadata.type).getStubConfig());
+      document.querySelector("#cards").append(card);
+      card.hass = hass;
+      card.getBoundingClientRect();
+      card.remove();
+      previews++;
+    }
+    const pickerPreviewMs = performance.now() - startPicker;
+    const dashboardSamples = [];
+    for (let sample = 0; sample < 5; sample++) {
+      const cards = window.customCards.map(({ type }) => {
+        const card = document.createElement(type);
+        card.setConfig(customElements.get(type).getStubConfig());
+        document.querySelector("#cards").append(card);
+        card.hass = hass;
+        return card;
+      });
+      await tick();
+      const nextUpdates = updates.map((next) => ({ ...next, states: { ...next.states } }));
+      const start = performance.now();
+      for (const next of nextUpdates) for (const card of cards) card.hass = next;
+      document.querySelector("#cards").getBoundingClientRect();
+      dashboardSamples.push(performance.now() - start);
+      cards.forEach((card) => card.remove());
+    }
+    const result = {
+      scenario: { unrelatedEntities: 10000, deepSkyObjects: 100, updates: 20, samples: 5 },
+      rows,
+      pickerPreviewMs,
+      previews,
+      dashboardUpdatesMedianMs: median(dashboardSamples),
+    };
+    document.querySelector("#result").textContent = JSON.stringify(result, null, 2);
+    return result;
+  };
+  document.querySelector("#run").onclick = () => window.runCardBenchmark();
+</script>
+</html>

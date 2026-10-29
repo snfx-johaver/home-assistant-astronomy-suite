@@ -67,6 +67,58 @@ function dskGetState(hass, entityId) {
   return s;
 }
 
+const DSK_STATE_INDEX = new WeakMap();
+const DSK_HIGHLIGHT_ENTITIES = new Set([
+  "sensor.astronomy_space_suite_neo_count_today",
+  "sensor.astronomy_space_suite_iss_position",
+  "sensor.astronomy_space_suite_planetary_kp_index",
+  "sensor.astronomy_space_suite_solar_flares",
+]);
+const DSK_HIGHLIGHT_INPUTS = [
+  ...DSK_HIGHLIGHT_ENTITIES,
+  "sensor.nasa_astronomy_deepsky_best_tonight",
+  ...["venus", "jupiter", "saturn", "mars", "mercury"]
+    .map((planet) => `sensor.nasa_astronomy_ephemeris_${planet}_altitude`),
+];
+
+function dskStateIndex(states) {
+  let index = DSK_STATE_INDEX.get(states);
+  if (!index) {
+    const entries = Object.keys(states).filter((id) =>
+      id.startsWith("sensor.nasa_astronomy_deepsky_")
+      || id.startsWith("sensor.nasa_astronomy_ephemeris_")
+      || DSK_HIGHLIGHT_ENTITIES.has(id)).map((id) => [id, states[id]]);
+    index = {
+      states: entries.map(([, state]) => state),
+      altitudes: entries.filter(([id]) => id.startsWith("sensor.nasa_astronomy_deepsky_") && id.endsWith("_altitude")),
+    };
+    DSK_STATE_INDEX.set(states, index);
+  }
+  return index;
+}
+
+function dskUpdateHass(card, hass, entityIds = null) {
+  card._hass = hass;
+  const inputs = [
+    card._config, hass.config, hass.themes, hass.locale,
+    hass.states[card._config.entity],
+    ...(entityIds ? entityIds.map((id) => hass.states[id]) : dskStateIndex(hass.states).states),
+  ];
+  const previous = card._renderInputs;
+  card._renderInputs = inputs;
+  return !previous || inputs.length !== previous.length
+    || inputs.some((value, index) => value !== previous[index]);
+}
+
+function dskSetEditorConfig(editor, config) {
+  const previous = editor._config;
+  if (editor._editorConfigSet && Object.keys(previous).length === Object.keys(config).length
+    && Object.keys(config).every((key) => previous[key] === config[key])) return false;
+  editor._config = { ...config };
+  editor._editorConfigSet = true;
+  return true;
+}
+
 const DSK_SENSOR_SUFFIXES = "Altitude|Azimuth|Transit Time|Visible|Score|Magnitude";
 
 // Matches the "Deep Sky <object> <metric>" tail of a friendly_name.
@@ -215,7 +267,7 @@ class NightSkyHighlights2Card extends HTMLElement {
   setConfig(config) {
     this._config = { title: config.title || "Night Sky Highlights 2", ...config };
   }
-  set hass(hass) { this._hass = hass; this._render(); }
+  set hass(hass) { if (dskUpdateHass(this, hass, DSK_HIGHLIGHT_INPUTS)) this._render(); }
 
   _buildTile(icon, title, score, desc, unavail) {
     const cls = unavail ? " nsh2-unavail" : "";
@@ -315,7 +367,7 @@ class NightSkyHighlights2Card extends HTMLElement {
 
 class NightSkyHighlights2CardEditor extends HTMLElement {
   constructor() { super(); this.attachShadow({ mode: "open" }); this._config = {}; }
-  setConfig(config) { this._config = { ...config }; this._render(); }
+  setConfig(config) { if (dskSetEditorConfig(this, config)) this._render(); }
   set hass(h) { this._hass = h; }
   _render() {
     this.shadowRoot.innerHTML = `<style>.ed{padding:16px}.f{margin-bottom:10px}.f label{display:block;font-size:0.8em;color:var(--secondary-text-color);margin-bottom:3px}.f input{width:100%;padding:7px;border:1px solid var(--divider-color,#ccc);border-radius:6px;box-sizing:border-box;font-size:0.85em;background:var(--card-background-color);color:var(--primary-text-color)}.note{font-size:0.75em;color:var(--secondary-text-color);margin-top:8px}</style><div class="ed"><div class="f"><label>Title</label><input id="t" value="${this._config.title || "Night Sky Highlights 2"}"/></div><div class="note">This card auto-detects sensors from the Astronomy Space Suite integration. No entity configuration needed.</div></div>`;
@@ -357,7 +409,7 @@ class DsoTonightTableCard extends HTMLElement {
       entity: config.entity || "sensor.nasa_astronomy_deepsky_best_tonight",
     };
   }
-  set hass(hass) { this._hass = hass; this._render(); }
+  set hass(hass) { if (dskUpdateHass(this, hass)) this._render(); }
 
   _render() {
     if (!this._hass) return;
@@ -373,7 +425,7 @@ class DsoTonightTableCard extends HTMLElement {
 
     // Also gather individual DSO sensors for the table
     const rows = [];
-    const dsoStates = Object.entries(this._hass.states).filter(([id]) => id.startsWith("sensor.nasa_astronomy_deepsky_") && id.endsWith("_altitude"));
+    const dsoStates = dskStateIndex(this._hass.states).altitudes;
 
     for (const [id, s] of dsoStates) {
       const objKey = id.replace("sensor.nasa_astronomy_deepsky_", "").replace("_altitude", "");
@@ -436,7 +488,7 @@ class DsoTonightTableCard extends HTMLElement {
 
 class DsoTonightTableCardEditor extends HTMLElement {
   constructor() { super(); this.attachShadow({ mode: "open" }); }
-  setConfig(config) { this._config = { ...config }; this._render(); }
+  setConfig(config) { if (dskSetEditorConfig(this, config)) this._render(); }
   set hass(h) {}
   _render() {
     this.shadowRoot.innerHTML = `<style>.ed{padding:16px}.f{margin-bottom:10px}.f label{display:block;font-size:0.8em;margin-bottom:3px;color:var(--secondary-text-color)}.f input,.f select{width:100%;padding:7px;border:1px solid var(--divider-color,#ccc);border-radius:6px;box-sizing:border-box;background:var(--card-background-color);color:var(--primary-text-color)}.toggle{display:flex;align-items:center;justify-content:space-between;gap:12px}</style><div class="ed"><div class="f"><label>Title</label><input id="t" value="${dskEsc(this._config.title||"Deep Sky Tonight")}"/></div><div class="f"><label>Best Tonight Entity</label><input id="e" value="${dskEsc(this._config.entity||"sensor.nasa_astronomy_deepsky_best_tonight")}"/></div><div class="f"><label>Sort objects by</label><select id="sort"><option value="score">Visibility score</option><option value="magnitude">Magnitude (brightest first)</option><option value="altitude">Altitude (highest first)</option></select></div><div class="f"><label>Maximum magnitude (optional)</label><input id="mag" type="number" step="0.1" value="${dskEsc(this._config.max_magnitude ?? "")}"/></div><div class="f toggle"><label for="show-mag">Show magnitude column</label><input id="show-mag" type="checkbox" ${this._config.show_magnitude === false ? "" : "checked"}/></div><div class="f toggle"><label for="glass">Glass appearance</label><input id="glass" type="checkbox" ${this._config.glass_mode === true ? "checked" : ""}/></div></div>`;
@@ -499,14 +551,14 @@ class DsoYardMapCard extends HTMLElement {
   static getConfigElement() { return document.createElement("dso-yard-map-card-editor"); }
   static getStubConfig() { return { title: "Sky Map", show_house_map: false, map_style: "dark", map_latitude: "", map_longitude: "", map_zoom: 18 }; }
   setConfig(config) { this._config = { title: config.title || "Sky Map", show_house_map: false, map_style: "dark", map_zoom: 18, ...config }; }
-  set hass(hass) { this._hass = hass; this._render(); }
+  set hass(hass) { if (dskUpdateHass(this, hass)) this._render(); }
 
   _render() {
     if (!this._hass) return;
 
     // Gather all visible DSOs
     const objects = [];
-    const dsoStates = Object.entries(this._hass.states).filter(([id]) => id.startsWith("sensor.nasa_astronomy_deepsky_") && id.endsWith("_altitude"));
+    const dsoStates = dskStateIndex(this._hass.states).altitudes;
 
     for (const [id, s] of dsoStates) {
       const objKey = id.replace("sensor.nasa_astronomy_deepsky_", "").replace("_altitude", "");
@@ -625,7 +677,7 @@ class DsoYardMapCard extends HTMLElement {
 
 class DsoYardMapCardEditor extends HTMLElement {
   constructor() { super(); this.attachShadow({ mode: "open" }); }
-  setConfig(config) { this._config = { ...config }; this._render(); }
+  setConfig(config) { if (dskSetEditorConfig(this, config)) this._render(); }
   set hass(h) {}
   _render() {
     const showMap = this._config.show_house_map ? "checked" : "";
@@ -665,7 +717,7 @@ class DsoPanoramaCard extends HTMLElement {
   static getConfigElement() { return document.createElement("dso-panorama-card-editor"); }
   static getStubConfig() { return { title: "Horizon Panorama" }; }
   setConfig(config) { this._config = { title: config.title || "Horizon Panorama", ...config }; }
-  set hass(hass) { this._hass = hass; this._render(); }
+  set hass(hass) { if (dskUpdateHass(this, hass)) this._render(); }
 
   _render() {
     if (!this._hass) return;
@@ -674,7 +726,7 @@ class DsoPanoramaCard extends HTMLElement {
     const objects = [];
 
     // Gather DSOs above horizon
-    const dsoStates = Object.entries(this._hass.states).filter(([id]) => id.startsWith("sensor.nasa_astronomy_deepsky_") && id.endsWith("_altitude"));
+    const dsoStates = dskStateIndex(this._hass.states).altitudes;
     for (const [id, s] of dsoStates) {
       const objKey = id.replace("sensor.nasa_astronomy_deepsky_", "").replace("_altitude", "");
       const alt = parseFloat(s.state);
@@ -741,7 +793,7 @@ class DsoPanoramaCard extends HTMLElement {
 
 class DsoPanoramaCardEditor extends HTMLElement {
   constructor() { super(); this.attachShadow({ mode: "open" }); }
-  setConfig(config) { this._config = { ...config }; this._render(); }
+  setConfig(config) { if (dskSetEditorConfig(this, config)) this._render(); }
   set hass(h) {}
   _render() {
     this.shadowRoot.innerHTML = `<style>.ed{padding:16px}.f{margin-bottom:10px}.f label{display:block;font-size:0.8em;margin-bottom:3px;color:var(--secondary-text-color)}.f input{width:100%;padding:7px;border:1px solid var(--divider-color,#ccc);border-radius:6px;box-sizing:border-box;background:var(--card-background-color);color:var(--primary-text-color)}</style><div class="ed"><div class="f"><label>Title</label><input id="t" value="${this._config.title||"Horizon Panorama"}"/></div></div>`;
@@ -767,7 +819,7 @@ class DsoDomeCard extends HTMLElement {
   static getConfigElement() { return document.createElement("dso-dome-card-editor"); }
   static getStubConfig() { return { title: "3D Sky Dome" }; }
   setConfig(config) { this._config = { title: config.title || "3D Sky Dome", ...config }; }
-  set hass(hass) { this._hass = hass; this._render(); }
+  set hass(hass) { if (dskUpdateHass(this, hass)) this._render(); }
 
   _render() {
     if (!this._hass) return;
@@ -792,7 +844,7 @@ class DsoDomeCard extends HTMLElement {
 
     // Gather objects
     const objects = [];
-    const dsoStates = Object.entries(this._hass.states).filter(([id]) => id.startsWith("sensor.nasa_astronomy_deepsky_") && id.endsWith("_altitude"));
+    const dsoStates = dskStateIndex(this._hass.states).altitudes;
     for (const [id, s] of dsoStates) {
       const objKey = id.replace("sensor.nasa_astronomy_deepsky_", "").replace("_altitude", "");
       const alt = parseFloat(s.state);
@@ -932,7 +984,7 @@ class DsoDomeCard extends HTMLElement {
 
 class DsoDomeCardEditor extends HTMLElement {
   constructor() { super(); this.attachShadow({ mode: "open" }); }
-  setConfig(config) { this._config = { ...config }; this._render(); }
+  setConfig(config) { if (dskSetEditorConfig(this, config)) this._render(); }
   set hass(h) {}
   _render() {
     this.shadowRoot.innerHTML = `<style>.ed{padding:16px}.f{margin-bottom:10px}.f label{display:block;font-size:0.8em;margin-bottom:3px;color:var(--secondary-text-color)}.f input{width:100%;padding:7px;border:1px solid var(--divider-color,#ccc);border-radius:6px;box-sizing:border-box;background:var(--card-background-color);color:var(--primary-text-color)}</style><div class="ed"><div class="f"><label>Title</label><input id="t" value="${this._config.title||"3D Sky Dome"}"/></div></div>`;
@@ -972,11 +1024,11 @@ customElements.get("dso-dome-card-editor") || customElements.define("dso-dome-ca
 
 window.customCards = window.customCards || [];
 for (const card of [
-  { type: "night-sky-highlights-2-card", name: "ASS Night Sky Highlights 2", description: "Enhanced night sky highlights with visibility scores.", preview: true },
-  { type: "dso-tonight-table-card", name: "ASS Deep Sky Tonight", description: "Table of best deep-sky objects visible tonight.", preview: true },
-  { type: "dso-yard-map-card", name: "ASS Sky Map", description: "Top-down polar projection of visible objects.", preview: true },
-  { type: "dso-panorama-card", name: "ASS Horizon Panorama", description: "360° horizon strip showing object positions.", preview: true },
-  { type: "dso-dome-card", name: "ASS 3D Sky Dome", description: "Interactive 3D dome view — drag to rotate.", preview: true },
+  { type: "night-sky-highlights-2-card", name: "ASS Night Sky Highlights 2", description: "Enhanced night sky highlights with visibility scores.", preview: false },
+  { type: "dso-tonight-table-card", name: "ASS Deep Sky Tonight", description: "Table of best deep-sky objects visible tonight.", preview: false },
+  { type: "dso-yard-map-card", name: "ASS Sky Map", description: "Top-down polar projection of visible objects.", preview: false },
+  { type: "dso-panorama-card", name: "ASS Horizon Panorama", description: "360° horizon strip showing object positions.", preview: false },
+  { type: "dso-dome-card", name: "ASS 3D Sky Dome", description: "Interactive 3D dome view — drag to rotate.", preview: false },
 ]) {
   if (!window.customCards.some((registered) => registered.type === card.type)) {
     window.customCards.push(card);
