@@ -360,6 +360,25 @@ function getState(hass, entityId) {
   return hass && entityId ? hass.states[entityId] : undefined;
 }
 
+function updateCardHass(card, hass, entityIds, clock = null) {
+  card._hass = hass;
+  // HA replaces changed state objects; retain references rather than hashing attributes.
+  const inputs = [
+    card._config, hass.config, hass.themes, hass.locale, clock,
+    ...entityIds.map((id) => hass.states[id]),
+  ];
+  const previous = card._renderInputs;
+  card._renderInputs = inputs;
+  return !previous || inputs.length !== previous.length
+    || inputs.some((value, index) => value !== previous[index]);
+}
+
+function configuredEntities(config) {
+  return Object.entries(config)
+    .filter(([key]) => key === "entity" || key.endsWith("_entity"))
+    .map(([, value]) => value);
+}
+
 function renderErrorCard(message, icon = "mdi:alert-circle-outline") {
   return `
     <style>
@@ -388,23 +407,24 @@ function dispatchConfigChanged(editor) {
 function setPickerValue(root, id, hass, value) {
   const picker = root.getElementById(id);
   if (!picker) return;
-  picker.hass = hass;
-  picker.value = value || "";
+  if (picker.hass !== hass) picker.hass = hass;
+  if (picker.value !== (value || "")) picker.value = value || "";
 }
 
 function setTextValue(root, id, value) {
   const field = root.getElementById(id);
-  if (field) field.value = value == null ? "" : String(value);
+  const text = value == null ? "" : String(value);
+  if (field && field.value !== text) field.value = text;
 }
 
 function setSwitchValue(root, id, checked) {
   const sw = root.getElementById(id);
-  if (sw) sw.checked = Boolean(checked);
+  if (sw && sw.checked !== Boolean(checked)) sw.checked = Boolean(checked);
 }
 
 function setSelectValue(root, id, value) {
   const select = root.getElementById(id);
-  if (select) select.value = String(value);
+  if (select && select.value !== String(value)) select.value = String(value);
 }
 
 function normalizePhase(phase) {
@@ -552,7 +572,11 @@ class AstroEditorBase extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    if (this._rendered) this._updateValues();
+    if (this._rendered) {
+      this.shadowRoot.querySelectorAll("ha-entity-picker").forEach((picker) => {
+        if (picker.hass !== hass) picker.hass = hass;
+      });
+    }
     else this._render();
   }
 
@@ -571,14 +595,12 @@ class AstroEditorBase extends HTMLElement {
   }
 
   _updateValues() {
-    this.shadowRoot.querySelectorAll("ha-entity-picker").forEach((picker) => {
-      picker.hass = this._hass;
-    });
     setSwitchValue(this.shadowRoot, "glass_mode", this._config.glass_mode === true);
     this._syncValues();
   }
 
   _setValue(key, value) {
+    if (this._config[key] === value) return;
     this._config = { ...this._config, [key]: value };
     dispatchConfigChanged(this);
   }
@@ -673,7 +695,6 @@ class ApodCard extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this._config = {};
     this._hass = null;
-    this._lastStateHash = "";
   }
 
   static getConfigElement() { return document.createElement("apod-card-editor"); }
@@ -692,17 +713,10 @@ class ApodCard extends HTMLElement {
   setConfig(config) {
     if (!config.entity) throw new Error("You must define an entity");
     this._config = { ...ApodCard.getStubConfig(), ...config };
-    this._lastStateHash = "";
   }
 
   set hass(hass) {
-    this._hass = hass;
-    const stateObj = hass.states[this._config.entity];
-    const hash = stateObj ? `${stateObj.state}|${stateObj.last_updated}` : "";
-    if (hash !== this._lastStateHash) {
-      this._lastStateHash = hash;
-      this._render();
-    }
+    if (updateCardHass(this, hass, [this._config.entity])) this._render();
   }
 
   _render() {
@@ -937,8 +951,7 @@ class NeoThreatCard extends HTMLElement {
   }
 
   set hass(hass) {
-    this._hass = hass;
-    this._render();
+    if (updateCardHass(this, hass, configuredEntities(this._config))) this._render();
   }
 
   _render() {
@@ -1122,7 +1135,6 @@ class SolarActivityCard extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._config = {};
-    this._lastStateHash = "";
   }
 
   static getConfigElement() { return document.createElement("solar-activity-card-editor"); }
@@ -1151,25 +1163,10 @@ class SolarActivityCard extends HTMLElement {
       throw new Error("You must define cme_entity, flare_entity, and storm_entity");
     }
     this._config = { ...SolarActivityCard.getStubConfig(), ...config };
-    this._lastStateHash = "";
   }
 
   set hass(hass) {
-    this._hass = hass;
-    const hash = this._computeStateHash();
-    if (hash !== this._lastStateHash) {
-      this._lastStateHash = hash;
-      this._render();
-    }
-  }
-
-  _computeStateHash() {
-    if (!this._hass) return "";
-    const entities = [this._config.cme_entity, this._config.flare_entity, this._config.storm_entity, this._config.kp_entity];
-    return entities.map((e) => {
-      const s = e ? this._hass.states[e] : null;
-      return s ? `${s.state}|${s.last_updated}` : "";
-    }).join(";");
+    if (updateCardHass(this, hass, configuredEntities(this._config), Math.floor(Date.now() / 60000))) this._render();
   }
 
   _collectEvents(stateObj, kind, timeRange) {
@@ -1481,8 +1478,7 @@ class AstroHorizonCard extends HTMLElement {
   }
 
   set hass(hass) {
-    this._hass = hass;
-    this._render();
+    if (updateCardHass(this, hass, [this._config.sun_entity])) this._render();
   }
 
   _render() {
@@ -1671,8 +1667,7 @@ class AstroLunarCard extends HTMLElement {
   }
 
   set hass(hass) {
-    this._hass = hass;
-    this._render();
+    if (updateCardHass(this, hass, [this._config.moon_entity])) this._render();
   }
 
   _render() {
@@ -1851,8 +1846,7 @@ class SolarSystemCard extends HTMLElement {
   }
 
   set hass(hass) {
-    this._hass = hass;
-    this._render();
+    if (updateCardHass(this, hass, [], Math.floor(Date.now() / 60000))) this._render();
   }
 
   _zoomIn() {
@@ -2047,8 +2041,10 @@ class RocketLaunchCard extends HTMLElement {
   }
 
   set hass(hass) {
-    this._hass = hass;
-    this._render();
+    const prefix = this._config.entity_prefix || "sensor.astronomy_space_suite_rocket_launch";
+    const count = clamp(parseInt(this._config.max_launches, 10) || 5, 1, 5);
+    const entities = Array.from({ length: count }, (_, index) => `${prefix}_${index + 1}`);
+    if (updateCardHass(this, hass, entities, Math.floor(Date.now() / 60000))) this._render();
   }
 
   _parseLaunch(stateObj, fallbackName) {
@@ -2334,8 +2330,10 @@ class IssTrackerCard extends HTMLElement {
   }
 
   set hass(hass) {
-    this._hass = hass;
-    this._render();
+    if (updateCardHass(this, hass, [this._config.entity])) this._render();
+    else if (this._nativeMap && this._displayPosition) {
+      this._nativeMap.hass = this._mapHass(this._displayPosition, this._mapIsStale);
+    }
   }
 
   disconnectedCallback() {
@@ -2406,6 +2404,8 @@ class IssTrackerCard extends HTMLElement {
   }
 
   async _renderNativeMap(displayPos, isStale) {
+    this._displayPosition = displayPos;
+    this._mapIsStale = isStale;
     const container = this.shadowRoot.querySelector("#iss-native-map");
     if (!container) return;
     if (typeof window.loadCardHelpers !== "function") {
@@ -2744,7 +2744,7 @@ class EarthObservationCard extends HTMLElement {
   }
 
   set hass(hass) {
-    this._hass = hass;
+    if (!updateCardHass(this, hass, configuredEntities(this._config))) return;
     this._selectDefaultView();
     this._render();
   }
@@ -2954,7 +2954,7 @@ function defineElement(name, ctor) {
 function registerCustomCard(type, name, description) {
   window.customCards = window.customCards || [];
   if (!window.customCards.some((card) => card.type === type)) {
-    window.customCards.push({ type, name, description, preview: true, documentationURL: DOCS_URL });
+    window.customCards.push({ type, name, description, preview: false, documentationURL: DOCS_URL });
   }
 }
 
@@ -2970,29 +2970,21 @@ defineElement("earth-observation-card-editor", EarthObservationCardEditor);
 
 // ─── Night Sky Highlights Card ───────────────────────────────────────────────
 class NightSkyHighlightsEditor extends AstroEditorBase {
-  static get properties() { return { _config: {} }; }
-  setConfig(config) { this._config = { ...config }; }
-  get _title() { return this._config.title || "Night Sky Highlights"; }
-  get _telescope_mode() { return this._config.telescope_mode || false; }
-  render() {
-    if (!this._hass) return html``;
-    return html`
-      <style>${EDITOR_STYLES}</style>
-      <div class="astro-editor">
-        <div class="astro-input-wrap">
-          <label>Card Title</label>
-          <input type="text" .value="${this._title}" @input="${(e) => this._valueChanged('title', e.target.value)}" @change="${(e) => this._valueChanged('title', e.target.value)}">
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;margin:8px 0;">
-          <ha-switch .checked="${this._telescope_mode}" @change="${(e) => this._valueChanged('telescope_mode', e.target.checked)}"></ha-switch>
-          <span>Telescope Mode (alt &gt; 30°)</span>
-        </div>
-      </div>
+  _editorTemplate() {
+    return `
+      <div class="astro-input-wrap"><label for="title">Card title</label><input type="text" id="title" /></div>
+      <label class="switch-row"><span>Telescope Mode (alt &gt; 30°)</span><ha-switch id="telescope_mode"></ha-switch></label>
     `;
   }
-  _valueChanged(key, value) {
-    this._config = { ...this._config, [key]: value };
-    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config } }));
+
+  _setupListeners() {
+    this._bindText("title", "title");
+    this._bindSwitch("telescope_mode", "telescope_mode");
+  }
+
+  _syncValues() {
+    setTextValue(this.shadowRoot, "title", this._config.title || "Night Sky Highlights");
+    setSwitchValue(this.shadowRoot, "telescope_mode", this._config.telescope_mode === true);
   }
 }
 
@@ -3003,7 +2995,6 @@ class NightSkyHighlightsCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
-    this._lastStateHash = "";
   }
 
   setConfig(config) {
@@ -3011,24 +3002,11 @@ class NightSkyHighlightsCard extends HTMLElement {
   }
 
   set hass(hass) {
-    this._hass = hass;
-    const hash = this._computeHash();
-    if (hash !== this._lastStateHash) {
-      this._lastStateHash = hash;
-      this._render();
-    }
-  }
-
-  _computeHash() {
     const bodies = ["sun", "moon", "mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune"];
-    let h = "";
-    for (const b of bodies) {
-      const alt = this._hass.states[`sensor.nasa_astronomy_ephemeris_${b}_altitude`];
-      if (alt) h += alt.state + ";";
-    }
-    const tw = this._hass.states["sensor.nasa_astronomy_ephemeris_sky_twilight_phase"];
-    if (tw) h += tw.state;
-    return h;
+    const entities = bodies.flatMap((body) => ["altitude", "illumination_pct", "phase_angle", "visibility_start", "visibility_end"]
+      .map((suffix) => `sensor.nasa_astronomy_ephemeris_${body}_${suffix}`));
+    entities.push("sensor.nasa_astronomy_ephemeris_sky_twilight_phase");
+    if (updateCardHass(this, hass, entities)) this._render();
   }
 
   _getBodyData() {

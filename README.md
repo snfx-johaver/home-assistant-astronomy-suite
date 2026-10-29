@@ -377,6 +377,28 @@ These are standard HA integrations — just enable them in Settings → Devices 
 
 **Cards not showing in picker?** → Hard refresh browser (Ctrl+Shift+R). Check DevTools console for JS errors. Verify resources at Settings → Dashboards → ⋮ → Resources.
 
+**Slow dashboard or card picker?** → ASS cards use description-only tiles in the
+card picker, avoiding simultaneous camera downloads, map setup, and sky rendering
+for every card. Selecting a card still opens its normal live editing preview.
+Dashboard cards skip redraws when only unrelated entities change; deep-sky views
+share entity discovery, and editors avoid duplicate updates and echoed-config
+rebuilds. Actual image download times still depend on the upstream provider.
+
+To reproduce the local rendering speed test, serve the repository root with
+Python (including the `.mjs` MIME mapping needed on Windows):
+
+```shell
+python -c "import http.server; http.server.SimpleHTTPRequestHandler.extensions_map['.mjs']='text/javascript'; http.server.ThreadingHTTPServer(('127.0.0.1',18437),http.server.SimpleHTTPRequestHandler).serve_forever()"
+```
+
+Open `http://127.0.0.1:18437/tests/card-performance.html` and select **Run
+benchmark**. It covers all 15 cards and editors with 10,000 unrelated entities
+and 100 deep-sky objects, measuring initial render, unrelated updates, editor
+config echoes, and picker preview work. This synthetic browser test does not
+include Home Assistant's frontend, real entity-picker costs, or network loading.
+An optional `bundleRoot` query parameter can point to locally served older
+bundles for comparison.
+
 **"Custom element doesn't exist"?** → Go to Settings → Dashboards → ⋮ → Resources and verify both are listed:
 - `/local/community/astronomy-cards/astronomy-cards.js` (module)
 - `/local/community/astronomy-cards/deepsky-cards.js` (module)
