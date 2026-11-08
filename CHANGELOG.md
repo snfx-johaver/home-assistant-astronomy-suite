@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.18.0
+
+- Replace unsupported `mdi:planet` and `mdi:galaxy` dashboard heading icons
+  with `mdi:earth` and `mdi:star-four-points`.
+- Keep Meteosat-12 refresh failures at debug level when a cached image can be
+  served, while retaining warnings when no image is available.
+- Include the exception type in Meteosat-12 network failure messages so
+  timeouts no longer produce an empty error description.
+
 ## 1.17.0
 
 - Fixed the Himawari-8/9 camera by resolving NICT's latest image timestamp

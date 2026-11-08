@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import unittest
 from types import SimpleNamespace
@@ -25,13 +26,19 @@ class FakeResponse:
         status=200,
         content_type="image/png",
         enter_delay=0,
+        enter_error=None,
+        read_error=None,
     ):
         self.body = body
         self.status = status
         self.headers = {"Content-Type": content_type}
         self.enter_delay = enter_delay
+        self.enter_error = enter_error
+        self.read_error = read_error
 
     async def __aenter__(self):
+        if self.enter_error is not None:
+            raise self.enter_error
         if self.enter_delay:
             await asyncio.sleep(self.enter_delay)
         return self
@@ -40,6 +47,8 @@ class FakeResponse:
         return False
 
     async def read(self):
+        if self.read_error is not None:
+            raise self.read_error
         await asyncio.sleep(0)
         return self.body
 
@@ -162,6 +171,64 @@ class MeteosatCameraTests(unittest.IsolatedAsyncioTestCase):
                 session = FakeSession([response])
                 with patch.object(camera, "async_get_clientsession", return_value=session):
                     self.assertIsNone(await entity._async_refresh())
+                self.assertIsNone(entity._cached_image)
+
+    async def test_cached_failures_log_only_debug_and_scheduled_refresh_recovers(self):
+        for response, reason in (
+            (FakeResponse(status=503), "HTTP status 503"),
+            (FakeResponse(status=504), "HTTP status 504"),
+            (FakeResponse(enter_error=TimeoutError()), "TimeoutError"),
+            (
+                FakeResponse(enter_error=camera.aiohttp.ClientError("unreachable")),
+                "unreachable",
+            ),
+            (
+                FakeResponse(read_error=camera.aiohttp.ClientError("read failed")),
+                "read failed",
+            ),
+            (FakeResponse(b"invalid", content_type="text/html"), "invalid PNG"),
+        ):
+            with self.subTest(reason=reason):
+                entity = make_camera()
+                recovered_png = PNG + b"-new"
+                session = FakeSession(
+                    [FakeResponse(PNG), response, response, FakeResponse(recovered_png)]
+                )
+                with patch.object(camera, "async_get_clientsession", return_value=session):
+                    self.assertEqual(await entity.async_camera_image(), PNG)
+                    with self.assertLogs(camera._LOGGER, level=logging.DEBUG) as logs:
+                        await entity._async_scheduled_refresh(None)
+                        self.assertEqual(await entity.async_camera_image(), PNG)
+                        await entity._async_scheduled_refresh(None)
+                        self.assertEqual(await entity.async_camera_image(), PNG)
+                    self.assertEqual(len(logs.records), 2)
+                    for record in logs.records:
+                        self.assertEqual(record.levelno, logging.DEBUG)
+                        self.assertIn(reason, record.getMessage())
+                    await entity._async_scheduled_refresh(None)
+                    self.assertEqual(await entity.async_camera_image(), recovered_png)
+                self.assertEqual(entity._cached_image, recovered_png)
+                self.assertEqual(len(session.calls), 4)
+
+    async def test_failures_without_cached_image_still_warn(self):
+        for response, reason in (
+            (FakeResponse(status=504), "HTTP status 504"),
+            (FakeResponse(enter_error=TimeoutError()), "TimeoutError"),
+            (
+                FakeResponse(enter_error=camera.aiohttp.ClientError("unreachable")),
+                "unreachable",
+            ),
+            (FakeResponse(b"invalid", content_type="text/html"), "invalid PNG"),
+        ):
+            with self.subTest(reason=reason):
+                entity = make_camera()
+                session = FakeSession([response])
+                with patch.object(camera, "async_get_clientsession", return_value=session):
+                    with self.assertLogs(camera._LOGGER, level=logging.WARNING) as logs:
+                        self.assertIsNone(await entity.async_camera_image())
+                self.assertEqual(len(logs.records), 1)
+                self.assertEqual(logs.records[0].levelno, logging.WARNING)
+                self.assertIn(reason, logs.records[0].getMessage())
                 self.assertIsNone(entity._cached_image)
 
     async def test_concurrent_first_requests_share_one_download(self):

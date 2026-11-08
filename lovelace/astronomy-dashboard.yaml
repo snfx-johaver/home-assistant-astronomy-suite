@@ -271,7 +271,7 @@ views:
         cards:
           - type: heading
             heading: Planet positions
-            icon: mdi:planet
+            icon: mdi:earth
           - type: entities
             title: Mercury
             show_header_toggle: false
@@ -689,7 +689,7 @@ views:
         cards:
           - type: heading
             heading: Deep-sky coverage
-            icon: mdi:galaxy
+            icon: mdi:star-four-points
           - type: entities
             title: Summary and Messier 1-57
             show_header_toggle: false

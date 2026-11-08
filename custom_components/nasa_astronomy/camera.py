@@ -287,12 +287,16 @@ class Meteosat12EarthCamera(CoordinatorEntity[NasaDataCoordinator], Camera):
 
     async def _async_download(self) -> bytes | None:
         """Download and validate one PNG, retaining the previous good image."""
+        failure_log_level = (
+            logging.DEBUG if self._cached_image is not None else logging.WARNING
+        )
         try:
             session = async_get_clientsession(self.hass)
             timeout = aiohttp.ClientTimeout(total=25)
             async with session.get(METEOSAT12_EARTH_URL, timeout=timeout) as resp:
                 if resp.status != 200:
-                    _LOGGER.warning(
+                    _LOGGER.log(
+                        failure_log_level,
                         "Meteosat-12 image refresh failed with HTTP status %s",
                         resp.status,
                     )
@@ -304,7 +308,8 @@ class Meteosat12EarthCamera(CoordinatorEntity[NasaDataCoordinator], Camera):
                     not content_type.startswith("image/png")
                     or not image.startswith(b"\x89PNG\r\n\x1a\n")
                 ):
-                    _LOGGER.warning(
+                    _LOGGER.log(
+                        failure_log_level,
                         "Meteosat-12 image refresh returned invalid PNG content "
                         "(content type: %s, bytes: %s)",
                         content_type or "missing",
@@ -315,7 +320,12 @@ class Meteosat12EarthCamera(CoordinatorEntity[NasaDataCoordinator], Camera):
                 self._cached_image = image
                 return image
         except (aiohttp.ClientError, TimeoutError) as err:
-            _LOGGER.warning("Meteosat-12 image refresh failed: %s", err)
+            _LOGGER.log(
+                failure_log_level,
+                "Meteosat-12 image refresh failed: %s: %s",
+                type(err).__name__,
+                err,
+            )
             return self._cached_image
 
     async def async_camera_image(

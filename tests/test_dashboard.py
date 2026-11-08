@@ -235,6 +235,20 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("dso-yard-map-card", configured)
         self.assertIn("dso-dome-card", configured)
 
+    def test_planet_and_deepsky_headings_use_supported_icons(self):
+        icons = re.findall(r"(?m)^\s*icon:\s*(mdi:[a-z0-9-]+)\s*$", self.dashboard)
+        self.assertNotIn("mdi:planet", icons)
+        self.assertNotIn("mdi:galaxy", icons)
+        for heading, icon in (
+            ("Planet positions", "mdi:earth"),
+            ("Deep-sky coverage", "mdi:star-four-points"),
+        ):
+            with self.subTest(heading=heading):
+                self.assertRegex(
+                    self.dashboard,
+                    rf"heading: {re.escape(heading)}\n\s+icon: {re.escape(icon)}\n",
+                )
+
     def test_every_integration_entity_is_covered(self):
         configured = _configured_entities(self.dashboard)
         expected = _core_entities() | _ephemeris_entities() | _deepsky_entities()

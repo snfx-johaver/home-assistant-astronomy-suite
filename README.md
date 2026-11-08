@@ -336,6 +336,12 @@ home-assistant-astronomy-suite/
 | Deep-Sky Objects | Local calculation (no API) | None | 5 min |
 | Ephemeris | Local calculation (no API) | None | Configurable |
 
+Meteosat-12 keeps serving the last successfully downloaded image when EUMETSAT
+is unreachable or returns an invalid response, and retries every ten minutes.
+Refresh failures are logged at debug level while a cached image is available;
+warnings are emitted only when no image has been cached yet. The image cache
+is in memory and does not survive an integration reload or Home Assistant restart.
+
 ISS positions use the HTTPS Where The ISS At endpoint first. The integration
 also refreshes CelesTrak orbital elements no more than once every two hours and
 can propagate the ISS position locally with SGP4 when the primary service is
