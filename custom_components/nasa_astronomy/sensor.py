@@ -251,6 +251,7 @@ class NasaAstronomySensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
 
         elif key in ("neo_count", "neo_closest", "neo_fastest", "neo_largest"):
             neo_list = self._get_all_neos()
+            neo_data = data.get("neo") or {}
             hazardous = [n for n in neo_list if n.get("is_potentially_hazardous_asteroid")]
             return {
                 "neo_list": [
@@ -263,11 +264,15 @@ class NasaAstronomySensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
                         "velocity_kmh": float(n["close_approach_data"][0]["relative_velocity"]["kilometers_per_hour"]) if n.get("close_approach_data") else None,
                         "miss_distance_km": float(n["close_approach_data"][0]["miss_distance"]["kilometers"]) if n.get("close_approach_data") else None,
                         "close_approach_date": n["close_approach_data"][0]["close_approach_date_full"] if n.get("close_approach_data") else None,
+                        "close_approach_timestamp": n["close_approach_data"][0].get("epoch_date_close_approach") if n.get("close_approach_data") else None,
                     }
                     for n in neo_list
                 ],
                 "hazardous_count": len(hazardous),
                 "total_count": len(neo_list),
+                "start_date": neo_data.get("start_date"),
+                "end_date": neo_data.get("end_date"),
+                "date_timezone": neo_data.get("date_timezone"),
             }
 
         elif key == "donki_cme":
@@ -336,7 +341,7 @@ class NasaAstronomySensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
         return {}
 
     def _get_all_neos(self) -> list[dict]:
-        """Get all NEOs from today's data."""
+        """Get all NEOs from the coordinator's UTC-day feed."""
         neo = self.coordinator.data.get("neo")
         if not neo or "near_earth_objects" not in neo:
             return []

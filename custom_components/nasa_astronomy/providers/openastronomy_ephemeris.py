@@ -165,7 +165,7 @@ def _sun_position(jd: float) -> dict[str, float]:
     # Equation of center
     c = 1.9148 * math.sin(m_rad) + 0.0200 * math.sin(2 * m_rad) + 0.0003 * math.sin(3 * m_rad)
     # Sun's ecliptic longitude
-    sun_lon = _normalize_deg(m_deg + c + 180.0 + 102.9372)
+    sun_lon = _normalize_deg(m_deg + c + 180.0 + 102.9372 + 1.396971 * days / 36525.0)
     # Sun's distance (AU)
     distance = 1.00014 - 0.01671 * math.cos(m_rad) - 0.00014 * math.cos(2 * m_rad)
     # Angular diameter (arcminutes)
@@ -199,8 +199,8 @@ def _moon_position(jd: float) -> dict[str, float]:
 
     # Ecliptic longitude (simplified)
     lon = l0 + 6.289 * math.sin(m_moon_r)
-    lon += -1.274 * math.sin(2 * d_r - m_moon_r)
-    lon += -0.658 * math.sin(2 * d_r)
+    lon += 1.274 * math.sin(2 * d_r - m_moon_r)
+    lon += 0.658 * math.sin(2 * d_r)
     lon += 0.214 * math.sin(2 * m_moon_r)
     lon += -0.186 * math.sin(m_sun_r)
     lon += -0.114 * math.sin(2 * f_r)
@@ -210,7 +210,7 @@ def _moon_position(jd: float) -> dict[str, float]:
     lat = 5.128 * math.sin(f_r)
     lat += 0.281 * math.sin((m_moon_r + f_r))
     lat += -0.278 * math.sin((f_r - m_moon_r))
-    lat += -0.173 * math.sin((2 * d_r - f_r))
+    lat += 0.173 * math.sin((2 * d_r - f_r))
 
     # Distance (km)
     dist = 385001 - 20905 * math.cos(m_moon_r)
@@ -221,9 +221,10 @@ def _moon_position(jd: float) -> dict[str, float]:
     ang_diam = 2 * math.atan(1737.4 / dist) * RAD_TO_DEG * 60
 
     # Phase angle and illumination
-    elongation = math.acos(
-        max(-1.0, min(1.0, math.cos(d_r) * math.cos((lat * DEG_TO_RAD))))
-    )
+    sun_lon = _sun_position(jd)["ecliptic_lon"]
+    elongation = math.acos(max(-1.0, min(
+        1.0, math.cos(lat * DEG_TO_RAD) * math.cos((lon - sun_lon) * DEG_TO_RAD)
+    )))
     phase_angle = 180.0 - elongation * RAD_TO_DEG
     illumination = (1 + math.cos(phase_angle * DEG_TO_RAD)) / 2.0 * 100
 
@@ -244,7 +245,7 @@ def _planet_position(name: str, jd: float) -> dict[str, float]:
     earth = ORBITAL_ELEMENTS["earth"]
     days = jd - J2000
 
-    def _helio(elem: dict) -> tuple[float, float, float, float]:
+    def _helio(elem: dict[str, float]) -> tuple[float, float, float, float]:
         m_deg = _normalize_deg(elem["L"] + elem["daily"] * days - elem["wBar"])
         m_rad = m_deg * DEG_TO_RAD
         e_anom = _solve_kepler(m_rad, elem["e"])
@@ -253,26 +254,30 @@ def _planet_position(name: str, jd: float) -> dict[str, float]:
             math.sqrt(1 - elem["e"]) * math.cos(e_anom / 2),
         )
         r = elem["a"] * (1 - elem["e"] * math.cos(e_anom))
-        lon = true_anom + elem["wBar"] * DEG_TO_RAD
-        # Simplified: assume ecliptic latitude ≈ 0 for planets (low inclination approximation)
-        x = r * math.cos(lon)
-        y = r * math.sin(lon)
-        return x, y, r, _normalize_deg(lon * RAD_TO_DEG)
+        u = true_anom + (elem["wBar"] - elem["Omega"]) * DEG_TO_RAD
+        node = elem["Omega"] * DEG_TO_RAD
+        inc = elem["i"] * DEG_TO_RAD
+        x = r * (math.cos(node) * math.cos(u) - math.sin(node) * math.sin(u) * math.cos(inc))
+        y = r * (math.sin(node) * math.cos(u) + math.cos(node) * math.sin(u) * math.cos(inc))
+        z = r * math.sin(u) * math.sin(inc)
+        return x, y, z, r
 
     # Earth heliocentric
-    ex, ey, _, _ = _helio(earth)
+    ex, ey, ez, sun_dist = _helio(earth)
     # Planet heliocentric
-    px, py, pr, p_lon = _helio(planet)
+    px, py, pz, pr = _helio(planet)
 
     # Geocentric
     dx = px - ex
     dy = py - ey
-    geo_dist = math.sqrt(dx * dx + dy * dy)
-    geo_lon = _normalize_deg(math.atan2(dy, dx) * RAD_TO_DEG)
+    dz = pz - ez
+    geo_dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+    # Rotate J2000 longitudes to the equinox of date used by sidereal time.
+    geo_lon = _normalize_deg(math.atan2(dy, dx) * RAD_TO_DEG + 1.396971 * days / 36525.0)
+    geo_lat = math.atan2(dz, math.hypot(dx, dy)) * RAD_TO_DEG
 
     # Phase angle (Sun-Planet-Earth)
     # Using law of cosines
-    sun_dist = math.sqrt(ex * ex + ey * ey)
     cos_phase = (pr * pr + geo_dist * geo_dist - sun_dist * sun_dist) / (2 * pr * geo_dist + 1e-12)
     cos_phase = max(-1.0, min(1.0, cos_phase))
     phase_angle = math.acos(cos_phase) * RAD_TO_DEG
@@ -290,7 +295,7 @@ def _planet_position(name: str, jd: float) -> dict[str, float]:
 
     return {
         "ecliptic_lon": geo_lon,
-        "ecliptic_lat": 0.0,  # Simplified
+        "ecliptic_lat": geo_lat,
         "distance_au": geo_dist,
         "helio_distance_au": pr,
         "angular_diameter_arcsec": ang_diam,
@@ -365,10 +370,7 @@ def _local_sidereal_time(jd: float, lon: float) -> float:
 def _equation_of_time(jd: float) -> float:
     """Equation of time in minutes."""
     days = jd - J2000
-    m_deg = _normalize_deg(357.5291 + 0.98560028 * days)
-    m_rad = m_deg * DEG_TO_RAD
-    c = 1.9148 * math.sin(m_rad) + 0.0200 * math.sin(2 * m_rad)
-    sun_lon = _normalize_deg(m_deg + c + 180.0 + 102.9372)
+    sun_lon = _sun_position(jd)["ecliptic_lon"]
     obliq = _obliquity(jd)
     ra, _ = _ecliptic_to_equatorial(sun_lon, 0.0, obliq)
     # EoT = RA_mean_sun - RA_true_sun
@@ -576,7 +578,7 @@ class OpenAstronomyEphemerisProvider:
         alt, az = _equatorial_to_horizontal(ra, dec, self._lat, self._lon, jd)
         times = _find_rise_set_transit(ra, dec, self._lat, self._lon, jd, -0.5667)
 
-        # Visibility window: when planet is above horizon and sun is below -6°
+        # Visibility window: when planet is above horizon and sun is below -12°.
         vis_start, vis_end = self._find_visibility_window(ra, dec, jd)
 
         return {
@@ -608,7 +610,7 @@ class OpenAstronomyEphemerisProvider:
         return None
 
     def _find_visibility_window(self, ra: float, dec: float, jd: float) -> tuple[float | None, float | None]:
-        """Find when the object is above horizon during astronomical darkness."""
+        """Return the longest overlap with nautical darkness, in UTC hours."""
         sun = _sun_position(jd)
         obliq = _obliquity(jd)
         sun_ra, sun_dec = _ecliptic_to_equatorial(sun["ecliptic_lon"], 0.0, obliq)
@@ -616,18 +618,42 @@ class OpenAstronomyEphemerisProvider:
 
         obj_times = _find_rise_set_transit(ra, dec, self._lat, self._lon, jd, -0.5667)
 
-        if sun_times["set"] is None or obj_times["rise"] is None:
+        jd0 = math.floor(jd - 0.5) + 0.5
+
+        def interval(
+            times: dict[str, float | None],
+            body_ra: float,
+            body_dec: float,
+            threshold: float,
+            *,
+            below: bool = False,
+        ) -> tuple[float, float] | None:
+            rise, setting = times["rise"], times["set"]
+            if rise is None or setting is None:
+                altitude, _ = _equatorial_to_horizontal(
+                    body_ra, body_dec, self._lat, self._lon, jd0
+                )
+                active = altitude < threshold if below else altitude > threshold
+                return (0.0, 24.0) if active else None
+            start, end = (setting, rise) if below else (rise, setting)
+            return start, start + (end - start) % 24.0
+
+        dark = interval(sun_times, sun_ra, sun_dec, -12.0, below=True)
+        above = interval(obj_times, ra, dec, -0.5667)
+        if dark is None or above is None:
             return None, None
 
-        # Visibility = overlap of (object above horizon) and (sun below -12°)
-        dark_start = sun_times["set"]
-        dark_end = sun_times["rise"] if sun_times["rise"] is not None else 24.0
-        obj_rise = obj_times["rise"]
-        obj_set = obj_times["set"] if obj_times["set"] is not None else 24.0
-
-        vis_start = max(dark_start, obj_rise) if dark_start is not None else obj_rise
-        vis_end = min(dark_end, obj_set) if dark_end is not None else obj_set
-
-        if vis_start is not None and vis_end is not None and vis_end > vis_start:
-            return round(vis_start, 2), round(vis_end, 2)
-        return None, None
+        if dark[1] - dark[0] == 24:
+            start, end = above
+        elif above[1] - above[0] == 24:
+            start, end = dark
+        else:
+            # Unwrap both intervals before comparing a night across midnight.
+            overlaps = [
+                (max(dark[0], above[0] + shift), min(dark[1], above[1] + shift))
+                for shift in (-24.0, 0.0, 24.0)
+            ]
+            start, end = max(overlaps, key=lambda span: span[1] - span[0])
+        if end <= start:
+            return None, None
+        return round(start, 2) % 24.0, round(end, 2) % 24.0

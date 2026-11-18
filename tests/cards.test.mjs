@@ -40,7 +40,118 @@ const astronomy = loadBundle(BUNDLES.astronomy, [
   "EarthObservationCardEditor",
 ]);
 
+function withEscapingDocument(sandbox) {
+  sandbox.document.createElement = () => {
+    let innerHTML = "";
+    return {
+      get innerHTML() { return innerHTML; },
+      set textContent(value) {
+        innerHTML = String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;");
+      },
+    };
+  };
+}
+
+const neoBindings = loadBundleWithSandbox(
+  BUNDLES.astronomy, ["NeoThreatCard", "NeoThreatCardEditor"], withEscapingDocument,
+).bindings;
+
 const BEST_TONIGHT = "sensor.nasa_astronomy_deepsky_best_tonight";
+
+const NEO_ENTITY = "sensor.astronomy_space_suite_neo_count_today";
+const NEO_OBJECTS = [
+  { name: "Closest rock", miss_distance_km: 1000000, velocity_kmh: 20000, diameter_max_m: 100, close_approach_timestamp: Date.UTC(2026, 10, 18, 20), hazardous: false },
+  { name: "Big rock", miss_distance_km: 3000000, velocity_kmh: 30000, diameter_max_m: 500, close_approach_timestamp: Date.UTC(2026, 10, 18, 2), hazardous: true },
+  { name: "Fast rock", miss_distance_km: 2000000, velocity_kmh: 90000, diameter_max_m: 200, close_approach_timestamp: Date.UTC(2026, 10, 18, 10), hazardous: false },
+];
+
+function neoCard(config = {}, objects = NEO_OBJECTS) {
+  const card = new neoBindings.NeoThreatCard();
+  card.setConfig({ entity: NEO_ENTITY, ...config });
+  card._hass = makeHass({
+    [NEO_ENTITY]: makeState(NEO_ENTITY, "3", {
+      neo_list: objects,
+      start_date: "2026-11-18",
+      end_date: "2026-11-18",
+      date_timezone: "UTC",
+      total_count: 3,
+      hazardous_count: 1,
+    }),
+    "sensor.astronomy_space_suite_largest_neo": makeState("largest", "Wrong unfiltered rock"),
+  });
+  card._render();
+  return card;
+}
+
+test("NEO default shows the actual UTC date, closest-first rule, limit and hazard meaning", () => {
+  const html = neoCard({ max_items: 2 }).shadowRoot.innerHTML;
+  assert.match(html, /Approaches: 2026-11-18 \(UTC\)/);
+  assert.match(html, /Closest first · Showing 2 of 3 objects/);
+  assert.match(html, /classification is not an impact warning/);
+  const names = [...html.matchAll(/class="neo-name">([^<]+)/g)].map((match) => match[1]);
+  assert.deepEqual(names, ["Closest rock", "Fast rock"]);
+  assert.match(html, /2026-11-18 20:00 UTC/);
+});
+
+test("NEO sort options change the list without changing closest/largest statistics", () => {
+  for (const [sort_by, first] of [["date", "Big rock"], ["diameter", "Big rock"], ["velocity", "Fast rock"]]) {
+    const html = neoCard({ sort_by }).shadowRoot.innerHTML;
+    const names = [...html.matchAll(/class="neo-name">([^<]+)/g)].map((match) => match[1]);
+    assert.equal(names[0], first);
+    assert.match(html, /Big rock<\/div><div class="astro-stat-label">Largest/);
+    assert.match(html, /1\.00M km<\/div><div class="astro-stat-label">Closest/);
+  }
+  assert.match(neoCard({ sort_by: "toString" }).shadowRoot.innerHTML, /Closest first/);
+});
+
+test("NEO hazardous filter keeps list and statistics aligned, including empty results", () => {
+  const html = neoCard({ show_hazardous_only: true }).shadowRoot.innerHTML;
+  assert.match(html, /Showing 1 of 1 potentially hazardous objects/);
+  assert.match(html, /Big rock<\/div><div class="astro-stat-label">Largest/);
+  assert.doesNotMatch(html, /Wrong unfiltered rock/);
+  const empty = neoCard({ show_hazardous_only: true }, NEO_OBJECTS.filter((item) => !item.hazardous)).shadowRoot.innerHTML;
+  assert.match(empty, /Showing 0 of 0 potentially hazardous objects/);
+  assert.match(empty, />0 potentially hazardous</);
+  assert.match(empty, /No NEO objects available/);
+  assert.match(empty, /—<\/div><div class="astro-stat-label">Largest/);
+});
+
+test("NEO unknown approach dates and distances sort last instead of becoming zero", () => {
+  const unknown = { name: "Unknown rock", miss_distance_km: null, close_approach_timestamp: null };
+  for (const sort_by of ["date", "distance"]) {
+    const html = neoCard({ sort_by }, [unknown, ...NEO_OBJECTS]).shadowRoot.innerHTML;
+    const names = [...html.matchAll(/class="neo-name">([^<]+)/g)].map((match) => match[1]);
+    assert.equal(names.at(-1), "Unknown rock");
+  }
+});
+
+test("NEO missing metadata never claims old feed data is today's", () => {
+  const card = neoCard();
+  delete card._hass.states[NEO_ENTITY].attributes.start_date;
+  card._render();
+  assert.match(card.shadowRoot.innerHTML, /Date range unavailable/);
+});
+
+test("NEO editor binds and restores sorting choices", () => {
+  const editor = new neoBindings.NeoThreatCardEditor();
+  editor.setConfig({ sort_by: "date" });
+  assert.match(editor._editorTemplate(), /select id="sort_by"/);
+  const bindings = [];
+  editor._bindPicker = editor._bindText = editor._bindSwitch = () => {};
+  editor._bindSelect = (...args) => bindings.push(args);
+  editor._setupListeners();
+  assert.deepEqual(bindings, [["sort_by", "sort_by"]]);
+  const controls = new Map();
+  editor.shadowRoot = { getElementById: (id) => {
+    if (!controls.has(id)) controls.set(id, {});
+    return controls.get(id);
+  } };
+  editor._syncValues();
+  assert.equal(controls.get("sort_by").value, "date");
+});
 
 // Verbatim shape of the owner's live `top_objects[0]`.
 const LIVE_TOP_OBJECT = {
@@ -573,20 +684,7 @@ test("Earth observation editor exposes and syncs the default view", () => {
 });
 
 test("APOD videos use native playback instead of framing NASA's video URL", () => {
-  const { bindings } = loadBundleWithSandbox(BUNDLES.astronomy, ["ApodCard"], (sandbox) => {
-    sandbox.document.createElement = () => {
-      let innerHTML = "";
-      return {
-        get innerHTML() { return innerHTML; },
-        set textContent(value) {
-          innerHTML = String(value)
-            .replaceAll("&", "&amp;")
-            .replaceAll("<", "&lt;")
-            .replaceAll(">", "&gt;");
-        },
-      };
-    };
-  });
+  const { bindings } = loadBundleWithSandbox(BUNDLES.astronomy, ["ApodCard"], withEscapingDocument);
   const card = new bindings.ApodCard();
   card.setConfig({ entity: "sensor.astronomy_space_suite_apod" });
   card._renderApod({

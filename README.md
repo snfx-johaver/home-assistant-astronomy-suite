@@ -135,8 +135,25 @@ type: custom:neo-threat-card
 entity: sensor.astronomy_space_suite_neo_count_today
 largest_entity: sensor.astronomy_space_suite_largest_neo
 max_items: 10
+sort_by: distance # distance (default), date, diameter, or velocity
 show_hazardous_only: false
 ```
+
+The feed includes **Earth close approaches on the current UTC calendar day**
+(00:00 through 23:59 UTC), not every known NEO or a rolling 24-hour forecast.
+The card displays the actual fetched date and UTC approach times, so a saved
+or older response is not mistaken for today's feed.
+By default it shows the **five closest approaches**, ordered by ascending miss
+distance. Change `max_items` (1-20), choose a sort order in the visual editor,
+or enable `show_hazardous_only` to filter before sorting and limiting the list.
+Counts and largest/fastest/closest statistics cover the full filtered day's
+feed, not just the visible rows.
+
+"Potentially hazardous" is NASA's classification based on orbital proximity
+and estimated size, **not an impact prediction** or a ranking of today's
+flybys. A larger or closer object need not carry that flag, and objects
+approaching on other dates are outside this feed. The default card layout
+uses two statistic columns on narrow cards and four when space permits.
 
 ### ASS Solar Activity Card
 ```yaml
@@ -335,6 +352,13 @@ home-assistant-astronomy-suite/
 | ESA/NASA SOHO | soho.nascom.nasa.gov | None | Camera |
 | Deep-Sky Objects | Local calculation (no API) | None | 5 min |
 | Ephemeris | Local calculation (no API) | None | Configurable |
+
+Ephemeris coordinates use simplified local calculations, not a precision
+observatory ephemeris. Sun and planetary coordinates are expressed at the
+equinox of date; lunar coordinates are already of date. Planetary visibility
+requires the object above the horizon and the Sun below -12 degrees. Windows
+are UTC clock times; an end earlier than the start means the window crosses
+midnight. If there are two separate overlaps, the longest is reported.
 
 Meteosat-12 keeps serving the last successfully downloaded image when EUMETSAT
 is unreachable or returns an invalid response, and retries every ten minutes.
