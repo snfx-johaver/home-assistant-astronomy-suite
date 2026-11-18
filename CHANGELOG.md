@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.18.1
+
+- Correct lunar perturbation signs, planetary orbital inclination and node
+  rotations, and Sun/planet coordinates to the equinox of date.
+- Calculate lunar illumination from the actual Moon-Sun separation and use
+  consistent solar coordinates for the equation of time.
+- Fix planetary visibility windows across midnight UTC, including
+  circumpolar objects and polar daylight/darkness.
+- Label the NEO feed's current UTC calendar-day range and approach times;
+  explain NASA's potentially hazardous classification and list selection.
+- Add NEO sorting options (closest, soonest, largest, fastest), align
+  statistics with hazardous-only filtering, and improve narrow-card layouts.
+
 ## 1.18.0
 
 - Replace unsupported `mdi:planet` and `mdi:galaxy` dashboard heading icons

@@ -882,6 +882,7 @@ class NeoThreatCardEditor extends AstroEditorBase {
       entity: "sensor.astronomy_space_suite_neo_count_today",
       largest_entity: "sensor.astronomy_space_suite_largest_neo",
       max_items: 5,
+      sort_by: "distance",
       show_hazardous_only: false,
       show_stats: true,
       title: "",
@@ -897,6 +898,8 @@ class NeoThreatCardEditor extends AstroEditorBase {
       <ha-entity-picker id="largest_entity" label="Largest NEO entity"></ha-entity-picker>
       <div class="astro-input-wrap"><label for="title">Card title</label><input type="text" id="title" placeholder="Leave empty for default" /></div>
       <div class="astro-input-wrap"><label for="max_items">Max items shown</label><input type="number" id="max_items" min="1" max="20" /></div>
+      <div class="astro-input-wrap"><label for="sort_by">Sort approaches</label><select id="sort_by"><option value="distance">Closest first</option><option value="date">Soonest first</option><option value="diameter">Largest first</option><option value="velocity">Fastest first</option></select></div>
+      <p>Data covers the current UTC calendar day, not the full asteroid catalogue. Potentially hazardous is NASA's classification, not an impact warning.</p>
       <label class="switch-row"><span>Show hazardous only</span><ha-switch id="show_hazardous_only"></ha-switch></label>
       <label class="switch-row"><span>Show statistics</span><ha-switch id="show_stats"></ha-switch></label>
       <label class="switch-row"><span>Show velocity</span><ha-switch id="show_velocity"></ha-switch></label>
@@ -909,6 +912,7 @@ class NeoThreatCardEditor extends AstroEditorBase {
     this._bindPicker("largest_entity", "largest_entity");
     this._bindText("title", "title", (value) => value.trim());
     this._bindText("max_items", "max_items", (value) => clamp(parseInt(value, 10) || 5, 1, 20));
+    this._bindSelect("sort_by", "sort_by");
     ["show_hazardous_only", "show_stats", "show_velocity", "show_diameter"].forEach((key) => this._bindSwitch(key, key));
   }
 
@@ -917,6 +921,7 @@ class NeoThreatCardEditor extends AstroEditorBase {
     setPickerValue(this.shadowRoot, "largest_entity", this._hass, this._config.largest_entity || "");
     setTextValue(this.shadowRoot, "title", this._config.title || "");
     setTextValue(this.shadowRoot, "max_items", this._config.max_items || 5);
+    setTextValue(this.shadowRoot, "sort_by", this._config.sort_by || "distance");
     setSwitchValue(this.shadowRoot, "show_hazardous_only", this._config.show_hazardous_only === true);
     setSwitchValue(this.shadowRoot, "show_stats", this._config.show_stats !== false);
     setSwitchValue(this.shadowRoot, "show_velocity", this._config.show_velocity !== false);
@@ -937,6 +942,7 @@ class NeoThreatCard extends HTMLElement {
       entity: "sensor.astronomy_space_suite_neo_count_today",
       largest_entity: "sensor.astronomy_space_suite_largest_neo",
       max_items: 5,
+      sort_by: "distance",
       show_hazardous_only: false,
       show_stats: true,
       title: "",
@@ -966,24 +972,36 @@ class NeoThreatCard extends HTMLElement {
     let neoList = safeArray(attrs.neo_list).map((item) => ({ ...item }));
     if (this._config.show_hazardous_only) neoList = neoList.filter((item) => item.hazardous);
 
-    const sorted = [...neoList].sort((a, b) => toNumber(a.miss_distance_km, Infinity) - toNumber(b.miss_distance_km, Infinity));
+    const sorters = {
+      distance: { label: "Closest first", key: (item) => toNumber(item.miss_distance_km ?? Infinity, Infinity) },
+      date: { label: "Soonest first", key: (item) => toNumber(item.close_approach_timestamp ?? Infinity, Infinity) },
+      diameter: { label: "Largest first", key: (item) => -toNumber(item.diameter_max_m, 0) },
+      velocity: { label: "Fastest first", key: (item) => -toNumber(item.velocity_kmh, 0) },
+    };
+    const sorter = Object.hasOwn(sorters, this._config.sort_by) ? sorters[this._config.sort_by] : sorters.distance;
+    const sorted = [...neoList].sort((a, b) => sorter.key(a) - sorter.key(b));
     const displayed = sorted.slice(0, clamp(parseInt(this._config.max_items, 10) || 5, 1, 20));
-    const hazardousCount = sorted.filter((item) => item.hazardous).length || toNumber(attrs.hazardous_count, 0);
-    const totalCount = sorted.length || toNumber(attrs.total_count, 0);
-    const closest = sorted[0];
+    const hazardousCount = sorted.filter((item) => item.hazardous).length;
+    const totalCount = sorted.length;
+    const closest = [...sorted].sort((a, b) => toNumber(a.miss_distance_km ?? Infinity, Infinity) - toNumber(b.miss_distance_km ?? Infinity, Infinity))[0];
     const fastest = [...sorted].sort((a, b) => toNumber(b.velocity_kmh, 0) - toNumber(a.velocity_kmh, 0))[0];
     const title = this._config.title || "Near-Earth Objects";
 
-    // Largest NEO
+    const largest = [...sorted].sort((a, b) => toNumber(b.diameter_max_m, 0) - toNumber(a.diameter_max_m, 0))[0];
     const largestState = this._config.largest_entity ? getState(this._hass, this._config.largest_entity) : null;
-    const largestName = largestState ? (largestState.state || largestState.attributes?.name || "—") : "—";
+    const largestName = largest?.name || (!Array.isArray(attrs.neo_list) && !this._config.show_hazardous_only ? largestState?.state : null) || "—";
+    const range = attrs.start_date
+      ? `${attrs.start_date}${attrs.end_date && attrs.end_date !== attrs.start_date ? ` to ${attrs.end_date}` : ""} (${attrs.date_timezone || "feed time"})`
+      : "Date range unavailable — update the integration";
 
     const listHtml = displayed.length
       ? displayed.map((neo) => {
           const detail = [];
           if (this._config.show_diameter !== false) detail.push(`⌀ ${formatMeters(neo.diameter_max_m || neo.diameter_min_m)}`);
           if (this._config.show_velocity !== false) detail.push(formatSpeedKmh(neo.velocity_kmh));
-          if (neo.close_approach_date) detail.push(formatDateTime(neo.close_approach_date));
+          const approach = parseDate(neo.close_approach_timestamp);
+          if (approach) detail.push(`${approach.toISOString().slice(0, 16).replace("T", " ")} UTC`);
+          else if (neo.close_approach_date) detail.push(`${neo.close_approach_date} UTC`);
           return `
             <div class="neo-item ${neo.hazardous ? "danger" : ""}">
               <div class="neo-dot ${neo.hazardous ? "danger" : "safe"}"></div>
@@ -1000,10 +1018,27 @@ class NeoThreatCard extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>
         ${BASE_STYLES}
+        ha-card { display: block; container-type: inline-size; }
+        .astro-header { flex-wrap: wrap; }
+        .astro-title { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
+        .neo-context { padding: 0 16px 12px; color: ${ASTRO.text2}; font-size: 0.75rem; line-height: 1.5; }
+        .neo-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .neo-stats .astro-stat { min-width: 0; }
+        .neo-stats .astro-stat-value {
+          font-size: 1rem;
+          overflow-wrap: anywhere;
+          display: -webkit-box;
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 2;
+          overflow: hidden;
+        }
+        @container (min-width: 600px) {
+          .neo-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        }
         .neo-list { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 14px; }
         .neo-item {
           display: grid;
-          grid-template-columns: auto 1fr auto;
+          grid-template-columns: auto minmax(0, 1fr);
           gap: 10px;
           align-items: center;
           padding: 12px;
@@ -1031,7 +1066,11 @@ class NeoThreatCard extends HTMLElement {
           text-overflow: ellipsis;
         }
         .neo-detail { font-size: 0.73rem; color: ${ASTRO.text2}; margin-top: 3px; }
-        .neo-distance { font-size: 0.8rem; font-weight: 600; color: ${ASTRO.text1}; text-align: right; }
+        .neo-distance { grid-column: 2; font-size: 0.8rem; font-weight: 600; color: ${ASTRO.text1}; }
+        @container (min-width: 450px) {
+          .neo-item { grid-template-columns: auto minmax(0, 1fr) auto; }
+          .neo-distance { grid-column: auto; text-align: right; }
+        }
         .neo-empty {
           padding: 0 12px 16px;
           color: ${ASTRO.text2};
@@ -1043,10 +1082,15 @@ class NeoThreatCard extends HTMLElement {
         <div class="astro-header">
           <ha-icon icon="mdi:meteor"></ha-icon>
           <span class="astro-title">${esc(title)}</span>
-          <span class="astro-badge ${hazardousCount > 0 ? "danger" : ""}">${hazardousCount > 0 ? `${hazardousCount} hazardous` : `${totalCount} tracked`}</span>
+          <span class="astro-badge ${hazardousCount > 0 ? "danger" : ""}">${hazardousCount} potentially hazardous</span>
+        </div>
+        <div class="neo-context">
+          <div>Approaches: ${esc(range)}</div>
+          <div>${esc(sorter.label)} · Showing ${displayed.length} of ${totalCount}${this._config.show_hazardous_only ? " potentially hazardous objects" : " objects"}</div>
+          <div>NASA's potentially hazardous classification is not an impact warning.</div>
         </div>
         ${this._config.show_stats !== false ? `
-          <div class="astro-stat-grid cols-4">
+          <div class="astro-stat-grid neo-stats">
             <div class="astro-stat"><div class="neo-stat-icon"><ha-icon icon="mdi:counter" style="color:#9e9e9e;--mdc-icon-size:20px;"></ha-icon></div><div class="astro-stat-value">${totalCount}</div><div class="astro-stat-label">Number</div></div>
             <div class="astro-stat"><div class="neo-stat-icon"><ha-icon icon="mdi:resize" style="color:#42a5f5;--mdc-icon-size:20px;"></ha-icon></div><div class="astro-stat-value">${esc(largestName)}</div><div class="astro-stat-label">Largest</div></div>
             <div class="astro-stat"><div class="neo-stat-icon"><ha-icon icon="mdi:speedometer" style="color:#ff9800;--mdc-icon-size:20px;"></ha-icon></div><div class="astro-stat-value">${fastest ? formatSpeedKmh(fastest.velocity_kmh) : "—"}</div><div class="astro-stat-label">Fastest</div></div>

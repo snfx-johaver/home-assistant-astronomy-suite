@@ -218,10 +218,18 @@ class NasaDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
 
     async def _fetch_neo(self) -> dict[str, Any] | None:
-        """Fetch Near Earth Objects."""
-        today = datetime.now().strftime("%Y-%m-%d")
+        """Fetch Earth approaches for the current UTC calendar day, inclusive."""
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         params = {"start_date": today, "end_date": today}
-        return await self._fetch_json(NEOWS_URL, params)
+        result = await self._fetch_json(NEOWS_URL, params)
+        if result is not None:
+            result = {
+                **result,
+                "start_date": today,
+                "end_date": today,
+                "date_timezone": "UTC",
+            }
+        return result
 
     async def _fetch_donki_cme(self) -> list | None:
         """Fetch Coronal Mass Ejections (last 7 days)."""
