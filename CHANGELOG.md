@@ -4,8 +4,8 @@
 
 - Add locally calculated solar and lunar eclipse sensors using Astronomy Engine,
   with an 18-month search window and local horizon visibility filtering.
-- Show eclipse types, peak times, above-horizon intervals, obscuration and
-  durations on Night Sky Highlights, with an optional visual-editor toggle.
+- Add schematic eclipse graphics, coverage badges and compact timings to
+  Night Sky Highlights, with expandable details and a visual-editor toggle.
 - Cache eclipse predictions daily and after an event ends; no automations or
   additional API keys are required.
 

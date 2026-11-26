@@ -418,8 +418,10 @@ excluded, including lunar eclipses; weather, terrain and atmospheric refraction
 are not considered. An event can be partly visible even if its peak is below the
 horizon, which the card explicitly labels.
 
-The card displays eclipse type, peak time, above-horizon interval, peak obscuration
-and full duration. Lunar durations include the penumbral phases; penumbral eclipses
+The card uses schematic eclipse illustrations, coverage badges and compact
+peak/duration labels. Expand **Details** for the above-horizon interval and
+total/annular phase times. Illustrations are not exact sky geometry.
+Lunar durations include the penumbral phases; penumbral eclipses
 have 0% *umbral* obscuration but still produce subtle shading. Times are displayed
 in your Home Assistant time zone. **Use certified eclipse glasses or proper solar
 filters when observing the Sun.**

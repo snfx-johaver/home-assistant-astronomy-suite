@@ -91,13 +91,17 @@ function eclipseCard(config = {}, overrides = {}) {
 test("highlights displays local eclipses, explicit timezone, horizon and peak visibility", () => {
   const html = eclipseCard().shadowRoot.innerHTML;
   assert.match(html, /Upcoming Eclipses/);
-  assert.match(html, /Times: Europe\/Amsterdam/);
+  assert.match(html, /Europe\/Amsterdam/);
   assert.match(html, /52\.37, 4\.90/);
-  assert.match(html, /18-month search/);
+  assert.match(html, /18 months/);
   assert.match(html, /Partial solar eclipse/);
-  assert.match(html, /Peak: 2 Aug 2098, 11:05 \(below horizon\)/);
-  assert.match(html, /Sun covered at peak: 45\.2%/);
-  assert.match(html, /Full eclipse duration: 120 min/);
+  assert.match(html, /2 Aug 2098, 11:05/);
+  assert.match(html, /Peak below horizon/);
+  assert.match(html, /Sun covered at peak \(below horizon\)/);
+  assert.match(html, />45\.2%<\/strong>/);
+  assert.match(html, /120 min/);
+  assert.match(html, /<svg[^>]+role="img"[^>]+aria-label="partial solar eclipse illustration"/);
+  assert.match(html, /<details class="nsh-eclipse-details">/);
   assert.match(html, /No locally visible lunar eclipses in this search window/);
   assert.match(html, /certified eclipse glasses/);
 });
@@ -106,7 +110,7 @@ test("highlights distinguishes unavailable eclipse data from an empty search", (
   const html = eclipseCard({}, {
     "sensor.nasa_astronomy_ephemeris_eclipses_solar": makeState("solar", "unavailable"),
   }).shadowRoot.innerHTML;
-  assert.match(html, /Eclipse data unavailable/);
+  assert.match(html, /eclipse data unavailable/);
   assert.doesNotMatch(html, /No locally visible solar eclipses/);
 });
 
@@ -121,7 +125,9 @@ test("highlights filters finished events and explains penumbral zero obscuration
   }).shadowRoot.innerHTML;
   assert.doesNotMatch(html, /Total lunar eclipse/);
   assert.match(html, /Penumbral lunar eclipse/);
-  assert.match(html, /Moon in Earth's umbra at peak: 0\.0% \(penumbral shading only\)/);
+  assert.match(html, /Moon in Earth's umbra at peak/);
+  assert.match(html, />0\.0%<\/strong>/);
+  assert.match(html, /Penumbral shading only; no part of the Moon enters the umbra/);
   assert.doesNotMatch(html, /Invalid Date|NaN/);
 });
 
@@ -149,7 +155,8 @@ test("highlights shows ongoing events and refreshes when only eclipse entities c
     }],
   });
   card.hass = card._hass;
-  assert.match(card.shadowRoot.innerHTML, /Partial solar eclipse · Visible now/);
+  assert.match(card.shadowRoot.innerHTML, /Partial solar eclipse/);
+  assert.match(card.shadowRoot.innerHTML, /Visible now/);
   card.hass = {
     ...card._hass,
     states: { ...card._hass.states, [entity]: makeState(entity, "0", { events: [] }) },

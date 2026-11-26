@@ -3111,6 +3111,23 @@ class NightSkyHighlightsCard extends HTMLElement {
     return icons[name] || "●";
   }
 
+  _eclipseIcon(type, kind, index) {
+    const solar = type === "solar";
+    const id = `nsh-eclipse-${type}-${index}`;
+    const base = solar ? "#ffd166" : "#cbd5e1";
+    const shadow = solar ? "#182033" : "#a94b43";
+    const disc = kind === "total" ? shadow : base;
+    return `<svg class="nsh-eclipse-icon" viewBox="0 0 48 48" role="img" aria-label="${kind} ${type} eclipse illustration">
+      <title>Schematic eclipse illustration, not a sky map</title>
+      <defs><clipPath id="${id}"><circle cx="24" cy="24" r="17"/></clipPath></defs>
+      ${solar && kind === "total" ? '<circle cx="24" cy="24" r="20" fill="none" stroke="#ffd166" stroke-width="2" opacity="0.6"/>' : ""}
+      <circle cx="24" cy="24" r="17" fill="${disc}"/>
+      ${kind === "annular" ? `<circle cx="24" cy="24" r="14" fill="${shadow}"/>` : ""}
+      ${kind === "partial" ? `<circle cx="35" cy="17" r="17" fill="${shadow}" clip-path="url(#${id})"/>` : ""}
+      ${kind === "penumbral" ? `<circle cx="31" cy="20" r="22" fill="#64748b" opacity="0.3" clip-path="url(#${id})"/>` : ""}
+    </svg>`;
+  }
+
   _renderEclipses() {
     if (this._config.show_eclipses === false) return "";
     const timeZone = this._hass.config?.time_zone || "UTC";
@@ -3122,32 +3139,44 @@ class NightSkyHighlightsCard extends HTMLElement {
       const date = parseDate(value);
       return date ? esc(formatter.format(date)) : "Unknown";
     };
+    const shortDate = (value) => {
+      const date = parseDate(value);
+      return date ? esc(date.toLocaleDateString(this._hass.locale?.language || undefined, {
+        timeZone, day: "numeric", month: "short", year: "numeric",
+      })) : "Unknown";
+    };
+    const states = ["solar", "lunar"].map((type) =>
+      getState(this._hass, `sensor.nasa_astronomy_ephemeris_eclipses_${type}`));
+    const metadata = states.find((state) => state && !["unknown", "unavailable"].includes(state.state))?.attributes || {};
+    const latitude = metadata.latitude == null ? NaN : toNumber(metadata.latitude, NaN);
+    const longitude = metadata.longitude == null ? NaN : toNumber(metadata.longitude, NaN);
+    const location = Number.isFinite(latitude) && Number.isFinite(longitude)
+      ? `${latitude.toFixed(2)}, ${longitude.toFixed(2)}` : "Location unavailable";
     const now = Date.now();
     return `
       <div class="nsh-eclipses">
         <div class="nsh-section-title">Upcoming Eclipses</div>
-        <div class="nsh-moon-label">Times: ${esc(timeZone)}. Visibility uses the geometric horizon; weather and terrain are not included.</div>
-        ${["solar", "lunar"].map((type) => {
-          const state = getState(this._hass, `sensor.nasa_astronomy_ephemeris_eclipses_${type}`);
+        <div class="nsh-eclipse-meta">
+          <span><ha-icon icon="mdi:map-marker-outline"></ha-icon>${esc(location)}</span>
+          <span><ha-icon icon="mdi:clock-outline"></ha-icon>${esc(timeZone)}</span>
+        </div>
+        ${["solar", "lunar"].map((type, typeIndex) => {
+          const state = states[typeIndex];
           const title = type === "solar" ? "Solar" : "Lunar";
           if (!state || ["unknown", "unavailable"].includes(state.state)) {
-            return `<div class="nsh-eclipse"><strong>${title}</strong><div class="nsh-moon-label">Eclipse data unavailable. Update the integration and enable ephemeris sensors.</div></div>`;
+            return `<div class="nsh-eclipse-empty" title="Update the integration and enable ephemeris sensors."><ha-icon icon="mdi:cloud-off-outline"></ha-icon>${title}: eclipse data unavailable</div>`;
           }
           const attrs = state.attributes || {};
           const events = safeArray(attrs.events).filter((event) => {
             const end = parseDate(event.visible_end || event.end);
             return !end || end.getTime() > now;
           });
-          const latitude = toNumber(attrs.latitude, NaN);
-          const longitude = toNumber(attrs.longitude, NaN);
-          const location = Number.isFinite(latitude) && Number.isFinite(longitude)
-            ? `${latitude.toFixed(2)}, ${longitude.toFixed(2)}` : "Unknown location";
           const horizon = toNumber(attrs.horizon_months, NaN);
           return `
-            <div class="nsh-eclipse-heading"><strong>${title}</strong>
-              <span class="nsh-moon-label">${Number.isFinite(horizon) ? horizon + "-month search · " : ""}Through ${stamp(attrs.search_end)} · ${esc(location)}</span>
+            <div class="nsh-eclipse-heading"><strong><ha-icon icon="${type === "solar" ? "mdi:white-balance-sunny" : "mdi:moon-full"}"></ha-icon>${title}</strong>
+              <span class="nsh-moon-label">${Number.isFinite(horizon) ? horizon + " months · " : ""}Until ${shortDate(attrs.search_end)}</span>
             </div>
-            ${events.length ? events.slice(0, 3).map((event) => {
+            ${events.length ? events.slice(0, 3).map((event, index) => {
               const begin = parseDate(event.visible_begin);
               const end = parseDate(event.visible_end);
               const visibleNow = begin && end && now >= begin.getTime() && now < end.getTime();
@@ -3156,16 +3185,37 @@ class NightSkyHighlightsCard extends HTMLElement {
               const kinds = { total: "Total", partial: "Partial", annular: "Annular", penumbral: "Penumbral" };
               const kind = Object.hasOwn(kinds, event.kind) ? kinds[event.kind] : "Unknown type";
               return `<div class="nsh-eclipse">
-                <strong>${kind} ${type} eclipse${visibleNow ? " · Visible now" : ""}</strong>
-                <div class="nsh-moon-label">Peak: ${stamp(event.peak)}${event.peak_visible === false ? " (below horizon)" : ""}</div>
-                <div class="nsh-moon-label">Above horizon: ${stamp(event.visible_begin)} – ${stamp(event.visible_end)}</div>
-                <div class="nsh-moon-label">${type === "solar" ? "Sun covered" : "Moon in Earth's umbra"} at peak: ${Number.isFinite(coverage) ? coverage.toFixed(1) + "%" : "Unknown"}${event.kind === "penumbral" ? " (penumbral shading only)" : ""}</div>
-                ${Number.isFinite(duration) ? `<div class="nsh-moon-label">Full eclipse duration: ${duration.toFixed(0)} min${type === "lunar" ? " (including penumbral phases)" : ""}</div>` : ""}
+                <div class="nsh-eclipse-main">
+                  ${this._eclipseIcon(type, kind.toLowerCase(), index)}
+                  <div class="nsh-eclipse-copy">
+                    <strong>${kind} ${type} eclipse</strong>
+                    <div class="nsh-moon-label">${stamp(event.peak)}</div>
+                    <div class="nsh-eclipse-meta">
+                      ${visibleNow ? '<span class="nsh-eclipse-live"><ha-icon icon="mdi:eye-outline"></ha-icon>Visible now</span>' : ""}
+                      ${event.peak_visible === false ? '<span><ha-icon icon="mdi:eye-off-outline"></ha-icon>Peak below horizon</span>' : ""}
+                      ${Number.isFinite(duration) ? `<span title="Full eclipse duration${type === "lunar" ? ", including penumbral phases" : ""}"><ha-icon icon="mdi:timer-outline"></ha-icon>${duration.toFixed(0)} min</span>` : ""}
+                    </div>
+                  </div>
+                  <div class="nsh-eclipse-coverage" title="${type === "solar" ? "Sun covered" : "Moon in Earth's umbra"} at peak${event.peak_visible === false ? " (below horizon)" : ""}">
+                    <strong>${Number.isFinite(coverage) ? coverage.toFixed(1) + "%" : "—"}</strong>
+                    <span>${type === "solar" ? "covered" : "umbra"}</span>
+                  </div>
+                </div>
+                <details class="nsh-eclipse-details">
+                  <summary><ha-icon icon="mdi:information-outline"></ha-icon>Details</summary>
+                  <div class="nsh-moon-label">Above horizon: ${stamp(event.visible_begin)} – ${stamp(event.visible_end)}</div>
+                  ${event.kind === "penumbral" ? '<div class="nsh-moon-label">Penumbral shading only; no part of the Moon enters the umbra.</div>' : ""}
+                  ${event.central_begin && event.central_end ? `<div class="nsh-moon-label">${event.kind === "annular" ? "Annular" : "Total"} phase: ${stamp(event.central_begin)} – ${stamp(event.central_end)}</div>` : ""}
+                  <div class="nsh-moon-label">Illustration is schematic. Coverage is at peak, which may be below your horizon.</div>
+                </details>
               </div>`;
-            }).join("") : `<div class="nsh-moon-label">No locally visible ${type} eclipses in this search window.</div>`}
+            }).join("") : `<div class="nsh-eclipse-empty" title="No locally visible ${type} eclipses in this search window."><ha-icon icon="mdi:calendar-check-outline"></ha-icon>None in this window</div>`}
           `;
         }).join("")}
-        <div class="nsh-moon-label">Up to 3 events per type. For solar viewing, use certified eclipse glasses or proper solar filters.</div>
+        <div class="nsh-eclipse-meta">
+          <span title="Up to 3 locally visible events per type. Geometric horizon only; weather, terrain and refraction are not included."><ha-icon icon="mdi:eye-outline"></ha-icon>Horizon only</span>
+          <span title="For solar viewing, use certified eclipse glasses or proper solar filters."><ha-icon icon="mdi:alert-outline"></ha-icon>Solar protection required</span>
+        </div>
       </div>`;
   }
 
@@ -3202,9 +3252,25 @@ class NightSkyHighlightsCard extends HTMLElement {
         .nsh-badge-dark { background:rgba(76,175,80,0.15); color:#66bb6a; }
         .nsh-badge-light { background:rgba(255,152,0,0.15); color:#ffa726; }
         .nsh-eclipses { display:flex; flex-direction:column; gap:8px; min-width:0; }
-        .nsh-eclipse-heading { display:flex; flex-wrap:wrap; gap:4px 10px; margin-top:6px; }
-        .nsh-eclipse { padding:10px 14px; border-radius:14px; background:rgba(var(--rgb-primary-text-color,0,0,0),0.04); overflow-wrap:anywhere; }
+        .nsh-eclipse-heading { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:4px 10px; margin-top:6px; }
+        .nsh-eclipse-heading strong { display:flex; align-items:center; gap:5px; color:${ASTRO.text1}; }
+        .nsh-eclipse-heading ha-icon { --mdc-icon-size:18px; }
+        .nsh-eclipse { padding:10px; border-radius:14px; background:rgba(var(--rgb-primary-text-color,0,0,0),0.04); overflow-wrap:anywhere; }
         .nsh-eclipse strong { color:${ASTRO.text1}; font-size:0.85rem; }
+        .nsh-eclipse-main { display:flex; align-items:center; gap:8px; }
+        .nsh-eclipse-icon { width:44px; height:44px; flex:none; }
+        .nsh-eclipse-copy { flex:1; min-width:0; }
+        .nsh-eclipse-coverage { display:flex; flex-direction:column; align-items:center; flex:none; }
+        .nsh-eclipse-coverage strong { font-size:1rem; }
+        .nsh-eclipse-coverage span { font-size:0.65rem; color:${ASTRO.text2}; }
+        .nsh-eclipse-meta { display:flex; flex-wrap:wrap; gap:4px 10px; font-size:0.7rem; color:${ASTRO.text2}; }
+        .nsh-eclipse-meta span { display:inline-flex; align-items:center; gap:3px; }
+        .nsh-eclipse-meta ha-icon, .nsh-eclipse-empty ha-icon, .nsh-eclipse-details ha-icon { --mdc-icon-size:14px; }
+        .nsh-eclipse-live { color:#66bb6a; }
+        .nsh-eclipse-empty { display:flex; align-items:center; gap:5px; padding:4px 0; color:${ASTRO.text2}; font-size:0.78rem; }
+        .nsh-eclipse-details { margin-top:6px; }
+        .nsh-eclipse-details summary { width:fit-content; cursor:pointer; color:${ASTRO.text2}; font-size:0.7rem; }
+        .nsh-eclipse-details .nsh-moon-label { margin-top:4px; }
       </style>
       <ha-card class="astro-card">
         <div class="astro-header">
