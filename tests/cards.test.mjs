@@ -59,6 +59,112 @@ const neoBindings = loadBundleWithSandbox(
   BUNDLES.astronomy, ["NeoThreatCard", "NeoThreatCardEditor"], withEscapingDocument,
 ).bindings;
 
+const highlightsBindings = loadBundleWithSandbox(
+  BUNDLES.astronomy, ["NightSkyHighlightsCard", "NightSkyHighlightsEditor"], withEscapingDocument,
+).bindings;
+
+function eclipseCard(config = {}, overrides = {}) {
+  const card = new highlightsBindings.NightSkyHighlightsCard();
+  card.setConfig(config);
+  const metadata = {
+    search_end: "2099-05-26T00:00:00+00:00", horizon_months: 18, latitude: 52.37, longitude: 4.9,
+  };
+  const event = {
+    type: "solar", kind: "partial", peak: "2098-08-02T09:05:00+00:00",
+    begin: "2098-08-02T08:00:00+00:00", end: "2098-08-02T10:00:00+00:00",
+    visible_begin: "2098-08-02T08:00:00+00:00", visible_end: "2098-08-02T10:00:00+00:00",
+    peak_visible: false, obscuration_pct: 45.2, duration_minutes: 120,
+  };
+  card._hass = {
+    ...makeHass({
+      "sensor.nasa_astronomy_ephemeris_eclipses_solar": makeState("solar", "1", { ...metadata, events: [event] }),
+      "sensor.nasa_astronomy_ephemeris_eclipses_lunar": makeState("lunar", "0", { ...metadata, events: [] }),
+      ...overrides,
+    }),
+    config: { time_zone: "Europe/Amsterdam" },
+    locale: { language: "en-GB" },
+  };
+  card._render();
+  return card;
+}
+
+test("highlights displays local eclipses, explicit timezone, horizon and peak visibility", () => {
+  const html = eclipseCard().shadowRoot.innerHTML;
+  assert.match(html, /Upcoming Eclipses/);
+  assert.match(html, /Europe\/Amsterdam/);
+  assert.match(html, /52\.37, 4\.90/);
+  assert.match(html, /18 months/);
+  assert.match(html, /Partial solar eclipse/);
+  assert.match(html, /2 Aug 2098, 11:05/);
+  assert.match(html, /Peak below horizon/);
+  assert.match(html, /Sun covered at peak \(below horizon\)/);
+  assert.match(html, />45\.2%<\/strong>/);
+  assert.match(html, /120 min/);
+  assert.match(html, /<svg[^>]+role="img"[^>]+aria-label="partial solar eclipse illustration"/);
+  assert.match(html, /<details class="nsh-eclipse-details">/);
+  assert.match(html, /No locally visible lunar eclipses in this search window/);
+  assert.match(html, /certified eclipse glasses/);
+});
+
+test("highlights distinguishes unavailable eclipse data from an empty search", () => {
+  const html = eclipseCard({}, {
+    "sensor.nasa_astronomy_ephemeris_eclipses_solar": makeState("solar", "unavailable"),
+  }).shadowRoot.innerHTML;
+  assert.match(html, /eclipse data unavailable/);
+  assert.doesNotMatch(html, /No locally visible solar eclipses/);
+});
+
+test("highlights filters finished events and explains penumbral zero obscuration", () => {
+  const html = eclipseCard({}, {
+    "sensor.nasa_astronomy_ephemeris_eclipses_lunar": makeState("lunar", "2", {
+      events: [
+        { kind: "total", visible_end: "2020-01-01T00:00:00Z", peak: "2020-01-01T00:00:00Z" },
+        { kind: "penumbral", visible_end: "2099-01-01T00:00:00Z", obscuration_pct: 0 },
+      ],
+    }),
+  }).shadowRoot.innerHTML;
+  assert.doesNotMatch(html, /Total lunar eclipse/);
+  assert.match(html, /Penumbral lunar eclipse/);
+  assert.match(html, /Moon in Earth's umbra at peak/);
+  assert.match(html, />0\.0%<\/strong>/);
+  assert.match(html, /Penumbral shading only; no part of the Moon enters the umbra/);
+  assert.doesNotMatch(html, /Invalid Date|NaN/);
+});
+
+test("highlights eclipse toggle hides section and editor binds it", () => {
+  assert.doesNotMatch(eclipseCard({ show_eclipses: false }).shadowRoot.innerHTML, /Upcoming Eclipses|certified eclipse glasses/);
+  const editor = new highlightsBindings.NightSkyHighlightsEditor();
+  editor.setConfig({ show_eclipses: false });
+  assert.match(editor._editorTemplate(), /id="show_eclipses"/);
+  const switches = [];
+  editor._bindText = () => {};
+  editor._bindSwitch = (...args) => switches.push(args);
+  editor._setupListeners();
+  assert.deepEqual(switches, [["telescope_mode", "telescope_mode"], ["show_eclipses", "show_eclipses"]]);
+});
+
+test("highlights shows ongoing events and refreshes when only eclipse entities change", () => {
+  const card = eclipseCard();
+  const now = Date.now();
+  const entity = "sensor.nasa_astronomy_ephemeris_eclipses_solar";
+  card._hass.states[entity] = makeState(entity, "1", {
+    events: [{
+      kind: "partial", peak: new Date(now).toISOString(),
+      visible_begin: new Date(now - 60000).toISOString(),
+      visible_end: new Date(now + 60000).toISOString(),
+    }],
+  });
+  card.hass = card._hass;
+  assert.match(card.shadowRoot.innerHTML, /Partial solar eclipse/);
+  assert.match(card.shadowRoot.innerHTML, /Visible now/);
+  card.hass = {
+    ...card._hass,
+    states: { ...card._hass.states, [entity]: makeState(entity, "0", { events: [] }) },
+  };
+  assert.doesNotMatch(card.shadowRoot.innerHTML, /Visible now/);
+  assert.match(card.shadowRoot.innerHTML, /No locally visible solar eclipses/);
+});
+
 const BEST_TONIGHT = "sensor.nasa_astronomy_deepsky_best_tonight";
 
 const NEO_ENTITY = "sensor.astronomy_space_suite_neo_count_today";

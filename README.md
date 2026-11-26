@@ -65,7 +65,7 @@ All cards are prefixed **"ASS"** in the card picker for easy discovery.
 | `rocket-launch-card` | astronomy-cards.js | Next 5 launches with countdown timers |
 | `iss-tracker-card` | astronomy-cards.js | Native Home Assistant map with ISS history trail + live stream |
 | `earth-observation-card` | astronomy-cards.js | Multi-source satellite imagery (EPIC, GOES, Himawari, Meteosat, SDO, SOHO) |
-| `night-sky-highlights-card` | astronomy-cards.js | Best visible planets tonight with ephemeris data |
+| `night-sky-highlights-card` | astronomy-cards.js | Best visible planets tonight and locally visible solar/lunar eclipses |
 | `night-sky-highlights-2-card` | deepsky-cards.js | Auto-detecting highlights tile grid (planets, DSO, NEO, ISS, KP, flares) |
 | `dso-tonight-table-card` | deepsky-cards.js | Sortable table of visible deep-sky objects |
 | `dso-yard-map-card` | deepsky-cards.js | Polar projection sky map (SVG) |
@@ -400,6 +400,50 @@ Optional but recommended:
 | **Aurora** | Aurora KP forecast (supplements NOAA KP sensor) | [Aurora integration](https://www.home-assistant.io/integrations/aurora/) |
 
 These are standard HA integrations — just enable them in Settings → Devices & Services if not already active.
+
+---
+
+## Eclipses on Night Sky Highlights
+
+`night-sky-highlights-card` shows upcoming solar and lunar eclipses automatically.
+No Home Assistant automations or extra API keys are needed. With ephemeris enabled,
+the integration uses [Astronomy Engine](https://github.com/cosinekitty/astronomy)
+to calculate events for your Home Assistant latitude, longitude and elevation
+(or your ephemeris location overrides).
+
+The search looks **18 calendar months ahead**, returning up to **three locally
+visible events per type**. Predictions are cached until the next UTC day or an
+event's local visibility ends. Events wholly below the geometric horizon are
+excluded, including lunar eclipses; weather, terrain and atmospheric refraction
+are not considered. An event can be partly visible even if its peak is below the
+horizon, which the card explicitly labels.
+
+The card uses schematic eclipse illustrations, coverage badges and compact
+peak/duration labels. Expand **Details** for the above-horizon interval and
+total/annular phase times. Illustrations are not exact sky geometry.
+Lunar durations include the penumbral phases; penumbral eclipses
+have 0% *umbral* obscuration but still produce subtle shading. Times are displayed
+in your Home Assistant time zone. **Use certified eclipse glasses or proper solar
+filters when observing the Sun.**
+
+Two sensors provide counts and an `events` attribute with UTC timestamps and
+location/search metadata:
+
+- `sensor.nasa_astronomy_ephemeris_eclipses_solar`
+- `sensor.nasa_astronomy_ephemeris_eclipses_lunar`
+
+A count of zero means no locally visible events in the search window, not a
+calculation failure. Eclipse display is enabled by default and can be hidden
+using the visual editor or YAML:
+
+```yaml
+type: custom:night-sky-highlights-card
+show_eclipses: true
+```
+
+After updating the integration, restart Home Assistant to register the new
+sensors and refresh your browser to load the updated card. The separate
+`night-sky-highlights-2-card` is unchanged.
 
 ---
 
