@@ -14,5 +14,5 @@
     "astronomy-engine==2.1.19",
     "sgp4==2.27"
   ],
-  "version": "1.18.1"
+  "version": "1.19.0"
 }
