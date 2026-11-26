@@ -10,6 +10,7 @@ import logging
 from datetime import timedelta
 from typing import Any
 
+from astronomy import Error as AstronomyError
 from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
@@ -21,9 +22,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
+    UpdateFailed,
 )
 
 from .const import DOMAIN, INTEGRATION_VERSION
+from .providers.eclipses import EclipseProvider
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -103,7 +106,10 @@ BODY_ICONS = {
 class EphemerisCoordinator(DataUpdateCoordinator):
     """Coordinator for ephemeris data updates."""
 
-    def __init__(self, hass: HomeAssistant, provider: OpenAstronomyEphemerisProvider):
+    def __init__(
+        self, hass: HomeAssistant, provider: OpenAstronomyEphemerisProvider,
+        eclipse_provider: EclipseProvider,
+    ):
         super().__init__(
             hass,
             _LOGGER,
@@ -111,6 +117,7 @@ class EphemerisCoordinator(DataUpdateCoordinator):
             update_interval=SCAN_INTERVAL,
         )
         self.provider = provider
+        self.eclipse_provider = eclipse_provider
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from provider (runs in executor for CPU-bound math)."""
@@ -125,6 +132,10 @@ class EphemerisCoordinator(DataUpdateCoordinator):
         # Sky conditions (always calculated if any body is enabled)
         if self.provider.enabled_bodies:
             data["sky"] = self.provider.get_sky_conditions()
+            try:
+                data["eclipses"] = self.eclipse_provider.get_eclipses()
+            except AstronomyError as err:
+                raise UpdateFailed(f"Eclipse calculation failed: {err}") from err
         return data
 
 
@@ -161,7 +172,7 @@ async def async_setup_ephemeris_sensors(
         enabled_bodies=bodies_config,
     )
 
-    coordinator = EphemerisCoordinator(hass, provider)
+    coordinator = EphemerisCoordinator(hass, provider, EclipseProvider(lat, lon, elevation))
     # Don't block sensor setup — refresh in background
     await coordinator.async_refresh()
 
@@ -206,6 +217,21 @@ async def async_setup_ephemeris_sensors(
                 entry_id=entry.entry_id,
             )
         )
+
+    if provider.enabled_bodies:
+        for eclipse_type in ("solar", "lunar"):
+            entities.append(
+                EphemerisSensor(
+                    coordinator=coordinator,
+                    body="eclipses",
+                    sensor_key=eclipse_type,
+                    sensor_name=f"Upcoming {eclipse_type.capitalize()}",
+                    unit=None,
+                    icon="mdi:weather-sunny" if eclipse_type == "solar" else "mdi:moon-full",
+                    state_class=None,
+                    entry_id=entry.entry_id,
+                )
+            )
 
     async_add_entities(entities)
     _LOGGER.info("Registered %d ephemeris sensors for bodies: %s", len(entities), provider.enabled_bodies)
@@ -259,6 +285,8 @@ class EphemerisSensor(CoordinatorEntity, SensorEntity):
         value = body_data.get(self._sensor_key)
         if value is None:
             return None
+        if self._body == "eclipses":
+            return len(value)
         # Format time values as HH:MM strings
         if self._sensor_key in self._TIME_KEYS and isinstance(value, (int, float)):
             hours = int(value)
@@ -272,6 +300,14 @@ class EphemerisSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
+        if self._body == "eclipses":
+            data = (self.coordinator.data or {}).get("eclipses", {})
+            return {
+                **{key: value for key, value in data.items() if key not in ("solar", "lunar")},
+                "events": data.get(self._sensor_key, []),
+                "eclipse_type": self._sensor_key,
+                "provider": "astronomy-engine",
+            }
         return {
             "body": self._body,
             "metric": self._sensor_key,

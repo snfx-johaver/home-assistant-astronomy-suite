@@ -30,7 +30,7 @@ Every version-shaped literal is one of:
   exactly as long as it took the next release to fire.
 * ``NOT_A_PRODUCT_VERSION`` -- a historical record, prose, or somebody else's
   version. Frozen by design, with the reason recorded next to it.
-* Dependency *ranges* (``^1.2.3``, ``~1.2.3``, ``>=1.2.3``) anywhere -- a
+* Dependency ranges/pins (``^1.2.3``, ``~1.2.3``, ``>=1.2.3``, ``==1.2.3``) anywhere -- a
   constraint on another package, never a claim about us.
 
 NOTE ON ORDERING
@@ -110,7 +110,7 @@ VERSION_SHAPED = re.compile(r"(?<![\d.])\d+\.\d+\.\d+(?![\d.])")
 
 # A caret/tilde/comparator in front of the literal makes it a constraint on
 # somebody else's package rather than a claim about this one.
-DEPENDENCY_RANGE = re.compile(r"[\^~]|>=?|<=?")
+DEPENDENCY_RANGE = re.compile(r"[\^~]|==|>=?|<=?")
 
 # A version embedded in a third-party CDN package URL is a pinned dependency,
 # not this integration's release version.

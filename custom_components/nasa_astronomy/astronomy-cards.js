@@ -3018,23 +3018,26 @@ class NightSkyHighlightsEditor extends AstroEditorBase {
     return `
       <div class="astro-input-wrap"><label for="title">Card title</label><input type="text" id="title" /></div>
       <label class="switch-row"><span>Telescope Mode (alt &gt; 30°)</span><ha-switch id="telescope_mode"></ha-switch></label>
+      <label class="switch-row"><span>Show upcoming eclipses</span><ha-switch id="show_eclipses"></ha-switch></label>
     `;
   }
 
   _setupListeners() {
     this._bindText("title", "title");
     this._bindSwitch("telescope_mode", "telescope_mode");
+    this._bindSwitch("show_eclipses", "show_eclipses");
   }
 
   _syncValues() {
     setTextValue(this.shadowRoot, "title", this._config.title || "Night Sky Highlights");
     setSwitchValue(this.shadowRoot, "telescope_mode", this._config.telescope_mode === true);
+    setSwitchValue(this.shadowRoot, "show_eclipses", this._config.show_eclipses !== false);
   }
 }
 
 class NightSkyHighlightsCard extends HTMLElement {
   static getConfigElement() { return document.createElement("night-sky-highlights-card-editor"); }
-  static getStubConfig() { return { title: "Night Sky Highlights", telescope_mode: false }; }
+  static getStubConfig() { return { title: "Night Sky Highlights", telescope_mode: false, show_eclipses: true }; }
 
   constructor() {
     super();
@@ -3042,7 +3045,7 @@ class NightSkyHighlightsCard extends HTMLElement {
   }
 
   setConfig(config) {
-    this._config = { title: "Night Sky Highlights", telescope_mode: false, ...config };
+    this._config = { title: "Night Sky Highlights", telescope_mode: false, show_eclipses: true, ...config };
   }
 
   set hass(hass) {
@@ -3050,7 +3053,10 @@ class NightSkyHighlightsCard extends HTMLElement {
     const entities = bodies.flatMap((body) => ["altitude", "illumination_pct", "phase_angle", "visibility_start", "visibility_end"]
       .map((suffix) => `sensor.nasa_astronomy_ephemeris_${body}_${suffix}`));
     entities.push("sensor.nasa_astronomy_ephemeris_sky_twilight_phase");
-    if (updateCardHass(this, hass, entities)) this._render();
+    if (this._config.show_eclipses !== false) {
+      entities.push("sensor.nasa_astronomy_ephemeris_eclipses_solar", "sensor.nasa_astronomy_ephemeris_eclipses_lunar");
+    }
+    if (updateCardHass(this, hass, entities, Math.floor(Date.now() / 60000))) this._render();
   }
 
   _getBodyData() {
@@ -3105,6 +3111,64 @@ class NightSkyHighlightsCard extends HTMLElement {
     return icons[name] || "●";
   }
 
+  _renderEclipses() {
+    if (this._config.show_eclipses === false) return "";
+    const timeZone = this._hass.config?.time_zone || "UTC";
+    const formatter = new Intl.DateTimeFormat(this._hass.locale?.language || undefined, {
+      timeZone, year: "numeric", month: "short", day: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    });
+    const stamp = (value) => {
+      const date = parseDate(value);
+      return date ? esc(formatter.format(date)) : "Unknown";
+    };
+    const now = Date.now();
+    return `
+      <div class="nsh-eclipses">
+        <div class="nsh-section-title">Upcoming Eclipses</div>
+        <div class="nsh-moon-label">Times: ${esc(timeZone)}. Visibility uses the geometric horizon; weather and terrain are not included.</div>
+        ${["solar", "lunar"].map((type) => {
+          const state = getState(this._hass, `sensor.nasa_astronomy_ephemeris_eclipses_${type}`);
+          const title = type === "solar" ? "Solar" : "Lunar";
+          if (!state || ["unknown", "unavailable"].includes(state.state)) {
+            return `<div class="nsh-eclipse"><strong>${title}</strong><div class="nsh-moon-label">Eclipse data unavailable. Update the integration and enable ephemeris sensors.</div></div>`;
+          }
+          const attrs = state.attributes || {};
+          const events = safeArray(attrs.events).filter((event) => {
+            const end = parseDate(event.visible_end || event.end);
+            return !end || end.getTime() > now;
+          });
+          const latitude = toNumber(attrs.latitude, NaN);
+          const longitude = toNumber(attrs.longitude, NaN);
+          const location = Number.isFinite(latitude) && Number.isFinite(longitude)
+            ? `${latitude.toFixed(2)}, ${longitude.toFixed(2)}` : "Unknown location";
+          const horizon = toNumber(attrs.horizon_months, NaN);
+          return `
+            <div class="nsh-eclipse-heading"><strong>${title}</strong>
+              <span class="nsh-moon-label">${Number.isFinite(horizon) ? horizon + "-month search · " : ""}Through ${stamp(attrs.search_end)} · ${esc(location)}</span>
+            </div>
+            ${events.length ? events.slice(0, 3).map((event) => {
+              const begin = parseDate(event.visible_begin);
+              const end = parseDate(event.visible_end);
+              const visibleNow = begin && end && now >= begin.getTime() && now < end.getTime();
+              const coverage = event.obscuration_pct == null ? NaN : toNumber(event.obscuration_pct, NaN);
+              const duration = event.duration_minutes == null ? NaN : toNumber(event.duration_minutes, NaN);
+              const kinds = { total: "Total", partial: "Partial", annular: "Annular", penumbral: "Penumbral" };
+              const kind = Object.hasOwn(kinds, event.kind) ? kinds[event.kind] : "Unknown type";
+              return `<div class="nsh-eclipse">
+                <strong>${kind} ${type} eclipse${visibleNow ? " · Visible now" : ""}</strong>
+                <div class="nsh-moon-label">Peak: ${stamp(event.peak)}${event.peak_visible === false ? " (below horizon)" : ""}</div>
+                <div class="nsh-moon-label">Above horizon: ${stamp(event.visible_begin)} – ${stamp(event.visible_end)}</div>
+                <div class="nsh-moon-label">${type === "solar" ? "Sun covered" : "Moon in Earth's umbra"} at peak: ${Number.isFinite(coverage) ? coverage.toFixed(1) + "%" : "Unknown"}${event.kind === "penumbral" ? " (penumbral shading only)" : ""}</div>
+                ${Number.isFinite(duration) ? `<div class="nsh-moon-label">Full eclipse duration: ${duration.toFixed(0)} min${type === "lunar" ? " (including penumbral phases)" : ""}</div>` : ""}
+              </div>`;
+            }).join("") : `<div class="nsh-moon-label">No locally visible ${type} eclipses in this search window.</div>`}
+          `;
+        }).join("")}
+        <div class="nsh-moon-label">Up to 3 events per type. For solar viewing, use certified eclipse glasses or proper solar filters.</div>
+      </div>`;
+  }
+
   _render() {
     const sunAlt = this._getSunAlt();
     const isDark = sunAlt !== null && sunAlt < -12;
@@ -3137,6 +3201,10 @@ class NightSkyHighlightsCard extends HTMLElement {
         .nsh-badge { display:inline-block; padding:2px 8px; border-radius:99px; font-size:0.7em; font-weight:700; margin-left:auto; }
         .nsh-badge-dark { background:rgba(76,175,80,0.15); color:#66bb6a; }
         .nsh-badge-light { background:rgba(255,152,0,0.15); color:#ffa726; }
+        .nsh-eclipses { display:flex; flex-direction:column; gap:8px; min-width:0; }
+        .nsh-eclipse-heading { display:flex; flex-wrap:wrap; gap:4px 10px; margin-top:6px; }
+        .nsh-eclipse { padding:10px 14px; border-radius:14px; background:rgba(var(--rgb-primary-text-color,0,0,0),0.04); overflow-wrap:anywhere; }
+        .nsh-eclipse strong { color:${ASTRO.text1}; font-size:0.85rem; }
       </style>
       <ha-card class="astro-card">
         <div class="astro-header">
@@ -3184,6 +3252,7 @@ class NightSkyHighlightsCard extends HTMLElement {
               `).join('') : '<div style="padding:8px;color:' + ASTRO.text2 + '">No planet sensors available</div>'}
             </div>
           `}
+          ${this._renderEclipses()}
         </div>
       </ha-card>
     `;
