@@ -63,6 +63,79 @@ const highlightsBindings = loadBundleWithSandbox(
   BUNDLES.astronomy, ["NightSkyHighlightsCard", "NightSkyHighlightsEditor"], withEscapingDocument,
 ).bindings;
 
+const orreryBindings = loadBundleWithSandbox(
+  BUNDLES.astronomy, ["SolarSystemCard", "SolarSystemCardEditor", "calculatePlanetPosition", "buildOrbitPath"], withEscapingDocument,
+).bindings;
+
+test("orrery adds optional Uranus and Neptune without changing existing planet selection", () => {
+  const card = new orreryBindings.SolarSystemCard();
+  card.setConfig({});
+  card._render();
+  assert.doesNotMatch(card.shadowRoot.innerHTML, /data-planet="(?:Uranus|Neptune)"/);
+  for (const name of ["Uranus", "Neptune"]) {
+    card.setConfig({ [`show_${name.toLowerCase()}`]: true, show_stats: false });
+    card._render();
+    assert.match(card.shadowRoot.innerHTML, new RegExp(`data-planet="${name}"`));
+    assert.match(card.shadowRoot.innerHTML, /Compressed spacing · not to scale/);
+    const other = name === "Uranus" ? "Neptune" : "Uranus";
+    assert.doesNotMatch(card.shadowRoot.innerHTML, new RegExp(`data-planet="${other}"`));
+  }
+});
+
+test("outer planet positions stay finite and within plausible heliocentric distances", () => {
+  for (const [name, min, max] of [["Uranus", 18, 21], ["Neptune", 29, 31]]) {
+    for (const year of [2000, 2026, 2050]) {
+      const position = orreryBindings.calculatePlanetPosition(name, new Date(Date.UTC(year, 0, 1)));
+      assert.ok(Number.isFinite(position.x) && Number.isFinite(position.y));
+      assert.ok(position.r > min && position.r < max, `${name}: ${position.r}`);
+      assert.ok(Math.abs(Math.hypot(position.x, position.y) - position.r) < 1e-9);
+    }
+  }
+});
+
+test("full orrery keeps inner planets outside the Sun and outer orbits in the viewport", () => {
+  const card = new orreryBindings.SolarSystemCard();
+  card.setConfig({ show_jupiter: true, show_saturn: true, show_uranus: true, show_neptune: true });
+  card._render();
+  const html = card.shadowRoot.innerHTML;
+  const groups = [...html.matchAll(/<g data-planet="([^"]+)">\s*<circle cx="([^"]+)" cy="([^"]+)"/g)];
+  assert.equal(groups.length, 8);
+  for (const [, name, x, y] of groups) {
+    const radius = Math.hypot(Number(x) - 200, Number(y) - 200);
+    assert.ok(radius > 15, `${name} hidden by Sun: ${radius}`);
+    assert.ok(radius < 166, `${name} outside viewport: ${radius}`);
+  }
+  const paths = [...html.matchAll(/<path d="([^"]+)"/g)];
+  assert.equal(paths.length, 8);
+  for (const [, path] of paths) {
+    for (const match of path.matchAll(/[ML] ([\d.-]+) ([\d.-]+)/g)) {
+      assert.ok(Math.hypot(Number(match[1]) - 200, Number(match[2]) - 200) < 166);
+    }
+  }
+  assert.match(html, /<strong>Uranus<\/strong>[\d.]+ AU/);
+  assert.match(html, /<strong>Neptune<\/strong>[\d.]+ AU/);
+});
+
+test("orrery editor binds and restores both outer-planet toggles", () => {
+  const editor = new orreryBindings.SolarSystemCardEditor();
+  editor.setConfig({ show_uranus: true, show_neptune: false });
+  assert.match(editor._editorTemplate(), /id="show_uranus"/);
+  assert.match(editor._editorTemplate(), /id="show_neptune"/);
+  const switches = [];
+  editor._bindText = () => {};
+  editor._bindSwitch = (key) => switches.push(key);
+  editor._setupListeners();
+  assert.ok(switches.includes("show_uranus") && switches.includes("show_neptune"));
+  const controls = new Map();
+  editor.shadowRoot = { getElementById: (id) => {
+    if (!controls.has(id)) controls.set(id, {});
+    return controls.get(id);
+  } };
+  editor._syncValues();
+  assert.equal(controls.get("show_uranus").checked, true);
+  assert.equal(controls.get("show_neptune").checked, false);
+});
+
 function eclipseCard(config = {}, overrides = {}) {
   const card = new highlightsBindings.NightSkyHighlightsCard();
   card.setConfig(config);

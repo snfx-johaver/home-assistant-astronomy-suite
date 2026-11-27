@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.19.1
+
+- Fix missing Uranus and Neptune in the solar-system orrery, including their
+  visual-editor toggles and existing YAML options.
+- Compress orbital spacing when either outer planet is displayed, keeping
+  inner planets readable while preserving calculated AU distances.
+
 ## 1.19.0
 
 - Add locally calculated solar and lunar eclipse sensors using Astronomy Engine,
