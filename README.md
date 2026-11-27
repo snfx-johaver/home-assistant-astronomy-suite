@@ -172,8 +172,16 @@ type: custom:solar-system-card
 title: Solar System
 show_jupiter: true
 show_saturn: true
+show_uranus: true
+show_neptune: true
 show_orbits: true
 ```
+
+All eight planets are supported. Enable Jupiter, Saturn, Uranus and Neptune in
+the visual editor or YAML; these remain off by default to preserve existing
+inner-system cards. When Uranus or Neptune is shown, orbital radii use
+square-root compression so the inner planets remain readable. The card labels
+this **not to scale**; AU values remain actual calculated heliocentric distances.
 
 ### ASS Rocket Launch Card
 ```yaml

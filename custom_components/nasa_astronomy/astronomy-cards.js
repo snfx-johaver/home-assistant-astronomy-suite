@@ -244,6 +244,8 @@ const PLANET_ELEMENTS = {
   Mars: { a: 1.524, e: 0.0934, L: 355.45, wBar: 336.04, daily: 0.524, color: "#ef5350" },
   Jupiter: { a: 5.203, e: 0.0484, L: 34.4, wBar: 14.33, daily: 0.0831, color: "#ffb74d" },
   Saturn: { a: 9.537, e: 0.0542, L: 49.94, wBar: 92.43, daily: 0.0335, color: "#ffe082" },
+  Uranus: { a: 19.191, e: 0.0472, L: 313.23, wBar: 170.96, daily: 0.0117, color: "#80deea" },
+  Neptune: { a: 30.069, e: 0.0086, L: 304.88, wBar: 44.97, daily: 0.0060, color: "#7986cb" },
 };
 
 function esc(str) {
@@ -524,7 +526,7 @@ function calculatePlanetPosition(name, date = new Date()) {
   };
 }
 
-function buildOrbitPath(name, scale, center, samples = 180) {
+function buildOrbitPath(name, scale, center, samples = 180, compressed = false) {
   const planet = PLANET_ELEMENTS[name];
   const wBar = degToRad(planet.wBar);
   const points = [];
@@ -532,8 +534,9 @@ function buildOrbitPath(name, scale, center, samples = 180) {
     const trueAnomaly = (Math.PI * 2 * i) / samples;
     const radius = (planet.a * (1 - planet.e * planet.e)) / (1 + planet.e * Math.cos(trueAnomaly));
     const angle = trueAnomaly + wBar;
-    const x = center + radius * Math.cos(angle) * scale;
-    const y = center + radius * Math.sin(angle) * scale;
+    const displayRadius = compressed ? Math.sqrt(radius) : radius;
+    const x = center + displayRadius * Math.cos(angle) * scale;
+    const y = center + displayRadius * Math.sin(angle) * scale;
     points.push(`${i === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`);
   }
   return `${points.join(" ")} Z`;
@@ -1825,6 +1828,8 @@ class SolarSystemCardEditor extends AstroEditorBase {
       show_mars: true,
       show_jupiter: false,
       show_saturn: false,
+      show_uranus: false,
+      show_neptune: false,
       show_stats: true,
       show_date: true,
       ...config,
@@ -1842,6 +1847,8 @@ class SolarSystemCardEditor extends AstroEditorBase {
       <label class="switch-row"><span>Show Mars</span><ha-switch id="show_mars"></ha-switch></label>
       <label class="switch-row"><span>Show Jupiter</span><ha-switch id="show_jupiter"></ha-switch></label>
       <label class="switch-row"><span>Show Saturn</span><ha-switch id="show_saturn"></ha-switch></label>
+      <label class="switch-row"><span>Show Uranus</span><ha-switch id="show_uranus"></ha-switch></label>
+      <label class="switch-row"><span>Show Neptune</span><ha-switch id="show_neptune"></ha-switch></label>
       <label class="switch-row"><span>Show stats</span><ha-switch id="show_stats"></ha-switch></label>
       <label class="switch-row"><span>Show date</span><ha-switch id="show_date"></ha-switch></label>
     `;
@@ -1849,7 +1856,7 @@ class SolarSystemCardEditor extends AstroEditorBase {
 
   _setupListeners() {
     this._bindText("title", "title", (value) => value.trim());
-    ["show_labels", "show_orbits", "show_mercury", "show_venus", "show_earth", "show_mars", "show_jupiter", "show_saturn", "show_stats", "show_date"].forEach((key) => this._bindSwitch(key, key));
+    ["show_labels", "show_orbits", "show_mercury", "show_venus", "show_earth", "show_mars", "show_jupiter", "show_saturn", "show_uranus", "show_neptune", "show_stats", "show_date"].forEach((key) => this._bindSwitch(key, key));
   }
 
   _syncValues() {
@@ -1857,6 +1864,8 @@ class SolarSystemCardEditor extends AstroEditorBase {
     ["show_labels", "show_orbits", "show_mercury", "show_venus", "show_earth", "show_mars", "show_stats", "show_date"].forEach((key) => setSwitchValue(this.shadowRoot, key, this._config[key] !== false));
     setSwitchValue(this.shadowRoot, "show_jupiter", this._config.show_jupiter === true);
     setSwitchValue(this.shadowRoot, "show_saturn", this._config.show_saturn === true);
+    setSwitchValue(this.shadowRoot, "show_uranus", this._config.show_uranus === true);
+    setSwitchValue(this.shadowRoot, "show_neptune", this._config.show_neptune === true);
   }
 }
 
@@ -1880,6 +1889,8 @@ class SolarSystemCard extends HTMLElement {
       show_mars: true,
       show_jupiter: false,
       show_saturn: false,
+      show_uranus: false,
+      show_neptune: false,
       show_stats: true,
       show_date: true,
     };
@@ -1915,10 +1926,14 @@ class SolarSystemCard extends HTMLElement {
     if (this._config.show_mars !== false) names.push("Mars");
     if (this._config.show_jupiter === true) names.push("Jupiter");
     if (this._config.show_saturn === true) names.push("Saturn");
+    if (this._config.show_uranus === true) names.push("Uranus");
+    if (this._config.show_neptune === true) names.push("Neptune");
 
     const positions = names.map((name) => calculatePlanetPosition(name, date));
-    const maxOrbit = names.length > 0 ? Math.max(...names.map((name) => PLANET_ELEMENTS[name].a)) * 1.06 : 1;
-    const scale = radius / maxOrbit;
+    const compressed = names.includes("Uranus") || names.includes("Neptune");
+    const maxOrbit = names.length > 0
+      ? Math.max(...names.map((name) => PLANET_ELEMENTS[name].a * (compressed ? 1 + PLANET_ELEMENTS[name].e : 1))) * 1.06 : 1;
+    const scale = radius / (compressed ? Math.sqrt(maxOrbit) : maxOrbit);
     const stars = buildStarFieldSvg(400, 400, 70, 84);
 
     this.shadowRoot.innerHTML = `
@@ -1967,6 +1982,8 @@ class SolarSystemCard extends HTMLElement {
           font-size: 0.78rem;
         }
         .orrery-pill strong { color: ${ASTRO.text1}; margin-right: 4px; }
+        .orrery-scale-note { display:flex; align-items:center; justify-content:center; gap:4px; padding-top:6px; font-size:0.7rem; color:${ASTRO.text2}; }
+        .orrery-scale-note ha-icon { --mdc-icon-size:14px; }
       </style>
       <ha-card class="astro-card">
         <div class="astro-header">
@@ -1982,19 +1999,21 @@ class SolarSystemCard extends HTMLElement {
           <div class="orrery">
             <svg class="orrery-svg" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Solar system orrery">
               ${stars}
-              ${this._config.show_orbits !== false ? names.map((name) => `<path d="${buildOrbitPath(name, scale, center)}" fill="none" stroke="${PLANET_ELEMENTS[name].color}" stroke-width="1.4" stroke-opacity="0.55"></path>`).join("") : ""}
+              ${this._config.show_orbits !== false ? names.map((name) => `<path d="${buildOrbitPath(name, scale, center, 180, compressed)}" fill="none" stroke="${PLANET_ELEMENTS[name].color}" stroke-width="1.4" stroke-opacity="0.55"></path>`).join("") : ""}
               <circle cx="${center}" cy="${center}" r="22" fill="rgba(255,202,40,0.14)"></circle>
               <circle cx="${center}" cy="${center}" r="12" fill="#ffd54f"></circle>
               <circle cx="${center}" cy="${center}" r="5" fill="#fff9c4"></circle>
               ${positions.map((planet) => {
-                const px = center + planet.x * scale;
-                const py = center + planet.y * scale;
+                const radialScale = compressed ? scale / Math.sqrt(planet.r) : scale;
+                const px = center + planet.x * radialScale;
+                const py = center + planet.y * radialScale;
                 const pr = planet.name === "Mercury" ? 3.2 : planet.name === "Earth" ? 4.3 : planet.name === "Saturn" ? 5.2 : 4;
+                const labelLeft = compressed && px > center + 100;
                 const label = this._config.show_labels !== false
-                  ? `<text x="${(px + 8).toFixed(2)}" y="${(py - 8).toFixed(2)}" fill="${planet.color}" font-size="10" font-weight="600">${planet.name}</text>`
+                  ? `<text x="${(px + (labelLeft ? -8 : 8)).toFixed(2)}" y="${(py - 8).toFixed(2)}" text-anchor="${labelLeft ? "end" : "start"}" fill="${planet.color}" font-size="10" font-weight="600">${planet.name}</text>`
                   : "";
                 return `
-                  <g>
+                  <g data-planet="${planet.name}">
                     <circle cx="${px.toFixed(2)}" cy="${py.toFixed(2)}" r="${pr}" fill="${planet.color}"></circle>
                     <circle cx="${px.toFixed(2)}" cy="${py.toFixed(2)}" r="${(pr + 2).toFixed(1)}" fill="none" stroke="${planet.color}" stroke-opacity="0.35"></circle>
                     ${label}
@@ -2003,11 +2022,12 @@ class SolarSystemCard extends HTMLElement {
               }).join("")}
             </svg>
           </div>
+          ${compressed ? '<div class="orrery-scale-note"><ha-icon icon="mdi:arrow-collapse-horizontal"></ha-icon>Compressed spacing · not to scale</div>' : ""}
         </div>
         ${this._config.show_stats !== false ? `
           <div class="orrery-footer">
             ${positions.map((p) => `<span class="orrery-pill"><strong>${p.name}</strong>${p.r.toFixed(3)} AU</span>`).join("")}
-            <span class="orrery-pill"><strong>Scale</strong>Heliocentric</span>
+            <span class="orrery-pill"><strong>Scale</strong>${compressed ? "Compressed" : "Heliocentric"}</span>
           </div>
         ` : ""}
       </ha-card>
