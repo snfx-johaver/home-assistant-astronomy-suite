@@ -2779,12 +2779,13 @@ class IssTrackerCard extends HTMLElement {
       this._passesInput=passes;
       this._trailInput=trail;
       const next=safeArray(passes).find(pass=>pass && parseDate(pass.end)?.getTime()>Date.now());
+      const visibility=next?.observer_dark===false?"Daylight pass":next?.sunlit===false?"Spacecraft in shadow":next?.observer_dark===true && next?.sunlit===true?"Potentially visible":next?.visibility||"Visibility unknown";
       const track=safeArray(trail).slice(0,60).filter(point=>point && finiteValue(point.latitude,-90,90)!==null && finiteValue(point.longitude,-180,180)!==null);
       const ground=track.length>1?`<div class="intel-panel"><svg viewBox="0 0 360 180" role="img" aria-label="Locally propagated satellite ground track"><image href="/local/community/astronomy-cards/world-map.png" width="360" height="180" opacity=".5"/>${track.slice(1).map((point,index)=>{
         const previous=track[index];
         return Math.abs(point.longitude-previous.longitude)>180?"":`<path d="M${previous.longitude+180} ${90-previous.latitude}L${point.longitude+180} ${90-point.latitude}" stroke="${ASTRO.accent}" stroke-width="2" fill="none"/>`;
       }).join("")}</svg><div class="intel-copy">Predicted ground track · From ${esc(localStamp(this._hass,track[0].time))}</div></div>`:"";
-      passHost.innerHTML=ground+(next?`<div class="intel-panel"><div class="intel-row"><strong>Next pass</strong><span class="intel-copy">${esc(next.visibility)}</span></div>${renderSkyPath(next.sky_path,"Next satellite pass sky path")}<div class="intel-copy">${esc(localStamp(this._hass,next.start))}–${esc(localStamp(this._hass,next.end,false))} · Peak ${finiteValue(next.max_elevation,0,90)??"—"}°</div><div class="intel-copy">${next.clipped?"Window clipped · ":""}Brightness and weather may limit visibility</div></div>`:"");
+      passHost.innerHTML=ground+(next?`<div class="intel-panel"><div class="intel-row"><strong>Next pass</strong><span class="intel-copy">${esc(visibility)}</span></div>${renderSkyPath(next.sky_path,"Next satellite pass sky path")}<div class="intel-copy">${esc(localStamp(this._hass,next.start))}–${esc(localStamp(this._hass,next.end,false))} · Peak ${finiteValue(next.max_elevation,0,90)??"—"}°</div><div class="intel-copy">${next.clipped?"Window clipped · ":""}Brightness and weather may limit visibility</div></div>`:Array.isArray(passes)?'<div class="intel-panel"><div class="intel-copy">No passes above 10° in this forecast</div></div>':"");
     }
     const stream=this.shadowRoot.querySelector(".iss-stream-link");
     if(stream) stream.style.display=this._entityId()===this._config.entity?"":"none";

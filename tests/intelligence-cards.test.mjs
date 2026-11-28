@@ -123,3 +123,17 @@ test("satellite mode bounds selection and preserves default ISS mode", () => {
   assert.equal(bindings.renderSkyPath([{altitude:NaN,azimuth:Infinity}]),"");
   assert.equal(bindings.finiteValue(null,0,100),null);
 });
+
+test("satellite forecast explains an empty pass window and daylight visibility", () => {
+  const card=new bindings.IssTrackerCard();
+  const host={innerHTML:""};
+  card.shadowRoot.querySelector=selector=>selector===".iss-pass"?host:null;
+  card.setConfig({show_map:false});
+  const attributes={latitude:10,longitude:20,timestamp:Date.now()/1000,passes:[]};
+  card.hass=makeHass({"sensor.astronomy_space_suite_iss_position":makeState("10,20",attributes)});
+  assert.match(host.innerHTML,/No passes above 10°/);
+  card.hass=makeHass({"sensor.astronomy_space_suite_iss_position":makeState("10,20",{
+    ...attributes,passes:[{start:future,peak:future,end,observer_dark:false,sunlit:true,max_elevation:30,sky_path:[]}],
+  })});
+  assert.match(host.innerHTML,/Daylight pass/);
+});
