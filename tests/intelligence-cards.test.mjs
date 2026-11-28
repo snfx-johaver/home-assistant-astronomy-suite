@@ -98,10 +98,16 @@ test("solar forecast distinguishes local activity from unknown viewing condition
   card.hass=makeHass({"sensor.astronomy_space_suite_space_weather_forecast":makeState("Elevated",{
     aurora:{time:future,probability:30},kp:[{time:future,kp:6,kind:"predicted"}],
     solar:{days:[{m_class_probability:20,x_class_probability:5,radiation_probability:1}]},
+    solar_cycle:[
+      {month:"2026-09",sunspots:55,solar_flux_sfu:120},
+      {month:"2026-10",sunspots:45,solar_flux_sfu:108},
+    ],
   })});
   assert.match(card.shadowRoot.innerHTML,/Viewing conditions unknown/);
   assert.match(card.shadowRoot.innerHTML,/Dashed: forecast/);
   assert.doesNotMatch(card.shadowRoot.innerHTML,/plausibly observable/);
+  assert.match(card.shadowRoot.innerHTML,/Monthly observations/);
+  assert.doesNotMatch(card.shadowRoot.innerHTML,/Purple:|Blue:/);
 });
 
 test("satellite mode bounds selection and preserves default ISS mode", () => {
