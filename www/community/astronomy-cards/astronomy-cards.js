@@ -1115,6 +1115,8 @@ class SolarActivityCardEditor extends AstroEditorBase {
       flare_entity: "sensor.astronomy_space_suite_solar_flares",
       storm_entity: "sensor.astronomy_space_suite_geomagnetic_storms",
       kp_entity: "sensor.astronomy_space_suite_planetary_kp_index",
+      forecast_entity: "sensor.astronomy_space_suite_space_weather_forecast",
+      observing_entity: "sensor.astronomy_space_suite_observing_score",
       sdo_entity: "",
       soho_entity: "",
       title: "",
@@ -1137,6 +1139,8 @@ class SolarActivityCardEditor extends AstroEditorBase {
       <ha-entity-picker id="flare_entity" label="Solar flare entity"></ha-entity-picker>
       <ha-entity-picker id="storm_entity" label="Geomagnetic storm entity"></ha-entity-picker>
       <ha-entity-picker id="kp_entity" label="Planetary KP entity"></ha-entity-picker>
+      <ha-entity-picker id="forecast_entity" label="Space-weather forecast entity"></ha-entity-picker>
+      <ha-entity-picker id="observing_entity" label="Observing forecast (local aurora conditions)"></ha-entity-picker>
       <ha-entity-picker id="sdo_entity" label="SDO sun camera entity"></ha-entity-picker>
       <ha-entity-picker id="soho_entity" label="SOHO sun camera entity"></ha-entity-picker>
       <label class="switch-row"><span>Show CMEs</span><ha-switch id="show_cme"></ha-switch></label>
@@ -1157,14 +1161,14 @@ class SolarActivityCardEditor extends AstroEditorBase {
   }
 
   _setupListeners() {
-    ["cme_entity", "flare_entity", "storm_entity", "kp_entity", "sdo_entity", "soho_entity"].forEach((key) => this._bindPicker(key, key));
+    ["cme_entity", "flare_entity", "storm_entity", "kp_entity", "sdo_entity", "soho_entity", "forecast_entity", "observing_entity"].forEach((key) => this._bindPicker(key, key));
     this._bindText("title", "title", (value) => value.trim());
     ["show_cme", "show_flares", "show_storms", "show_kp_gauge", "show_live_sun", "show_sdo", "show_soho"].forEach((key) => this._bindSwitch(key, key));
     this._bindSelect("time_range", "time_range", (value) => (String(value) === "30" ? 30 : 7));
   }
 
   _syncValues() {
-    ["cme_entity", "flare_entity", "storm_entity", "kp_entity", "sdo_entity", "soho_entity"].forEach((key) => setPickerValue(this.shadowRoot, key, this._hass, this._config[key]));
+    ["cme_entity", "flare_entity", "storm_entity", "kp_entity", "sdo_entity", "soho_entity", "forecast_entity", "observing_entity"].forEach((key) => setPickerValue(this.shadowRoot, key, this._hass, this._config[key]));
     setTextValue(this.shadowRoot, "title", this._config.title || "");
     setSwitchValue(this.shadowRoot, "show_cme", this._config.show_cme !== false);
     setSwitchValue(this.shadowRoot, "show_flares", this._config.show_flares !== false);
@@ -1191,6 +1195,8 @@ class SolarActivityCard extends HTMLElement {
       flare_entity: "sensor.astronomy_space_suite_solar_flares",
       storm_entity: "sensor.astronomy_space_suite_geomagnetic_storms",
       kp_entity: "sensor.astronomy_space_suite_planetary_kp_index",
+      forecast_entity: "sensor.astronomy_space_suite_space_weather_forecast",
+      observing_entity: "sensor.astronomy_space_suite_observing_score",
       sdo_entity: "",
       soho_entity: "",
       title: "",
@@ -1304,6 +1310,7 @@ class SolarActivityCard extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>
         ${BASE_STYLES}
+        ${INTELLIGENCE_STYLES}
         .solar-grid { display: grid; grid-template-columns: repeat(${Math.min(sections.length, 3)}, 1fr); gap: 8px; padding: 0 12px; margin-bottom: 12px; }
         .solar-metric {
           position: relative;
@@ -1403,6 +1410,7 @@ class SolarActivityCard extends HTMLElement {
           <span class="astro-title">${esc(this._config.title || "Solar Activity Monitor")}</span>
           <span class="astro-badge ${status.className}">${esc(status.label)}</span>
         </div>
+        ${this._renderForecast()}
         <div class="solar-grid">
           ${sections.map((section) => `
             <div class="solar-metric" style="--metric-color:${section.color}">
@@ -1463,6 +1471,35 @@ class SolarActivityCard extends HTMLElement {
   }
 
   getCardSize() { return 5; }
+
+  _renderForecast() {
+    const data=getState(this._hass,this._config.forecast_entity)?.attributes;
+    if(!data) return "";
+    const rows=safeArray(data.kp).filter(row=>row && parseDate(row.time) && finiteValue(row.kp,0,9)!==null).slice(-56);
+    const first=rows.length?parseDate(rows[0].time).getTime():0;
+    const span=rows.length?Math.max(1,parseDate(rows.at(-1).time).getTime()-first):1;
+    const points=rows.map(row=>[20+(parseDate(row.time).getTime()-first)/span*280,110-row.kp/9*90,row]);
+    const solar=safeArray(data.solar?.days)[0]||{};
+    const aurora=finiteValue(data.aurora?.probability,0,100);
+    const weather=safeArray(getState(this._hass,this._config.observing_entity)?.attributes?.forecast).find(row=>{
+      const at=parseDate(row.time); return at && Math.abs(at.getTime()-(parseDate(data.aurora?.time)?.getTime()??0))<3600000;
+    });
+    const conditions=weather && finiteValue(weather.cloud_cover,0,100)!==null && finiteValue(weather.sun_altitude,-90,90)!==null;
+    const guidance=aurora===null?"Aurora guidance unavailable":aurora<10?"Aurora unlikely from this location":!conditions?"Aurora may reach this location · Viewing conditions unknown":weather.sun_altitude>=-12?"Aurora activity · Too light to view":weather.cloud_cover>50?"Clouds may obscure aurora":weather.moon_interference>70?"Aurora possible · Bright moonlight":"Aurora plausibly observable";
+    const months=safeArray(data.solar_cycle).slice(-12).filter(row=>row && typeof row.month==="string" && finiteValue(row.sunspots,0,1000)!==null && finiteValue(row.solar_flux_sfu,0,1000)!==null);
+    const trend=months.length>1?`<svg viewBox="0 0 320 90" role="img" aria-label="Monthly sunspot number and solar radio flux, shared zero to maximum scale">${["sunspots","solar_flux_sfu"].map((field,index)=>{
+      const maximum=Math.max(1,...months.flatMap(row=>[row.sunspots,row.solar_flux_sfu]));
+      return `<polyline points="${months.map((row,i)=>`${20+i*280/(months.length-1)},${65-row[field]/maximum*50}`).join(" ")}" fill="none" stroke="${index?ASTRO.info:ASTRO.accent}" stroke-width="2"/>`;
+    }).join("")}<text x="20" y="85">${esc(months[0].month)}</text><text x="300" y="85" text-anchor="end">${esc(months.at(-1).month)}</text></svg><div class="intel-copy">Monthly observations · <span style="color:${ASTRO.accent}">Sunspots</span> · <span style="color:${ASTRO.info}">Radio flux (sfu)</span></div>`:"";
+    return `<div class="intel-panel"><div class="intel-row"><strong>Space weather · Forecast</strong><span class="intel-copy">${data.stale?"Cached data":"NOAA SWPC"}</span></div>
+      ${points.length?`<svg viewBox="0 0 320 145" role="img" aria-label="Observed and predicted planetary Kp"><path d="M20 110H300M20 60H300" stroke="${ASTRO.divider}" stroke-dasharray="3 3"/><text x="0" y="63">5</text><text x="0" y="113">0</text>${points.slice(1).map(([x,y,row],index)=>`<path d="M${points[index][0]} ${points[index][1]}L${x} ${y}" fill="none" stroke="${row.kind==="predicted"?ASTRO.accent:ASTRO.info}" stroke-width="3" ${row.kind==="predicted"?'stroke-dasharray="4 3"':""}/>`).join("")}${points.map(([x,y,row])=>`<circle cx="${x}" cy="${y}" r="2" fill="${ASTRO.info}"><title>${esc(localStamp(this._hass,row.time))} · Kp ${row.kp} · ${esc(row.kind)}</title></circle>`).join("")}<text x="20" y="138">${esc(localStamp(this._hass,rows[0].time))}</text><text x="300" y="138" text-anchor="end">${esc(localStamp(this._hass,rows.at(-1).time))}</text></svg><div class="intel-copy">Solid: recent Kp · Dashed: forecast</div>`:'<div class="intel-copy">Kp forecast unavailable</div>'}
+      <div class="intel-phases">${[["M-class",solar.m_class_probability],["X-class",solar.x_class_probability],["Radiation",solar.radiation_probability]].map(([label,value])=>`<div><strong>${finiteValue(value,0,100)??"—"}${finiteValue(value,0,100)===null?"":"%"}</strong><div class="intel-copy">${label} · First forecast day</div></div>`).join("")}</div>
+      <div class="intel-targets">${["R","S","G"].map(scale=>{const value=finiteValue(safeArray(data.scales)[0]?.[scale],0,5);return `<span title="${scale==="R"?"Radio blackout":scale==="S"?"Radiation storm":"Geomagnetic storm"}">${scale}${value??"—"}</span>`;}).join("")}</div>
+      <div class="intel-copy">${esc(guidance)}</div>
+      ${trend}
+      ${safeArray(data.solar_cycle).length?`<div class="intel-copy">Monthly solar trend · ${esc(data.solar_cycle.at(-1).month)} · ${finiteValue(data.solar_cycle.at(-1).sunspots,0,1000)??"—"} sunspots · ${finiteValue(data.solar_cycle.at(-1).solar_flux_sfu,0,1000)??"—"} sfu</div>`:""}
+    </div>`;
+  }
 }
 
 class AstroHorizonCardEditor extends AstroEditorBase {
@@ -1661,6 +1698,7 @@ class AstroLunarCardEditor extends AstroEditorBase {
   setConfig(config) {
     super.setConfig({
       moon_entity: "sensor.moon_phase",
+      intelligence_entity: "sensor.nasa_astronomy_ephemeris_moon_illumination_pct",
       title: "",
       show_next_phases: true,
       show_illumination: true,
@@ -1671,6 +1709,7 @@ class AstroLunarCardEditor extends AstroEditorBase {
   _editorTemplate() {
     return `
       <ha-entity-picker id="moon_entity" label="Moon phase entity"></ha-entity-picker>
+      <ha-entity-picker id="intelligence_entity" label="Moon intelligence (illumination entity)"></ha-entity-picker>
       <div class="astro-input-wrap"><label for="title">Card title</label><input type="text" id="title" placeholder="Leave empty for default" /></div>
       <label class="switch-row"><span>Show next phases</span><ha-switch id="show_next_phases"></ha-switch></label>
       <label class="switch-row"><span>Show illumination</span><ha-switch id="show_illumination"></ha-switch></label>
@@ -1679,12 +1718,14 @@ class AstroLunarCardEditor extends AstroEditorBase {
 
   _setupListeners() {
     this._bindPicker("moon_entity", "moon_entity");
+    this._bindPicker("intelligence_entity", "intelligence_entity");
     this._bindText("title", "title", (value) => value.trim());
     ["show_next_phases", "show_illumination"].forEach((key) => this._bindSwitch(key, key));
   }
 
   _syncValues() {
     setPickerValue(this.shadowRoot, "moon_entity", this._hass, this._config.moon_entity || "sensor.moon_phase");
+    setPickerValue(this.shadowRoot, "intelligence_entity", this._hass, this._config.intelligence_entity || "sensor.nasa_astronomy_ephemeris_moon_illumination_pct");
     setTextValue(this.shadowRoot, "title", this._config.title || "");
     setSwitchValue(this.shadowRoot, "show_next_phases", this._config.show_next_phases !== false);
     setSwitchValue(this.shadowRoot, "show_illumination", this._config.show_illumination !== false);
@@ -1702,6 +1743,7 @@ class AstroLunarCard extends HTMLElement {
   static getStubConfig() {
     return {
       moon_entity: "sensor.moon_phase",
+      intelligence_entity: "sensor.nasa_astronomy_ephemeris_moon_illumination_pct",
       title: "",
       show_next_phases: true,
       show_illumination: true,
@@ -1714,23 +1756,35 @@ class AstroLunarCard extends HTMLElement {
   }
 
   set hass(hass) {
-    if (updateCardHass(this, hass, [this._config.moon_entity])) this._render();
+    if (updateCardHass(this, hass, configuredEntities(this._config))) this._render();
   }
 
   _render() {
     if (!this._hass) return;
     const stateObj = getState(this._hass, this._config.moon_entity);
-    if (!stateObj) {
+    const intelligence = getState(this._hass, this._config.intelligence_entity);
+    const details = intelligence?.attributes || {};
+    if (!stateObj && !intelligence) {
       this.shadowRoot.innerHTML = renderErrorCard(`Entity not found: ${this._config.moon_entity}`);
       return;
     }
 
-    const phase = normalizePhase(stateObj.state);
+    const longitude = finiteValue(details.phase_longitude, 0, 360);
+    const phase = longitude !== null ? MOON_PHASE_ORDER[Math.floor((longitude + 22.5) / 45) % 8] : normalizePhase(stateObj?.state);
     const phaseData = getMoonPhaseData(phase);
-    const illumination = toNumber(stateObj.attributes?.illumination, phaseData.illumination);
+    const illumination = finiteValue(details.illumination_pct, 0, 100) ?? toNumber(stateObj?.attributes?.illumination, phaseData.illumination);
+    if (longitude !== null) {
+      phaseData.fraction = illumination / 100;
+      phaseData.waxing = longitude < 180;
+    }
     const currentIndex = MOON_PHASE_ORDER.indexOf(phase);
     const upcoming = [];
-    if (this._config.show_next_phases !== false && currentIndex >= 0) {
+    if (this._config.show_next_phases !== false && safeArray(details.phases).length) {
+      for (const item of details.phases.slice(0, 4)) {
+        if (!parseDate(item.time)) continue;
+        upcoming.push({ name: item.title, icon: MOON_ICONS[MOON_PHASE_ORDER[item.angle / 45]], time: item.time });
+      }
+    } else if (this._config.show_next_phases !== false && currentIndex >= 0) {
       for (let step = 1; step <= 4; step += 1) {
         const nextName = MOON_PHASE_ORDER[(currentIndex + step) % MOON_PHASE_ORDER.length];
         upcoming.push({
@@ -1783,6 +1837,9 @@ class AstroLunarCard extends HTMLElement {
         .lunar-next-icon { font-size: 1.15rem; display: block; margin-bottom: 4px; }
         .lunar-next-name { display: block; font-size: 0.66rem; color: ${ASTRO.text2}; text-transform: capitalize; line-height: 1.3; }
         .lunar-next-days { display: block; margin-top: 4px; color: ${ASTRO.accent}; font-size: 0.7rem; font-weight: 600; }
+        ha-card { container-type: inline-size; }
+        @container (max-width: 340px) { .lunar-next-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+        ${INTELLIGENCE_STYLES}
       </style>
       <ha-card class="astro-card">
         <div class="astro-header">
@@ -1804,11 +1861,12 @@ class AstroLunarCard extends HTMLElement {
               <div class="lunar-next">
                 <span class="lunar-next-icon">${item.icon}</span>
                 <span class="lunar-next-name">${esc(item.name)}</span>
-                <span class="lunar-next-days">~${item.days}d</span>
+                <span class="lunar-next-days">${item.time ? esc(localStamp(this._hass, item.time)) : `~${item.days}d`}</span>
               </div>
             `).join("")}
           </div>
         ` : ""}
+        ${renderLunarIntelligence(details, this._hass)}
       </ha-card>
     `;
   }
@@ -2325,6 +2383,8 @@ class IssTrackerCardEditor extends AstroEditorBase {
       show_stream_button: true,
       map_zoom: 0,
       trail_hours: 6,
+      mode: "iss",
+      satellite_entities: "",
       ...config,
     });
   }
@@ -2332,6 +2392,8 @@ class IssTrackerCardEditor extends AstroEditorBase {
   _editorTemplate() {
     return `
       <ha-entity-picker id="entity" label="ISS position entity"></ha-entity-picker>
+      <div class="astro-input-wrap"><label for="mode">Tracker mode</label><select id="mode"><option value="iss">ISS</option><option value="satellites">Selected satellites</option></select></div>
+      <div class="astro-input-wrap"><label for="satellite_entities">Satellite entity IDs (comma separated, maximum 8)</label><input id="satellite_entities" type="text"/></div>
       <div class="astro-input-wrap"><label for="title">Card title</label><input type="text" id="title" placeholder="Leave empty for default" /></div>
       <div class="astro-input-wrap"><label for="stream_url">ISS livestream URL</label><input type="text" id="stream_url" /></div>
       <div class="astro-input-wrap"><label for="map_zoom">Map zoom level (0-18)</label><input type="number" id="map_zoom" min="0" max="18" /></div>
@@ -2344,6 +2406,8 @@ class IssTrackerCardEditor extends AstroEditorBase {
 
   _setupListeners() {
     this._bindPicker("entity", "entity");
+    this._bindSelect("mode", "mode");
+    this._bindText("satellite_entities", "satellite_entities", value=>value.trim());
     this._bindText("title", "title", (value) => value.trim());
     this._bindText("stream_url", "stream_url", (value) => value.trim());
     this._bindText("map_zoom", "map_zoom", (value) => clamp(parseInt(value, 10) || 0, 0, 18));
@@ -2353,6 +2417,8 @@ class IssTrackerCardEditor extends AstroEditorBase {
 
   _syncValues() {
     setPickerValue(this.shadowRoot, "entity", this._hass, this._config.entity || "sensor.astronomy_space_suite_iss_position");
+    setSelectValue(this.shadowRoot, "mode", this._config.mode || "iss");
+    setTextValue(this.shadowRoot, "satellite_entities", this._config.satellite_entities || "");
     setTextValue(this.shadowRoot, "title", this._config.title || "ISS Tracker");
     setTextValue(this.shadowRoot, "stream_url", this._config.stream_url || "https://www.youtube.com/nasa/live");
     setTextValue(this.shadowRoot, "map_zoom", String(this._config.map_zoom ?? 0));
@@ -2386,6 +2452,8 @@ class IssTrackerCard extends HTMLElement {
       show_stream_button: true,
       map_zoom: 0,
       trail_hours: 6,
+      mode: "iss",
+      satellite_entities: "",
     };
   }
 
@@ -2394,7 +2462,7 @@ class IssTrackerCard extends HTMLElement {
   }
 
   set hass(hass) {
-    if (updateCardHass(this, hass, [this._config.entity])) this._render();
+    if (updateCardHass(this, hass, this._satelliteEntities())) this._render();
     else if (this._nativeMap && this._displayPosition) {
       this._nativeMap.hass = this._mapHass(this._displayPosition, this._mapIsStale);
     }
@@ -2407,6 +2475,17 @@ class IssTrackerCard extends HTMLElement {
       cancelAnimationFrame(this._nativeMapResizeFrame);
       this._nativeMapResizeFrame = 0;
     }
+  }
+
+  _satelliteEntities() {
+    if(this._config.mode!=="satellites") return [this._config.entity];
+    const extra=Array.isArray(this._config.satellite_entities)?this._config.satellite_entities:String(this._config.satellite_entities||"").split(",");
+    return [...new Set([this._config.entity,...extra.map(value=>String(value).trim()).filter(value=>/^sensor\.[a-z0-9_]+$/.test(value))])].slice(0,8);
+  }
+
+  _entityId() {
+    const entities=this._satelliteEntities();
+    return entities.includes(this._selectedSatellite)?this._selectedSatellite:entities[0];
   }
 
   _parsePosition(stateObj) {
@@ -2430,7 +2509,7 @@ class IssTrackerCard extends HTMLElement {
 
   _mapHass(displayPos, isStale) {
     if (!isStale) return this._hass;
-    const entityId = this._config.entity;
+    const entityId = this._entityId();
     const current = getState(this._hass, entityId);
     const currentLatitude = toNumber(current?.attributes?.latitude, NaN);
     const currentLongitude = toNumber(current?.attributes?.longitude, NaN);
@@ -2482,8 +2561,8 @@ class IssTrackerCard extends HTMLElement {
       type: "map",
       show_all: false,
       entities: [{
-        entity: this._config.entity,
-        name: "ISS",
+        entity: this._entityId(),
+        name: getState(this._hass,this._entityId())?.attributes?.name || "ISS",
         label_mode: "icon",
       }],
       hours_to_show: this._config.show_trail === false ? 0 : (this._config.trail_hours ?? 6),
@@ -2556,11 +2635,11 @@ class IssTrackerCard extends HTMLElement {
 
   async _render() {
     if (!this._hass) return;
-    const stateObj = getState(this._hass, this._config.entity);
+    const stateObj = getState(this._hass, this._entityId());
     const position = this._parsePosition(stateObj);
     const posValid = Number.isFinite(position.latitude) && Number.isFinite(position.longitude);
 
-    const cacheKey = `astronomy-cards:iss-last-pos:${this._config.entity || "default"}`;
+    const cacheKey = `astronomy-cards:iss-last-pos:${this._entityId() || "default"}`;
     if (posValid) {
       try { localStorage.setItem(cacheKey, JSON.stringify({ latitude: position.latitude, longitude: position.longitude, timestamp: position.timestamp })); } catch (_) {}
     }
@@ -2578,7 +2657,7 @@ class IssTrackerCard extends HTMLElement {
     }
 
     if (!stateObj || (!Number.isFinite(displayPos.latitude) || !Number.isFinite(displayPos.longitude))) {
-      this.shadowRoot.innerHTML = renderErrorCard(`No ISS position data available for ${this._config.entity}.`, "mdi:space-station");
+      this.shadowRoot.innerHTML = renderErrorCard("Satellite position unavailable. Enable selected satellites in integration options.", "mdi:space-station");
       return;
     }
 
@@ -2587,6 +2666,7 @@ class IssTrackerCard extends HTMLElement {
       this.shadowRoot.innerHTML = `
         <style>
           ${BASE_STYLES}
+          ${INTELLIGENCE_STYLES}
           .iss-body {
             padding: 0 12px 14px;
             display: flex;
@@ -2648,12 +2728,14 @@ class IssTrackerCard extends HTMLElement {
             <span class="astro-badge iss-badge"></span>
           </div>
           <div class="iss-body">
+            <div class="iss-selector"></div>
             <div class="iss-stale-banner" style="display:none"></div>
             ${this._config.show_map !== false ? `<div class="iss-map-container"><div id="iss-native-map"></div></div>` : ""}
             <div class="iss-grid">
               <div class="iss-stat"><div class="iss-stat-label">Latitude</div><div class="iss-stat-value iss-lat"></div></div>
               <div class="iss-stat"><div class="iss-stat-label">Longitude</div><div class="iss-stat-value iss-lon"></div></div>
             </div>
+            <div class="iss-pass"></div>
             <div class="iss-footer">
               <div class="iss-time"></div>
               ${this._config.show_stream_button !== false ? `<a class="iss-button iss-stream-link" href="${esc(displayPos.liveStreamUrl)}" target="_blank" rel="noopener">Live Stream ↗</a>` : ""}
@@ -2680,6 +2762,33 @@ class IssTrackerCard extends HTMLElement {
 
     const timeEl = this.shadowRoot.querySelector(".iss-time");
     if (timeEl) timeEl.textContent = isStale ? "⚠ Last known position" : `Updated ${formatDateTime(displayPos.timestamp)}`;
+    const selector = this.shadowRoot.querySelector(".iss-selector");
+    if(selector && this._config.mode==="satellites") {
+      const markup=`<select class="intel-select" aria-label="Select satellite">${this._satelliteEntities().map(id=>`<option value="${esc(id)}" ${id===this._entityId()?"selected":""}>${esc(getState(this._hass,id)?.attributes?.name || getState(this._hass,id)?.attributes?.friendly_name || id)}</option>`).join("")}</select>`;
+      if(this._selectorMarkup!==markup) {
+        this._selectorMarkup=markup; selector.innerHTML=markup;
+        selector.querySelector("select")?.addEventListener("change",event=>{
+          this._selectedSatellite=event.target.value; this._render();
+        });
+      }
+    }
+    const passHost=this.shadowRoot.querySelector(".iss-pass");
+    const passes=stateObj?.attributes?.passes;
+    const trail=stateObj?.attributes?.ground_track;
+    if(passHost && (this._passesInput!==passes || this._trailInput!==trail)) {
+      this._passesInput=passes;
+      this._trailInput=trail;
+      const next=safeArray(passes).find(pass=>pass && parseDate(pass.end)?.getTime()>Date.now());
+      const visibility=next?.observer_dark===false?"Daylight pass":next?.sunlit===false?"Spacecraft in shadow":next?.observer_dark===true && next?.sunlit===true?"Potentially visible":next?.visibility||"Visibility unknown";
+      const track=safeArray(trail).slice(0,60).filter(point=>point && finiteValue(point.latitude,-90,90)!==null && finiteValue(point.longitude,-180,180)!==null);
+      const ground=track.length>1?`<div class="intel-panel"><svg viewBox="0 0 360 180" role="img" aria-label="Locally propagated satellite ground track"><image href="/local/community/astronomy-cards/world-map.png" width="360" height="180" opacity=".5"/>${track.slice(1).map((point,index)=>{
+        const previous=track[index];
+        return Math.abs(point.longitude-previous.longitude)>180?"":`<path d="M${previous.longitude+180} ${90-previous.latitude}L${point.longitude+180} ${90-point.latitude}" stroke="${ASTRO.accent}" stroke-width="2" fill="none"/>`;
+      }).join("")}</svg><div class="intel-copy">Predicted ground track · From ${esc(localStamp(this._hass,track[0].time))}</div></div>`:"";
+      passHost.innerHTML=ground+(next?`<div class="intel-panel"><div class="intel-row"><strong>Next pass</strong><span class="intel-copy">${esc(visibility)}</span></div>${renderSkyPath(next.sky_path,"Next satellite pass sky path")}<div class="intel-copy">${esc(localStamp(this._hass,next.start))}–${esc(localStamp(this._hass,next.end,false))} · Peak ${finiteValue(next.max_elevation,0,90)??"—"}°</div><div class="intel-copy">${next.clipped?"Window clipped · ":""}Brightness and weather may limit visibility</div></div>`:Array.isArray(passes)?'<div class="intel-panel"><div class="intel-copy">No passes above 10° in this forecast</div></div>':"");
+    }
+    const stream=this.shadowRoot.querySelector(".iss-stream-link");
+    if(stream) stream.style.display=this._entityId()===this._config.entity?"":"none";
 
     if (this._config.show_map !== false) {
       await this._renderNativeMap(displayPos, isStale);
@@ -3001,6 +3110,176 @@ class EarthObservationCard extends HTMLElement {
   getCardSize() { return 5; }
 }
 
+const INTELLIGENCE_STYLES = `
+  ha-card { display:block; container-type:inline-size; }
+  .intel-panel { margin:0 12px 12px; padding:12px; border-radius:14px; background:${ASTRO.chipBg}; color:${ASTRO.text1}; min-width:0; }
+  .intel-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between; }
+  .intel-copy { font-size:.78rem; color:${ASTRO.text2}; line-height:1.5; overflow-wrap:anywhere; }
+  .intel-panel strong { font-size:.86rem; font-weight:600; }
+  .intel-panel svg { display:block; width:100%; height:auto; overflow:visible; }
+  .intel-panel svg text { fill:${ASTRO.text2}; font:12px sans-serif; }
+  .intel-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+  .intel-tabs button, .intel-select { font:inherit; font-size:.75rem; color:${ASTRO.text1}; background:${ASTRO.chipBg}; border:1px solid ${ASTRO.divider}; border-radius:16px; padding:6px 10px; max-width:100%; }
+  .intel-tabs button[aria-pressed="true"] { color:${ASTRO.accent}; border-color:${ASTRO.accent}; }
+  .intel-scroll { overflow-x:auto; overscroll-behavior:contain; padding:4px 0; }
+  .intel-scroll svg { min-width:700px; }
+  .intel-score { display:flex; align-items:center; gap:12px; }
+  .intel-score svg { width:90px; flex:none; }
+  .intel-status { color:var(--intel-status); font-weight:700; }
+  .intel-phases { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; text-align:center; margin-top:12px; }
+  .intel-targets { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  .intel-targets span { font-size:.72rem; color:${ASTRO.text2}; padding:5px 8px; background:${ASTRO.chipBg}; border-radius:12px; }
+  @container (max-width:340px) { .intel-phases { grid-template-columns:1fr; text-align:left; } .intel-score { gap:6px; } }
+  @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; } }
+`;
+
+function finiteValue(value, min = -Infinity, max = Infinity) {
+  if (value == null || value === "" || typeof value === "boolean") return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= min && number <= max ? number : null;
+}
+
+function localStamp(hass, value, date = true) {
+  const parsed = parseDate(value);
+  if (!parsed) return "Time unavailable";
+  return new Intl.DateTimeFormat(hass?.locale?.language || undefined, {
+    timeZone: hass?.config?.time_zone || "UTC",
+    ...(hass?.locale?.time_format === "24" ? {hourCycle:"h23"} : hass?.locale?.time_format === "12" ? {hourCycle:"h12"} : {}),
+    ...(date ? { month:"short", day:"numeric" } : {}),
+    hour:"2-digit", minute:"2-digit",
+  }).format(parsed);
+}
+
+function statusColor(score) {
+  return score == null ? ASTRO.text2 : score >= 70 ? ASTRO.success : score >= 40 ? ASTRO.warning : ASTRO.error;
+}
+
+function renderLunarIntelligence(details, hass) {
+  const distance = finiteValue(details.distance_km, 300000, 450000);
+  if (distance === null) return "";
+  const marker = 20 + clamp((distance - 356000) / 51000, 0, 1) * 260;
+  const angular = finiteValue(details.angular_diameter_arcmin, 25, 40);
+  const impact = finiteValue(details.moonlight_impact, 0, 100);
+  const path = safeArray(details.sky_path).slice(0,25).filter(point=>point && parseDate(point.time) && finiteValue(point.altitude,-90,90)!==null);
+  return `<div class="intel-panel">
+    <div class="intel-row"><strong>${Math.round(distance).toLocaleString()} km</strong><span class="intel-copy">${finiteValue(details.age_days,0,31) ?? "—"} days old</span></div>
+    <svg viewBox="0 0 300 60" role="img" aria-label="Moon distance, scale 356,000 to 407,000 kilometres">
+      <path d="M20 25H280" stroke="${ASTRO.divider}" stroke-width="6" stroke-linecap="round"/>
+      <circle cx="${marker}" cy="25" r="7" fill="${ASTRO.accent}"/>
+      <text x="20" y="52">356,000 km</text><text x="280" y="52" text-anchor="end">407,000 km</text>
+    </svg>
+    <div class="intel-copy">Perigee ${esc(localStamp(hass, details.perigee?.time))} · Apogee ${esc(localStamp(hass, details.apogee?.time))}</div>
+    ${path.length>1?`<svg viewBox="0 0 300 110" role="img" aria-label="Moon altitude over the next 24 hours, horizon at the dashed line"><path d="M20 55H280" stroke="${ASTRO.divider}" stroke-dasharray="3 3"/><polyline points="${path.map((point,index)=>`${20+260*index/(path.length-1)},${55-point.altitude/90*40}`).join(" ")}" fill="none" stroke="${ASTRO.accent}" stroke-width="3"/>${path.map((point,index)=>`<circle cx="${20+260*index/(path.length-1)}" cy="${55-point.altitude/90*40}" r="2" fill="${point.altitude>=0?ASTRO.info:ASTRO.text2}"><title>${esc(localStamp(hass,point.time))} · ${point.altitude}°</title></circle>`).join("")}<text x="20" y="104">${esc(localStamp(hass,path[0].time,false))}</text><text x="280" y="104" text-anchor="end">${esc(localStamp(hass,path.at(-1).time,false))} +1 day</text></svg>`:""}
+    <div class="intel-phases">${[["Next rise",details.rise_time],["Next transit",details.transit_time],["Next set",details.set_time]].map(([label,time]) => `<div><strong>${esc(localStamp(hass,time,false))}</strong><div class="intel-copy">${label}</div></div>`).join("")}</div>
+    ${angular === null ? "" : `<div class="intel-row"><svg viewBox="0 0 150 55" style="max-width:150px" role="img" aria-label="Apparent Moon diameter ${angular} arcminutes compared with 30 arcminutes"><circle cx="35" cy="27" r="20" fill="none" stroke="${ASTRO.divider}" stroke-dasharray="3 3"/><circle cx="35" cy="27" r="${20*angular/30}" fill="${ASTRO.text2}" opacity=".5"/><text x="70" y="30">${angular.toFixed(1)} arcmin</text></svg><span class="intel-copy">Dashed: 30 arcmin</span></div>`}
+    ${impact === null ? "" : `<div class="intel-copy">Moonlight impact ${impact}% ${impact > 50 ? "· Lower deep-sky contrast" : ""}</div>`}
+  </div>`;
+}
+
+function renderSkyPath(points, title = "Sky path") {
+  const valid = safeArray(points).slice(0, 30).filter(point => finiteValue(point.altitude,0,90) !== null && finiteValue(point.azimuth,0,360) !== null);
+  if (!valid.length) return "";
+  const projected = valid.map(point => {
+    const radius = 90 * (1 - point.altitude / 90);
+    const angle = point.azimuth * Math.PI / 180;
+    return [110 + radius * Math.sin(angle), 110 - radius * Math.cos(angle)];
+  });
+  return `<svg viewBox="0 0 220 220" style="max-width:220px;margin:auto" role="img" aria-label="${esc(title)}">
+    <title>${esc(title)} · zenith at centre, north at top</title>
+    <circle cx="110" cy="110" r="90" fill="none" stroke="${ASTRO.divider}"/>
+    <circle cx="110" cy="110" r="45" fill="none" stroke="${ASTRO.divider}" stroke-dasharray="3 3"/>
+    <text x="110" y="13" text-anchor="middle">N</text><text x="210" y="114">E</text><text x="110" y="218" text-anchor="middle">S</text><text x="1" y="114">W</text>
+    <polyline points="${projected.map(pair => pair.join(",")).join(" ")}" fill="none" stroke="${ASTRO.accent}" stroke-width="3"/>
+    ${projected.map(([x,y],index) => `<circle cx="${x}" cy="${y}" r="${index===0?5:2}" fill="${ASTRO.info}"/>`).join("")}
+  </svg>`;
+}
+
+class ObservationPlannerEditor extends AstroEditorBase {
+  setConfig(config) { super.setConfig({...ObservationPlannerCard.getStubConfig(),...config}); }
+  _editorTemplate() {
+    return `<ha-entity-picker id="entity" label="Observing score entity"></ha-entity-picker>
+      <div class="astro-input-wrap"><label for="title">Card title</label><input id="title" type="text"/></div>
+      <div class="astro-input-wrap"><label for="mode">Observing style</label><select id="mode"><option value="stargazing">Stargazing</option><option value="deep_sky">Visual deep sky</option><option value="astrophotography">Astrophotography</option></select></div>
+      <div class="astro-input-wrap"><label for="hours">Forecast hours</label><input id="hours" type="number" min="24" max="48"/></div>
+      <label class="switch-row"><span>Show targets</span><ha-switch id="show_targets"></ha-switch></label>`;
+  }
+  _setupListeners() {
+    this._bindPicker("entity","entity"); this._bindText("title","title");
+    this._bindSelect("mode","mode"); this._bindText("hours","hours",value=>clamp(parseInt(value,10)||48,24,48)); this._bindSwitch("show_targets","show_targets");
+  }
+  _syncValues() {
+    setPickerValue(this.shadowRoot,"entity",this._hass,this._config.entity);
+    setTextValue(this.shadowRoot,"title",this._config.title);
+    setSelectValue(this.shadowRoot,"mode",this._config.mode); setTextValue(this.shadowRoot,"hours",this._config.hours);
+    setSwitchValue(this.shadowRoot,"show_targets",this._config.show_targets!==false);
+  }
+}
+
+class ObservationPlannerCard extends HTMLElement {
+  constructor() { super(); this.attachShadow({mode:"open"}); this._config = {}; }
+  static getConfigElement() { return document.createElement("observation-planner-card-editor"); }
+  static getStubConfig() { return {entity:"sensor.astronomy_space_suite_observing_score",title:"Observation Planner",mode:"stargazing",hours:48,show_targets:true}; }
+  setConfig(config) { this._config = {...ObservationPlannerCard.getStubConfig(),...config}; }
+  set hass(hass) { if(updateCardHass(this,hass,[this._config.entity])) this._render(); }
+  _render() {
+    const state = getState(this._hass,this._config.entity);
+    const data = state?.attributes || {};
+    const mode = ["stargazing","deep_sky","astrophotography"].includes(this._config.mode) ? this._config.mode : "stargazing";
+    if (this._series !== data.forecast || this._seriesHours !== this._config.hours) {
+      this._series = data.forecast; this._seriesHours = this._config.hours;
+      this._rows = safeArray(data.forecast).slice(0,clamp(Number(this._config.hours)||48,24,48)).filter(row=>row && parseDate(row.time));
+    }
+    const rows = this._rows;
+    const score = rows.length ? finiteValue(rows[0].scores?.[mode],0,100) : null;
+    const window = data.windows?.[mode] || (mode === "stargazing" ? data.best_window : null);
+    const width = 680 / Math.max(1,rows.length);
+    const targets = safeArray(data.targets).slice(0,5).filter(target=>target && parseDate(target.peak));
+    const targetRibbon = this._config.show_targets!==false && window && mode==="stargazing" && targets.length ? `<svg viewBox="0 0 800 ${35+targets.length*28}" role="img" aria-label="Best Tonight target peaks within the highlighted observing window"><text x="0" y="16">Target peaks</text>${targets.map((target,index)=>{
+      const hour=(parseDate(target.peak).getTime()-parseDate(rows[0]?.time).getTime())/3600000;
+      const x=clamp(100+(hour+.5)*width,100,780), y=38+index*28;
+      return `<path d="M100 ${y}H780" stroke="${ASTRO.divider}"/><circle cx="${x}" cy="${y}" r="5" fill="${ASTRO.accent}"><title>${esc(target.name)} · ${esc(localStamp(this._hass,target.peak))} · ${finiteValue(target.altitude,0,90)??"—"}°</title></circle><text x="${x<500?x+10:x-10}" y="${y+4}" text-anchor="${x<500?"start":"end"}">${esc(target.name)}</text>`;
+    }).join("")}</svg>`:"";
+    const strips = [
+      ["Clouds", row=>finiteValue(row.cloud_cover,0,100), true],
+      ["Low", row=>finiteValue(row.cloud_cover_low,0,100), true],
+      ["Mid", row=>finiteValue(row.cloud_cover_mid,0,100), true],
+      ["High", row=>finiteValue(row.cloud_cover_high,0,100), true],
+      ["Seeing*", row=>finiteValue(row.seeing_estimate,0,100), false],
+      ["Clarity*", row=>finiteValue(row.transparency_estimate,0,100), false],
+      ["Moonlight", row=>finiteValue(row.moon_interference,0,100), true],
+    ];
+    const ribbon = rows.length ? `<div class="intel-scroll" tabindex="0" aria-label="Scrollable hourly observing forecast"><svg viewBox="0 0 800 275" role="img" aria-label="Hourly darkness, cloud layers, seeing, clarity and moonlight">
+      ${rows.map((row,index)=>{
+        const x=100+index*width;
+        const value=finiteValue(row.scores?.[mode],0,100);
+        const good=window && row.time>=window.start && row.time<window.end;
+        const sun=finiteValue(row.sun_altitude,-90,90);
+        return `<rect x="${x}" y="20" width="${width}" height="30" fill="${sun===null?ASTRO.divider:row.astronomical_darkness===true ? "#151d39" : sun < -6 ? "#5c6bc0" : "#ffc107"}" opacity=".8"><title>${esc(localStamp(this._hass,row.time))} · ${sun===null?"Unknown darkness":row.astronomical_darkness ? "Dark sky" : "Twilight or daylight"}</title></rect>
+          <rect x="${x}" y="58" width="${width-1}" height="25" fill="${statusColor(value)}" opacity="${good?1:.55}"><title>${value===null?"Unknown":value+"/100"} · ${esc(row.limiting_factor)}</title></rect>
+          ${good?`<path d="M${x} 89h${width}" stroke="${ASTRO.success}" stroke-width="4"/>`:""}
+          ${index%4===0?`<text x="${x}" y="14">${esc(localStamp(this._hass,row.time,false))}</text>`:""}`;
+      }).join("")}
+      <text x="0" y="39">Darkness</text><text x="0" y="76">Quality</text>
+      ${strips.map(([label,get,inverse],line)=>`<text x="0" y="${111+line*22}">${label}</text>${rows.map((row,index)=>{
+        const value=get(row), severity=value===null?null:inverse?value:100-value;
+        return `<rect x="${100+index*width}" y="${98+line*22}" width="${width-1}" height="17" rx="2" fill="${severity===null?ASTRO.divider:severity>70?ASTRO.warning:ASTRO.info}" opacity="${severity===null?.3:.2+severity/125}"><title>${esc(localStamp(this._hass,row.time))} · ${label}: ${value===null?"Unknown":value+"%"}</title></rect>`;
+      }).join("")}`).join("")}
+      ${rows.map((row,index)=>(finiteValue(row.fog_risk,0,100)>=50 || finiteValue(row.wind_gusts_10m,0,150)>=10 || finiteValue(row.precipitation_probability,0,100)>=50)?`<text x="${100+index*width}" y="265" fill="${ASTRO.warning}">!<title>Wind, fog or rain risk</title></text>`:"").join("")}
+    </svg>${targetRibbon}</div>`:"";
+    this.shadowRoot.innerHTML=`<style>${BASE_STYLES}${INTELLIGENCE_STYLES}</style><ha-card class="astro-card">
+      <div class="astro-header"><ha-icon icon="mdi:telescope"></ha-icon><span class="astro-title">${esc(this._config.title)}</span>${data.stale?'<span class="astro-badge warn">Cached forecast</span>':""}</div>
+      <div class="intel-panel">
+        <div class="intel-score" style="--intel-status:${statusColor(score)}"><svg viewBox="0 0 100 100" role="img" aria-label="${score===null?"Observing quality unknown":score+" out of 100"}"><circle cx="50" cy="50" r="40" fill="none" stroke="${ASTRO.divider}" stroke-width="7"/><circle cx="50" cy="50" r="40" fill="none" stroke="${statusColor(score)}" stroke-width="7" stroke-dasharray="${(score??0)*2.513} 251.3" transform="rotate(-90 50 50)"/><text x="50" y="57" text-anchor="middle" style="font-size:24px;fill:${ASTRO.text1}">${score??"—"}</text></svg>
+          <div><strong class="intel-status">${score===null?"Forecast unavailable":score>=70?"GO":score>=40?"MARGINAL":"NO-GO"}</strong><div class="intel-copy">${score===null?"Enable observing conditions in integration options.":esc(rows[0].limiting_factor)}</div>
+          <div class="intel-copy">${window?`Best viewing: ${esc(localStamp(this._hass,window.start))}–${esc(localStamp(this._hass,window.end,false))}`:"No clear viewing window"}</div></div>
+        </div>${ribbon}
+        ${rows.length?'<div class="intel-copy">*Seeing and clarity are estimates · Open-Meteo · Hourly forecast</div>':""}
+        ${this._config.show_targets!==false?safeArray(data.targets).slice(0,5).map(target=>`<div class="intel-targets"><span>${esc(target.name)} · ${esc(localStamp(this._hass,target.peak,false))} · ${finiteValue(target.altitude,0,90)??"—"}°</span></div>`).join(""):""}
+      </div></ha-card>`;
+  }
+  getCardSize() { return 5; }
+}
+
 function defineElement(name, ctor) {
   if (customElements.get(name)) return;
   if (!name.endsWith("-editor") && typeof ctor.prototype.setConfig === "function") {
@@ -3031,6 +3310,9 @@ defineElement("solar-system-card-editor", SolarSystemCardEditor);
 defineElement("rocket-launch-card-editor", RocketLaunchCardEditor);
 defineElement("iss-tracker-card-editor", IssTrackerCardEditor);
 defineElement("earth-observation-card-editor", EarthObservationCardEditor);
+defineElement("observation-planner-card-editor", ObservationPlannerEditor);
+defineElement("observation-planner-card", ObservationPlannerCard);
+registerCustomCard("observation-planner-card", "ASS Observation Planner", "Darkness, weather and best viewing windows with editor");
 
 // ─── Night Sky Highlights Card ───────────────────────────────────────────────
 class NightSkyHighlightsEditor extends AstroEditorBase {
@@ -3039,6 +3321,8 @@ class NightSkyHighlightsEditor extends AstroEditorBase {
       <div class="astro-input-wrap"><label for="title">Card title</label><input type="text" id="title" /></div>
       <label class="switch-row"><span>Telescope Mode (alt &gt; 30°)</span><ha-switch id="telescope_mode"></ha-switch></label>
       <label class="switch-row"><span>Show upcoming eclipses</span><ha-switch id="show_eclipses"></ha-switch></label>
+      <ha-entity-picker id="events_entity" label="Celestial events entity"></ha-entity-picker>
+      <label class="switch-row"><span>Show celestial events</span><ha-switch id="show_events"></ha-switch></label>
     `;
   }
 
@@ -3046,18 +3330,22 @@ class NightSkyHighlightsEditor extends AstroEditorBase {
     this._bindText("title", "title");
     this._bindSwitch("telescope_mode", "telescope_mode");
     this._bindSwitch("show_eclipses", "show_eclipses");
+    this._bindPicker("events_entity", "events_entity");
+    this._bindSwitch("show_events", "show_events");
   }
 
   _syncValues() {
     setTextValue(this.shadowRoot, "title", this._config.title || "Night Sky Highlights");
     setSwitchValue(this.shadowRoot, "telescope_mode", this._config.telescope_mode === true);
     setSwitchValue(this.shadowRoot, "show_eclipses", this._config.show_eclipses !== false);
+    setPickerValue(this.shadowRoot, "events_entity", this._hass, this._config.events_entity || "sensor.astronomy_space_suite_next_celestial_event");
+    setSwitchValue(this.shadowRoot, "show_events", this._config.show_events !== false);
   }
 }
 
 class NightSkyHighlightsCard extends HTMLElement {
   static getConfigElement() { return document.createElement("night-sky-highlights-card-editor"); }
-  static getStubConfig() { return { title: "Night Sky Highlights", telescope_mode: false, show_eclipses: true }; }
+  static getStubConfig() { return { title: "Night Sky Highlights", telescope_mode: false, show_eclipses: true, show_events: true, events_entity: "sensor.astronomy_space_suite_next_celestial_event" }; }
 
   constructor() {
     super();
@@ -3065,7 +3353,7 @@ class NightSkyHighlightsCard extends HTMLElement {
   }
 
   setConfig(config) {
-    this._config = { title: "Night Sky Highlights", telescope_mode: false, show_eclipses: true, ...config };
+    this._config = { ...NightSkyHighlightsCard.getStubConfig(), ...config };
   }
 
   set hass(hass) {
@@ -3073,6 +3361,7 @@ class NightSkyHighlightsCard extends HTMLElement {
     const entities = bodies.flatMap((body) => ["altitude", "illumination_pct", "phase_angle", "visibility_start", "visibility_end"]
       .map((suffix) => `sensor.nasa_astronomy_ephemeris_${body}_${suffix}`));
     entities.push("sensor.nasa_astronomy_ephemeris_sky_twilight_phase");
+    if (this._config.show_events !== false) entities.push(this._config.events_entity);
     if (this._config.show_eclipses !== false) {
       entities.push("sensor.nasa_astronomy_ephemeris_eclipses_solar", "sensor.nasa_astronomy_ephemeris_eclipses_lunar");
     }
@@ -3239,6 +3528,43 @@ class NightSkyHighlightsCard extends HTMLElement {
       </div>`;
   }
 
+  _renderEvents() {
+    if(this._config.show_events===false) return "";
+    const state=getState(this._hass,this._config.events_entity);
+    if(!state) return "";
+    const input=state.attributes?.events;
+    if(this._eventArray!==input || !this._events) {
+      this._eventArray=input;
+      this._events=safeArray(input).filter(event=>event && parseDate(event.peak) && parseDate(event.end)).slice(0,48);
+    }
+    const events=this._events.filter(event=>parseDate(event.end).getTime()>Date.now());
+    const filtered=events.filter(event=>!this._eventFilter || event.event_type===this._eventFilter);
+    const next=filtered[0];
+    if(!next) return `<div class="intel-panel"><div class="intel-copy">No upcoming events in this category</div>${this._eventTabs()}</div>`;
+    const display=filtered.slice(0,6);
+    const first=parseDate(display[0].peak).getTime();
+    const span=Math.max(DAY_MS,parseDate(display.at(-1).peak).getTime()-first);
+    const altitude=finiteValue(next.altitude_at_peak,-90,90), azimuth=finiteValue(next.azimuth_at_peak,0,360);
+    const remaining=Math.max(0,Math.ceil((parseDate(next.peak).getTime()-Date.now())/DAY_MS));
+    const visibility={
+      above_horizon_in_darkness:"Above horizon in darkness",below_horizon_or_daylight:"Peak below horizon or in daylight",
+      global_event:"Seasonal turning point",radiant_rises:"Radiant rises at your location",radiant_below_horizon:"Radiant stays below your horizon",
+      above_horizon:"Locally visible",partial_window_only:"Part of the eclipse is above your horizon",
+    };
+    return `<div class="intel-panel">${this._eventTabs()}<div class="intel-row"><strong>${esc(next.title)}</strong><span class="astro-badge">${remaining?`${remaining}d`:"Peaking today"}</span></div>
+      ${altitude!==null && altitude>=0 && azimuth!==null?renderSkyPath([{altitude,azimuth}],`${next.title} position at peak`):`<svg viewBox="0 0 300 70" role="img" aria-label="${esc(next.title)} event timing"><path d="M20 35H280" stroke="${ASTRO.divider}" stroke-width="4"/><circle cx="150" cy="35" r="14" fill="${ASTRO.accent}"/><text x="150" y="40" text-anchor="middle" style="fill:white">${next.event_type==="season"?"☀":"◉"}</text></svg>`}
+      <div class="intel-copy">Peak: ${esc(localStamp(this._hass,next.peak))}${next.peak_estimate?" · Calendar estimate":""}</div>
+      <div class="intel-copy">${esc(visibility[next.visibility_from_location]||"Visibility unknown")}${altitude!==null?` · ${altitude}° at peak`:""}</div>
+      ${finiteValue(next.moon_interference,0,100)!==null?`<div class="intel-copy">Moon ${next.moon_interference}% illuminated · Ideal rate up to ${finiteValue(next.expected_rate,0,1000)??"—"}/h</div>`:""}
+      ${next.best_viewing && parseDate(next.best_viewing.time)?`<div class="intel-copy">Best local hour: ${esc(localStamp(this._hass,next.best_viewing.time))} · Radiant ${finiteValue(next.best_viewing.altitude,0,90)??"—"}°</div><svg viewBox="0 0 300 28" role="img" aria-label="Moonlight interference during the best local meteor viewing hour"><rect x="0" y="8" width="300" height="8" rx="4" fill="${ASTRO.divider}"/><rect x="0" y="8" width="${3*(finiteValue(next.best_viewing.moon_interference,0,100)??0)}" height="8" rx="4" fill="${ASTRO.warning}"/><title>Moonlight interference ${finiteValue(next.best_viewing.moon_interference,0,100)??"unknown"}%</title></svg>`:""}
+      <svg viewBox="0 0 320 60" role="img" aria-label="Upcoming celestial event timeline"><path d="M20 20H300" stroke="${ASTRO.divider}" stroke-width="3"/>${display.map(event=>`<circle cx="${20+(parseDate(event.peak).getTime()-first)/span*280}" cy="20" r="5" fill="${ASTRO.accent}"><title>${esc(event.title)} · ${esc(localStamp(this._hass,event.peak))}</title></circle>`).join("")}<text x="20" y="50">${esc(localStamp(this._hass,display[0].peak))}</text><text x="300" y="50" text-anchor="end">${esc(localStamp(this._hass,display.at(-1).peak))}</text></svg>
+    </div>`;
+  }
+
+  _eventTabs() {
+    return `<div class="intel-tabs">${[["","Upcoming"],["meteor_shower","Showers"],["opposition","Oppositions"],["elongation","Elongations"]].map(([key,label])=>`<button type="button" data-event-filter="${key}" aria-pressed="${(this._eventFilter||"")===key}">${label}</button>`).join("")}</div>`;
+  }
+
   _render() {
     const sunAlt = this._getSunAlt();
     const isDark = sunAlt !== null && sunAlt < -12;
@@ -3291,6 +3617,7 @@ class NightSkyHighlightsCard extends HTMLElement {
         .nsh-eclipse-details { margin-top:6px; }
         .nsh-eclipse-details summary { width:fit-content; cursor:pointer; color:${ASTRO.text2}; font-size:0.7rem; }
         .nsh-eclipse-details .nsh-moon-label { margin-top:4px; }
+        ${INTELLIGENCE_STYLES}
       </style>
       <ha-card class="astro-card">
         <div class="astro-header">
@@ -3299,6 +3626,7 @@ class NightSkyHighlightsCard extends HTMLElement {
           ${isDark ? '<span class="nsh-badge nsh-badge-dark">Dark Sky</span>' : sunAlt !== null ? '<span class="nsh-badge nsh-badge-light">Daylight</span>' : ''}
         </div>
         <div class="nsh-body">
+          ${this._renderEvents()}
           ${!hasSensors ? '<div class="nsh-no-data">Enable ephemeris sensors in integration options to see night sky data.</div>' : `
             ${moon.altitude !== null ? `
             <div>
@@ -3342,6 +3670,9 @@ class NightSkyHighlightsCard extends HTMLElement {
         </div>
       </ha-card>
     `;
+    this.shadowRoot.querySelectorAll("[data-event-filter]").forEach(button=>button.addEventListener("click",()=>{
+      this._eventFilter=button.dataset.eventFilter; this._render();
+    }));
   }
 
   _twilightColor(phase) {

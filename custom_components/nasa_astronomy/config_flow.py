@@ -180,7 +180,7 @@ class AstronomyOptionsFlow(OptionsFlow):
         """Show the main options menu."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["api_keys", "ephemeris", "deepsky"],
+            menu_options=["api_keys", "ephemeris", "deepsky", "observing", "celestial_events", "space_weather_forecast", "satellites"],
         )
 
     async def async_step_api_keys(self, user_input: dict[str, Any] | None = None):
@@ -232,3 +232,38 @@ class AstronomyOptionsFlow(OptionsFlow):
 
         schema = _deepsky_schema(current)
         return self.async_show_form(step_id="deepsky", data_schema=schema)
+
+    async def _feature(self, section, user_input, default=False):
+        if user_input is not None:
+            return self.async_create_entry(title="", data={**self._config_entry.options, section: {"enabled": user_input["enabled"]}})
+        current = self._config_entry.options.get(section, {})
+        return self.async_show_form(step_id=section, data_schema=vol.Schema({
+            vol.Optional("enabled", default=current.get("enabled", default)): bool,
+        }))
+
+    async def async_step_observing(self, user_input=None):
+        return await self._feature("observing", user_input)
+
+    async def async_step_celestial_events(self, user_input=None):
+        return await self._feature("celestial_events", user_input, True)
+
+    async def async_step_space_weather_forecast(self, user_input=None):
+        return await self._feature("space_weather_forecast", user_input)
+
+    async def async_step_satellites(self, user_input=None):
+        from .satellites import selected_ids
+
+        current = self._config_entry.options.get("satellites", {})
+        errors = {}
+        if user_input is not None:
+            try:
+                ids = selected_ids([value.strip() for value in user_input["norad_ids"].split(",") if value.strip()])
+                return self.async_create_entry(title="", data={
+                    **self._config_entry.options, "satellites": {"enabled": user_input["enabled"], "norad_ids": ids},
+                })
+            except (ValueError, TypeError, OverflowError):
+                errors["base"] = "invalid_satellites"
+        return self.async_show_form(step_id="satellites", errors=errors, data_schema=vol.Schema({
+            vol.Optional("enabled", default=current.get("enabled", False)): bool,
+            vol.Optional("norad_ids", default=",".join(str(value) for value in current.get("norad_ids", [25544]))): str,
+        }))

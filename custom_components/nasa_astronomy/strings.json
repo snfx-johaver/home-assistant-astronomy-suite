@@ -78,7 +78,11 @@
         "menu_options": {
           "api_keys": "API Keys (NASA & RocketLaunch.Live)",
           "ephemeris": "Ephemeris Provider (Planetary Positions)",
-          "deepsky": "Deep-Sky Objects (Telescope Targets)"
+          "deepsky": "Deep-Sky Objects (Telescope Targets)",
+          "observing": "Observing conditions",
+          "celestial_events": "Celestial events",
+          "space_weather_forecast": "Space-weather forecast",
+          "satellites": "Satellite passes"
         }
       },
       "api_keys": {
@@ -93,6 +97,26 @@
           "rocket_api_key": "Optional RocketLaunch.Live API key (leave blank for free tier)."
         }
       },
+      "observing": {
+          "title": "Observing conditions",
+          "description": "Open-Meteo supplies clouds, humidity, wind and rain forecasts once an hour. No key required. Free endpoint for non-commercial use; weather data is CC BY 4.0. Seeing and clarity are estimates, not measurements.",
+          "data": {"enabled": "Enable observing forecast (internet required)"}
+        },
+        "celestial_events": {
+          "title": "Celestial events",
+          "description": "Local 18-month event calendar using Astronomy Engine and the existing eclipse predictions. Updated daily; no internet or key required.",
+          "data": {"enabled": "Enable celestial events"}
+        },
+        "space_weather_forecast": {
+          "title": "Space-weather forecast",
+          "description": "NOAA SWPC supplies Kp and severity forecasts hourly, flare probabilities every three hours, an aurora outlook every 30 minutes and monthly solar trends daily. No key required.",
+          "data": {"enabled": "Enable NOAA forecast (internet required)"}
+        },
+        "satellites": {
+          "title": "Satellite passes",
+          "description": "Select up to eight NORAD IDs: ISS 25544, Hubble 20580, Tiangong 48274, NOAA 18 28654, NOAA 19 33591, NOAA 20 43013, Terra 25994, Aqua 27424. Positions and 24-hour passes are calculated locally. CelesTrak elements refresh every 12 hours (ISS retains its existing two-hour cadence), cached for at most seven days. No key required.",
+          "data": {"enabled": "Enable local satellite passes", "norad_ids": "NORAD IDs (comma separated)"}
+        },
       "ephemeris": {
         "title": "OpenAstronomy Ephemeris",
         "description": "Configure local ephemeris calculations for planetary positions. All calculations are done locally — no external API required.",
@@ -143,6 +167,9 @@
           "max_objects": "How many catalog objects to create sensors for (5–30, default 30)."
         }
       }
+    },
+    "error": {
+      "invalid_satellites": "Enter up to eight valid NORAD IDs, separated by commas."
     }
   }
 }

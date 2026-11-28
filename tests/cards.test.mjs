@@ -213,7 +213,7 @@ test("highlights eclipse toggle hides section and editor binds it", () => {
   editor._bindText = () => {};
   editor._bindSwitch = (...args) => switches.push(args);
   editor._setupListeners();
-  assert.deepEqual(switches, [["telescope_mode", "telescope_mode"], ["show_eclipses", "show_eclipses"]]);
+  assert.deepEqual(switches, [["telescope_mode", "telescope_mode"], ["show_eclipses", "show_eclipses"], ["show_events", "show_events"]]);
 });
 
 test("highlights shows ongoing events and refreshes when only eclipse entities change", () => {

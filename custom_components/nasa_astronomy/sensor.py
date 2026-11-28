@@ -118,6 +118,8 @@ async def async_setup_entry(
     entities.append(KPIndexSensor(coordinator, entry))
 
     async_add_entities(entities, True)
+    from .sensor_intelligence import async_setup_intelligence
+    await async_setup_intelligence(hass, entry, async_add_entities)
 
     # Set up ephemeris sensors if enabled (won't break existing sensors on failure)
     try:
@@ -548,6 +550,12 @@ class ISSPositionSensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
             "sw_version": INTEGRATION_VERSION,
         }
 
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        orbital = getattr(self.coordinator, "satellite_coordinator", None)
+        if orbital is not None:
+            self.async_on_remove(orbital.async_add_listener(self.async_write_ha_state))
+
     @property
     def native_value(self) -> str | None:
         """Return lat/lon as state string."""
@@ -570,7 +578,10 @@ class ISSPositionSensor(CoordinatorEntity[NasaDataCoordinator], SensorEntity):
         if not iss or "iss_position" not in iss:
             return {}
         pos = iss["iss_position"]
+        satellite_coordinator = getattr(self.coordinator, "satellite_coordinator", None)
+        orbital = (satellite_coordinator.data or {}).get("25544", {}) if satellite_coordinator else {}
         return {
+            **{key: value for key, value in orbital.items() if key not in ("latitude", "longitude", "timestamp", "source", "stale")},
             "latitude": float(pos.get("latitude", 0)),
             "longitude": float(pos.get("longitude", 0)),
             "timestamp": iss.get("timestamp"),

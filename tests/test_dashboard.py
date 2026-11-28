@@ -200,7 +200,20 @@ def _ephemeris_entities() -> set[str]:
     entities.update(
         f"sensor.nasa_astronomy_ephemeris_sky_{key}" for key in sky
     )
+    entities.update({
+        "sensor.nasa_astronomy_ephemeris_eclipses_solar",
+        "sensor.nasa_astronomy_ephemeris_eclipses_lunar",
+        "sensor.astronomy_space_suite_next_celestial_event",
+        "sensor.astronomy_space_suite_next_meteor_shower",
+    })
     return entities
+
+
+def _optional_intelligence_entities() -> set[str]:
+    return {f"sensor.astronomy_space_suite_{key}" for key in (
+        "observing_score", "observing_status", "best_observing_window",
+        "space_weather_forecast", "satellite_20580", "satellite_48274",
+    )}
 
 
 def _deepsky_entities() -> set[str]:
@@ -251,13 +264,13 @@ class DashboardTests(unittest.TestCase):
 
     def test_every_integration_entity_is_covered(self):
         configured = _configured_entities(self.dashboard)
-        expected = _core_entities() | _ephemeris_entities() | _deepsky_entities()
+        expected = _core_entities() | _ephemeris_entities() | _deepsky_entities() | _optional_intelligence_entities()
         missing = expected - configured
         self.assertFalse(
             missing,
             f"Dashboard is missing {len(missing)} entities: {sorted(missing)}",
         )
-        self.assertEqual(len(expected), 269)
+        self.assertEqual(len(expected), 279)
 
     def test_dashboard_does_not_reference_unknown_astronomy_entities(self):
         configured = {
@@ -272,14 +285,14 @@ class DashboardTests(unittest.TestCase):
             )
             and value != "sensor.astronomy_space_suite_rocket_launch"
         }
-        expected = _core_entities() | _ephemeris_entities() | _deepsky_entities()
+        expected = _core_entities() | _ephemeris_entities() | _deepsky_entities() | _optional_intelligence_entities()
         self.assertLessEqual(configured, expected)
 
     def test_dashboard_is_isolated_and_external_entities_are_allowlisted(self):
         top_level_keys = re.findall(r"(?m)^([a-zA-Z0-9_-]+):", self.dashboard)
         self.assertEqual(top_level_keys, ["title", "views"])
         configured = _configured_entities(self.dashboard)
-        integration_entities = _core_entities() | _ephemeris_entities() | _deepsky_entities()
+        integration_entities = _core_entities() | _ephemeris_entities() | _deepsky_entities() | _optional_intelligence_entities()
         entity_prefixes = {"sensor.astronomy_space_suite_rocket_launch"}
         external = configured - integration_entities - entity_prefixes
         self.assertEqual(external, {"sun.sun", "sensor.moon_phase"})

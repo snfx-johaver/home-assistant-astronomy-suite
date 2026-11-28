@@ -103,6 +103,9 @@ class NasaDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "donki_gst", "eonet", "techtransfer", "rocket_launches",
             "iss_position", "epic_earth", "swpc_kp_index",
         ]
+        if hasattr(self, "space_forecast"):
+            results.append(await self.space_forecast.get())
+            keys.append("space_forecast")
         data: dict[str, Any] = {}
         for key, result in zip(keys, results):
             if isinstance(result, Exception):
