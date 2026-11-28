@@ -3144,6 +3144,7 @@ function localStamp(hass, value, date = true) {
   if (!parsed) return "Time unavailable";
   return new Intl.DateTimeFormat(hass?.locale?.language || undefined, {
     timeZone: hass?.config?.time_zone || "UTC",
+    ...(hass?.locale?.time_format === "24" ? {hourCycle:"h23"} : hass?.locale?.time_format === "12" ? {hourCycle:"h12"} : {}),
     ...(date ? { month:"short", day:"numeric" } : {}),
     hour:"2-digit", minute:"2-digit",
   }).format(parsed);

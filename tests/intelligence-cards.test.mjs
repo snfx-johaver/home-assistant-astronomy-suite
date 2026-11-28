@@ -6,7 +6,7 @@ const makeState = (state, attributes = {}) => stateObject("sensor.fixture", stat
 
 const {bindings} = loadBundleWithSandbox(BUNDLES.astronomy, [
   "ObservationPlannerCard", "ObservationPlannerEditor", "NightSkyHighlightsCard",
-  "AstroLunarCard", "SolarActivityCard", "IssTrackerCard", "finiteValue", "renderSkyPath",
+  "AstroLunarCard", "SolarActivityCard", "IssTrackerCard", "finiteValue", "renderSkyPath", "localStamp",
 ], sandbox => {
   sandbox.document.createElement = () => {
     let html = "";
@@ -23,6 +23,15 @@ const row = {time:future,scores:{stargazing:80,deep_sky:65,astrophotography:75},
   astronomical_darkness:true,sun_altitude:-25,cloud_cover:10,cloud_cover_low:10,
   cloud_cover_mid:5,cloud_cover_high:2,seeing_estimate:75,transparency_estimate:80,
   moon_interference:20,limiting_factor:"Moonlight"};
+
+test("intelligence times respect HA's clock preference and local midnight", () => {
+  const hass={locale:{language:"en",time_format:"24"},config:{time_zone:"Europe/Amsterdam"}};
+  assert.equal(bindings.localStamp(hass,"2026-11-28T23:00:00Z",false),"00:00");
+  assert.equal(bindings.localStamp(hass,"2026-10-25T00:30:00Z",false),"02:30");
+  assert.equal(bindings.localStamp(hass,"2026-10-25T01:30:00Z",false),"02:30");
+  hass.locale.time_format="12";
+  assert.match(bindings.localStamp(hass,"2026-11-28T23:00:00Z",false),/12:00\s?AM/);
+});
 
 test("planner shows bounded forecast, best window and honest missing data", () => {
   const card = new bindings.ObservationPlannerCard();
