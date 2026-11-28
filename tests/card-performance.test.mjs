@@ -13,6 +13,7 @@ function loadCards() {
 
 const registry = loadCards();
 const cases = {
+  "observation-planner-card": "sensor.astronomy_space_suite_observing_score",
   "apod-card": "sensor.astronomy_space_suite_apod",
   "neo-threat-card": "sensor.astronomy_space_suite_neo_count_today",
   "solar-activity-card": "sensor.astronomy_space_suite_solar_flares",

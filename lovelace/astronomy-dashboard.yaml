@@ -13,6 +13,8 @@
 #
 # Current card appearance remains the default. Set glass_mode: true on an
 # individual Astronomy Space Suite card to opt in to its isolated glass style.
+# Enable Observing conditions and Space-weather forecast in integration options.
+# Satellite examples require selecting 25544, 20580 and 48274 in Satellite passes.
 
 title: Astronomy Space Suite
 views:
@@ -62,9 +64,17 @@ views:
           - type: heading
             heading: Tonight
             icon: mdi:weather-night
+          - type: custom:observation-planner-card
+            entity: sensor.astronomy_space_suite_observing_score
+            title: Best viewing tonight
+            mode: stargazing
+            hours: 48
+            show_targets: true
           - type: custom:night-sky-highlights-card
             title: Planetary highlights
             telescope_mode: false
+            events_entity: sensor.astronomy_space_suite_next_celestial_event
+            show_events: true
           - type: custom:night-sky-highlights-2-card
             title: Astronomy highlights
           - type: custom:dso-tonight-table-card
@@ -154,6 +164,17 @@ views:
           - type: heading
             heading: Observing plan
             icon: mdi:telescope
+          - type: custom:observation-planner-card
+            entity: sensor.astronomy_space_suite_observing_score
+            title: Deep-sky viewing window
+            mode: deep_sky
+            hours: 48
+            show_targets: true
+          - type: custom:observation-planner-card
+            entity: sensor.astronomy_space_suite_observing_score
+            title: Imaging conditions
+            mode: astrophotography
+            hours: 24
           - type: "custom:dso-tonight-table-card"
             title: Deep sky targets
             entity: sensor.nasa_astronomy_deepsky_best_tonight
@@ -179,9 +200,20 @@ views:
             show_times: true
           - type: custom:astro-lunar-card
             moon_entity: sensor.moon_phase
-            title: Lunar phase
+            intelligence_entity: sensor.nasa_astronomy_ephemeris_moon_illumination_pct
+            title: Moon intelligence
             show_next_phases: true
             show_illumination: true
+          - type: entities
+            title: Events and observing decisions
+            show_header_toggle: false
+            entities:
+              - sensor.astronomy_space_suite_observing_status
+              - sensor.astronomy_space_suite_best_observing_window
+              - sensor.astronomy_space_suite_next_celestial_event
+              - sensor.astronomy_space_suite_next_meteor_shower
+              - sensor.nasa_astronomy_ephemeris_eclipses_solar
+              - sensor.nasa_astronomy_ephemeris_eclipses_lunar
           - type: entities
             title: Sky conditions
             show_header_toggle: false
@@ -412,6 +444,8 @@ views:
             sdo_entity: camera.astronomy_space_suite_sdo_sun
             soho_entity: camera.astronomy_space_suite_soho_sun
             title: Solar Activity Monitor
+            forecast_entity: sensor.astronomy_space_suite_space_weather_forecast
+            observing_entity: sensor.astronomy_space_suite_observing_score
             show_cme: true
             show_flares: true
             show_storms: true
@@ -424,6 +458,7 @@ views:
             title: Space weather feeds
             show_header_toggle: false
             entities:
+              - sensor.astronomy_space_suite_space_weather_forecast
               - sensor.astronomy_space_suite_planetary_kp_index
               - sensor.astronomy_space_suite_coronal_mass_ejections
               - sensor.astronomy_space_suite_solar_flares
@@ -495,6 +530,15 @@ views:
             show_stream_button: true
             map_zoom: 0
             trail_hours: 6
+          - type: custom:iss-tracker-card
+            entity: sensor.astronomy_space_suite_iss_position
+            title: Selected satellite passes
+            mode: satellites
+            satellite_entities: sensor.astronomy_space_suite_satellite_20580,sensor.astronomy_space_suite_satellite_48274
+            show_map: true
+            show_trail: true
+            show_stream_button: false
+            trail_hours: 2
           - type: tile
             entity: sensor.astronomy_space_suite_iss_position
             name: Current ISS position

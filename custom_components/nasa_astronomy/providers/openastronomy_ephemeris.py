@@ -547,14 +547,18 @@ class OpenAstronomyEphemerisProvider:
         }
 
     def _calc_moon(self, jd: float, obliq: float) -> dict[str, Any]:
+        import astronomy
+        from .sky_intelligence import lunar_details
+
         moon = _moon_position(jd)
         ra, dec = _ecliptic_to_equatorial(moon["ecliptic_lon"], moon["ecliptic_lat"], obliq)
         alt, az = _equatorial_to_horizontal(ra, dec, self._lat, self._lon, jd)
         times = _find_rise_set_transit(ra, dec, self._lat, self._lon, jd, 0.125)
 
-        # Next full/new moon (simplified — search forward)
-        next_full = self._find_next_phase(jd, target_elongation=180.0)
-        next_new = self._find_next_phase(jd, target_elongation=0.0)
+        at = datetime(2000, 1, 1, 12, tzinfo=timezone.utc) + timedelta(days=jd - J2000)
+        details = lunar_details(astronomy.Observer(self._lat, self._lon, self._elevation), at)
+        next_full = next(p["time"][:10] for p in details["phases"] if p["angle"] == 180)
+        next_new = next(p["time"][:10] for p in details["phases"] if p["angle"] == 0)
 
         return {
             "altitude": round(alt, 4),
@@ -570,6 +574,7 @@ class OpenAstronomyEphemerisProvider:
             "set": times["set"],
             "next_full_moon": next_full,
             "next_new_moon": next_new,
+            "lunar_details": details,
         }
 
     def _calc_planet(self, name: str, jd: float, obliq: float) -> dict[str, Any]:

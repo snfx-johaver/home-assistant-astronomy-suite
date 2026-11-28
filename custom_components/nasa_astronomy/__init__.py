@@ -104,6 +104,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = NasaDataCoordinator(
         hass, session, api_key, rocket_api_key, update_interval
     )
+    if entry.options.get("space_weather_forecast", {}).get("enabled", False):
+        from .providers.space_forecast import SpaceForecast
+
+        observer = entry.options.get("ephemeris", {})
+        coordinator.space_forecast = SpaceForecast(
+            session, observer.get("latitude", hass.config.latitude),
+            observer.get("longitude", hass.config.longitude),
+        )
 
     # Don't block setup — refresh in background
     entry.async_create_background_task(

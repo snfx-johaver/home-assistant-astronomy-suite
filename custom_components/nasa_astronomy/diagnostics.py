@@ -219,4 +219,21 @@ async def async_get_config_entry_diagnostics(
             [resource_url(hass, name) for name in BUNDLE_FILENAMES],
         )
 
-    return await hass.async_add_executor_job(report)
+    result = await hass.async_add_executor_job(report)
+    if entry is not None:
+        coordinators = hass.data.get("nasa_astronomy", {}).get(entry.entry_id, {})
+        observing = coordinators.get("observing_coordinator")
+        nasa = coordinators.get("coordinator")
+        satellites = coordinators.get("satellite_coordinator")
+        result["forecast_providers"] = {}
+        if observing:
+            result["forecast_providers"]["open_meteo"] = observing.request.diagnostics()
+        if nasa and hasattr(nasa, "space_forecast"):
+            result["forecast_providers"]["noaa"] = {name: request.diagnostics() for name, request in nasa.space_forecast.requests.items()}
+        if satellites:
+            result["forecast_providers"]["satellites"] = {
+                "selected_count": len(satellites.ids),
+                "cached_count": len(satellites.data or {}),
+                "requests": [request.diagnostics() for request in satellites.requests.values()],
+            }
+    return result

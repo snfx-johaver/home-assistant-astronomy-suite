@@ -47,7 +47,7 @@ Fully isolated — does not modify any existing dashboards, integrations, or res
 | SDO Sun (171Å corona, extreme UV) | NASA | None |
 | SOHO Sun (LASCO C3 coronagraph) | ESA/NASA | None |
 
-### 🃏 Custom Lovelace Cards (15)
+### 🃏 Custom Lovelace Cards (16)
 All cards are prefixed **"ASS"** in the card picker for easy discovery.
 
 <p align="center">
@@ -66,6 +66,7 @@ All cards are prefixed **"ASS"** in the card picker for easy discovery.
 | `iss-tracker-card` | astronomy-cards.js | Native Home Assistant map with ISS history trail + live stream |
 | `earth-observation-card` | astronomy-cards.js | Multi-source satellite imagery (EPIC, GOES, Himawari, Meteosat, SDO, SOHO) |
 | `night-sky-highlights-card` | astronomy-cards.js | Best visible planets tonight and locally visible solar/lunar eclipses |
+| `observation-planner-card` | astronomy-cards.js | Darkness, weather layers, observing quality and best viewing windows |
 | `night-sky-highlights-2-card` | deepsky-cards.js | Auto-detecting highlights tile grid (planets, DSO, NEO, ISS, KP, flares) |
 | `dso-tonight-table-card` | deepsky-cards.js | Sortable table of visible deep-sky objects |
 | `dso-yard-map-card` | deepsky-cards.js | Polar projection sky map (SVG) |
@@ -104,6 +105,196 @@ All cards are prefixed **"ASS"** in the card picker for easy discovery.
 - Creates all sensors, cameras, and deep-sky entities
 
 No manual file copying. No YAML editing. Just install, restart, configure.
+
+### Private observing-intelligence preview
+
+**Find your next clear window, see what is worth watching, and plan satellite
+passes from home.** This unreleased expansion retains version **1.19.1**;
+install the preview only on your own Home Assistant for evaluation. Do not
+merge or run a release until the private rollout is approved.
+
+Night Sky Highlights now includes an event ribbon. The existing Moon, Solar
+Activity and ISS cards gain intelligence without changing their card names.
+The new **Observation Planner** joins the Observing view; it does not replace
+Best Tonight, the horizon, sky maps or any existing eclipse sensor.
+
+In **Settings → Devices & Services → Astronomy Space Suite → Configure**:
+enable **Observing conditions**, **Space-weather forecast**, or **Satellite
+passes** independently. They are off by default. **Celestial events** is local
+and enabled by default when ephemeris is enabled. All new calculations use the
+configured ephemeris location and elevation. Changing options reloads and
+invalidates the location-dependent caches.
+
+| Capability | Source and cadence | Fallback |
+|---|---|---|
+| Events and lunar intelligence | Existing Astronomy Engine; events cached daily, Moon on ephemeris cadence | No internet needed |
+| Observing forecast | One Open-Meteo request/hour; local evaluation every 15 min | Last successful forecast for up to 6 hours |
+| Kp and NOAA scales | NOAA SWPC hourly, shared by the NASA coordinator | Up to 6 hours |
+| Flare/radiation probabilities | NOAA SWPC every 3 hours | Up to 12 hours; old issuance rejected |
+| Local aurora outlook | NOAA OVATION every 30 min; nearest geographic cell | At most 2 hours |
+| Sunspots and solar flux | NOAA monthly observations, retrieved daily | Up to 7 days |
+| Selected satellites | CelesTrak OMM every 12 hours; existing ISS two-hour cadence retained | Valid elements stored locally; never older than 7 days |
+
+Open-Meteo is the only new weather provider: no key, overlapping weather
+services or separate integration required. Its free endpoint is for
+non-commercial use and its weather data is **CC BY 4.0**; commercial users
+must check [Open-Meteo's terms](https://open-meteo.com/en/terms). NOAA is the
+authoritative space-weather source. CelesTrak remains the single orbital
+source; OMM is used instead of introducing a separate TLE download pipeline.
+NASA and RocketLaunch.Live calls and keys are unchanged.
+
+Requests have explicit timeouts, share in-flight work, back off after failures
+and rate limits, and validate responses before replacing caches. Optional
+providers fail independently; unavailable forecast hours stay unknown. Cached
+forecasts are labelled, and diagnostics report age and exception type without
+keys or observer coordinates. Weather and NOAA caches are in memory; only
+satellite orbital elements persist across restarts.
+
+#### Planner, event and satellite cards
+
+```yaml
+type: custom:observation-planner-card
+entity: sensor.astronomy_space_suite_observing_score
+mode: stargazing # deep_sky or astrophotography
+hours: 48 # 24–48
+show_targets: true
+glass_mode: false
+```
+
+The ribbon shows darkness, cloud layers, seeing/clarity estimates and
+moonlight. A clear window is highlighted; Best Tonight's existing target
+coordinates are evaluated inside that window (up to five targets). The plotted target
+peaks follow the general stargazing window, not a separately
+optimized imaging sequence. Narrow cards scroll the timeline rather than
+squeezing hour labels into unreadable text.
+
+```yaml
+type: custom:night-sky-highlights-card
+events_entity: sensor.astronomy_space_suite_next_celestial_event
+show_events: true
+show_eclipses: true
+```
+
+```yaml
+type: custom:astro-lunar-card
+moon_entity: sensor.moon_phase # existing setting remains valid
+intelligence_entity: sensor.nasa_astronomy_ephemeris_moon_illumination_pct
+```
+
+The Moon card can use the suite's illumination entity alone when the optional
+Home Assistant Moon integration is absent. Calculated phase times replace the
+legacy approximate phase countdown when intelligence is available. Its distance
+gauge and 24-hour altitude arc use local calculations, not decorative positions.
+
+```yaml
+type: custom:solar-activity-card
+cme_entity: sensor.astronomy_space_suite_coronal_mass_ejections
+flare_entity: sensor.astronomy_space_suite_solar_flares
+storm_entity: sensor.astronomy_space_suite_geomagnetic_storms
+kp_entity: sensor.astronomy_space_suite_planetary_kp_index
+forecast_entity: sensor.astronomy_space_suite_space_weather_forecast
+observing_entity: sensor.astronomy_space_suite_observing_score
+```
+
+For satellite passes select NORAD IDs in options, for example
+`25544,20580,48274` (ISS, Hubble, Tiangong). At most **eight** may be selected;
+there is no default constellation or browser-side position API.
+
+```yaml
+type: custom:iss-tracker-card
+entity: sensor.astronomy_space_suite_iss_position
+mode: satellites # default: iss
+satellite_entities: sensor.astronomy_space_suite_satellite_20580,sensor.astronomy_space_suite_satellite_48274
+show_stream_button: false
+```
+
+The existing native map, history and resize behavior are preserved. The
+selected satellite's next pass is drawn in a north-up horizon plot, with a
+bounded predicted ground track using the bundled map.
+
+#### Entities and accuracy
+
+| Entity suffix under `sensor.astronomy_space_suite_` | State / attributes |
+|---|---|
+| `next_celestial_event` | Next event title; at most 48 events, shared eclipse references, peak/start/end, local geometry |
+| `next_meteor_shower` | Next shower title; one detailed event |
+| `observing_score` | Current 0–100 score; at most 48 hourly evaluations, three mode scores, windows and up to five targets |
+| `observing_status` | GO, MARGINAL or NO-GO; unavailable without sufficient forecast |
+| `best_observing_window` | UTC start timestamp string; start/end and limiting factor attributes |
+| `space_weather_forecast` | Quiet/Elevated outlook; bounded Kp series, 3-day probabilities, NOAA scales, monthly solar trend and aurora |
+| `satellite_<NORAD ID>` | Position for selected non-ISS satellites only; at most 6 passes, 30 sky-path samples/pass and 60 ground-track points |
+
+Existing unique IDs, domain, card resource URLs, API keys and entity IDs are
+unchanged. ISS gets pass attributes rather than a duplicate position entity.
+Moon secondary values live on the existing
+`sensor.nasa_astronomy_ephemeris_moon_illumination_pct`: `age_days`,
+`distance_km`, `angular_diameter_arcmin`, `phases`, `perigee`, `apogee`,
+`rise_time`, `transit_time`, `set_time`, `moonlight_impact` and a 25-point
+`sky_path`. Shower events include an estimated best local hour near their
+nominal peak, based on darkness, radiant altitude and Moon interference;
+weather is not included in that shower-hour estimate.
+
+The quality model is a **heuristic**, rounded to steps of five, not a scientific
+seeing measurement or calibrated probability. Weighted penalties for
+clouds/moonlight/seeing/clarity/wind are **45/10/10/20/15%** for stargazing,
+**40/25/5/20/10%** for deep sky, and **40/15/15/15/15%** for imaging.
+Seeing estimate = clamp(100 − 3 × wind − 2 × gust excess, 0, 100), with wind
+in m/s. Clarity estimate = clamp(100 − 0.5 × high cloud − humidity excess
+above 60% − 0.3 × fog risk, 0, 100). Fog risk increases linearly as the
+temperature/dew-point spread falls from 3°C to 0°C, only above 85% humidity.
+Moonlight penalty is illumination × positive sine of Moon altitude.
+
+Sun above −12°, rain probability ≥50%, gusts ≥15 m/s, or fog risk ≥80
+veto observing. Scores are capped at 40 outside astronomical darkness
+(Sun below −18°). GO starts at 70; MARGINAL at 40. The best window is the
+longest consecutive GO span, with average score breaking ties. Boundaries are
+hourly, not minute-accurate weather predictions. Visibility is retained in
+forecast attributes but is not treated as a measured transparency value.
+
+Events search 18 calendar months. Seasons, oppositions and elongations use
+Astronomy Engine. Meteor peaks use the [IMO Working List](https://www.imo.net/resources/calendar/)
+nominal solar longitudes; times, radiant drift and hourly rates are approximate.
+Ideal zenithal rates are **not local meteor counts**. A close full Moon is
+explicitly defined as geocentric distance ≤360,000 km at full phase.
+Event peak visibility is geometric, not a promise of good viewing; terrain,
+weather and obstructions are not included.
+
+Satellite passes cover 24 hours above 10° with one-minute sampling and a
+cylindrical Earth-shadow estimate. “Possible” means observer darkness and
+sunlit spacecraft, **not guaranteed naked-eye brightness**. Clipped search
+windows are marked. Earth oblateness is included in observer geometry; the
+TEME/equinox-of-date approximation is not suitable for precision tracking.
+NOAA aurora guidance uses the nearest OVATION cell, not Kp alone. Clear skies,
+darkness and moonlight refine the displayed outlook only when weather data is
+available; no viewing probability is fabricated. Solar-cycle trends are
+monthly means, not today's measured sunspot count. CME-arrival prediction,
+terrain masks, measured seeing and constellation boundaries are not added.
+
+All stored times are timezone-aware UTC. Cards display the Home Assistant time
+zone; windows crossing midnight or DST transitions retain their true elapsed
+duration. Polar day/no usable darkness yields no GO window.
+
+#### Automation example
+
+```yaml
+alias: Clear observing window
+triggers:
+  - trigger: numeric_state
+    entity_id: sensor.astronomy_space_suite_observing_score
+    above: 69
+conditions:
+  - condition: template
+    value_template: "{{ not state_attr('sensor.astronomy_space_suite_observing_score', 'stale') }}"
+actions:
+  - action: persistent_notification.create
+    data:
+      title: Good skies tonight
+      message: "{{ state_attr('sensor.astronomy_space_suite_observing_score', 'limiting_factor') }}"
+```
+
+No external project source was copied. Local calculations use the existing
+MIT-licensed Astronomy Engine and SGP4 dependencies; meteor-calendar data and
+provider documentation are attributed above.
 
 ### Manual Installation (Advanced)
 
@@ -288,10 +479,10 @@ owned card bundles, or alter an existing user dashboard.
 
 The example uses responsive Home Assistant sections and eight focused views:
 Overview, Observing, Solar System, Space Weather, Near Earth, ISS and Earth,
-Launches and NASA, and Entity Coverage. It includes every one of the 15 custom
+Launches and NASA, and Entity Coverage. It includes every one of the 16 custom
 cards, including the Sky Map and interactive 3D Sky Dome, and explicitly
-surfaces all 269 entities created when all integration options use their
-defaults:
+surfaces the existing entities plus the new local summaries and selected
+optional forecast/satellite entities:
 
 | Platform | Entity count | Dashboard handling |
 |----------|-------------:|--------------------|

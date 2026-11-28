@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased - private preview
+
+- Add an optional observing planner with a 48-hour darkness and weather ribbon,
+  separate stargazing/deep-sky/imaging scores, best windows and local targets.
+- Extend Night Sky Highlights with a bounded local celestial-event timeline,
+  meteor showers, seasons, oppositions, elongations and close full Moons.
+  Reuse the existing eclipse calculations and sensors.
+- Extend the Moon card and illumination attributes with accurate phase times,
+  lunar age, distance, apparent diameter, apsides and next rise/transit/set.
+- Extend Solar Activity with optional NOAA Kp forecasts, flare probabilities,
+  severity scales, monthly solar trends and location-based aurora guidance.
+- Add optional selected-satellite passes from cached CelesTrak elements and
+  local SGP4 propagation; preserve ISS entities, native map and YAML settings.
+- Add options, secret-safe provider diagnostics and complete dashboard examples.
+- Keep version 1.19.1 unchanged. This preview is not a published release.
+
 ## 1.19.1
 
 - Fix missing Uranus and Neptune in the solar-system orrery, including their

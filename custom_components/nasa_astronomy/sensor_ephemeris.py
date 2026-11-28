@@ -27,6 +27,7 @@ from homeassistant.helpers.update_coordinator import (
 
 from .const import DOMAIN, INTEGRATION_VERSION
 from .providers.eclipses import EclipseProvider
+from .providers.sky_intelligence import CelestialEventsProvider
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -109,6 +110,7 @@ class EphemerisCoordinator(DataUpdateCoordinator):
     def __init__(
         self, hass: HomeAssistant, provider: OpenAstronomyEphemerisProvider,
         eclipse_provider: EclipseProvider,
+        events_provider: CelestialEventsProvider | None = None,
     ):
         super().__init__(
             hass,
@@ -118,6 +120,7 @@ class EphemerisCoordinator(DataUpdateCoordinator):
         )
         self.provider = provider
         self.eclipse_provider = eclipse_provider
+        self.events_provider = events_provider
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from provider (runs in executor for CPU-bound math)."""
@@ -134,6 +137,8 @@ class EphemerisCoordinator(DataUpdateCoordinator):
             data["sky"] = self.provider.get_sky_conditions()
             try:
                 data["eclipses"] = self.eclipse_provider.get_eclipses()
+                if self.events_provider is not None:
+                    data["celestial"] = self.events_provider.get_events(data["eclipses"])
             except AstronomyError as err:
                 raise UpdateFailed(f"Eclipse calculation failed: {err}") from err
         return data
@@ -172,7 +177,11 @@ async def async_setup_ephemeris_sensors(
         enabled_bodies=bodies_config,
     )
 
-    coordinator = EphemerisCoordinator(hass, provider, EclipseProvider(lat, lon, elevation))
+    events_enabled = entry.options.get("celestial_events", {}).get("enabled", True)
+    coordinator = EphemerisCoordinator(
+        hass, provider, EclipseProvider(lat, lon, elevation),
+        CelestialEventsProvider(lat, lon, elevation) if events_enabled else None,
+    )
     # Don't block sensor setup — refresh in background
     await coordinator.async_refresh()
 
@@ -233,6 +242,9 @@ async def async_setup_ephemeris_sensors(
                 )
             )
 
+    if events_enabled and provider.enabled_bodies:
+        for key, name in (("next_event", "Next Celestial Event"), ("next_meteor_shower", "Next Meteor Shower")):
+            entities.append(EphemerisSensor(coordinator, "celestial", key, name, None, "mdi:calendar-star", None, entry.entry_id))
     async_add_entities(entities)
     _LOGGER.info("Registered %d ephemeris sensors for bodies: %s", len(entities), provider.enabled_bodies)
 
@@ -269,6 +281,9 @@ class EphemerisSensor(CoordinatorEntity, SensorEntity):
         }
         # Set entity_id suggestion
         self.entity_id = f"sensor.nasa_astronomy_ephemeris_{body}_{sensor_key}"
+        if body == "celestial":
+            self._attr_name = sensor_name
+            self.entity_id = f"sensor.astronomy_space_suite_{'next_celestial_event' if sensor_key == 'next_event' else sensor_key}"
 
     # Keys that represent time values (HH:MM format)
     _TIME_KEYS = {
@@ -300,6 +315,11 @@ class EphemerisSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
+        if self._body == "celestial":
+            data = (self.coordinator.data or {}).get("celestial", {})
+            if self._sensor_key == "next_meteor_shower":
+                return {"event": next((e for e in data.get("events", []) if e["event_type"] == "meteor_shower"), None)}
+            return {key: value for key, value in data.items() if key not in ("next_event", "next_meteor_shower")}
         if self._body == "eclipses":
             data = (self.coordinator.data or {}).get("eclipses", {})
             return {
@@ -308,11 +328,14 @@ class EphemerisSensor(CoordinatorEntity, SensorEntity):
                 "eclipse_type": self._sensor_key,
                 "provider": "astronomy-engine",
             }
-        return {
+        attrs = {
             "body": self._body,
             "metric": self._sensor_key,
             "provider": "openastronomy_ephemeris",
         }
+        if self._body == "moon" and self._sensor_key == "illumination_pct":
+            attrs.update((self.coordinator.data or {}).get("moon", {}).get("lunar_details", {}))
+        return attrs
 
     @property
     def available(self) -> bool:

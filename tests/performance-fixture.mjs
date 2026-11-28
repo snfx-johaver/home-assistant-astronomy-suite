@@ -13,6 +13,7 @@ export function makePerformanceHass(unrelatedEntities = 10000, deepSkyObjects = 
   add("sensor.astronomy_space_suite_solar_flares", 0, { events: [] });
   add("sensor.astronomy_space_suite_geomagnetic_storms", 0, { events: [] });
   add("sensor.astronomy_space_suite_planetary_kp_index", 2);
+  add("sensor.astronomy_space_suite_observing_score", 75, {forecast:[]});
   add("sensor.astronomy_space_suite_iss_position", "52, 4", { latitude: 52, longitude: 4, timestamp: "2026-10-28T20:00:00Z" });
   add("sun.sun", "above_horizon", { elevation: 25, azimuth: 180 });
   add("sensor.moon_phase", "full_moon", { illumination: 100 });
